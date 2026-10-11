@@ -244,7 +244,28 @@ void applyClips(Part& part, std::vector<std::array<Vec3, 3>>& cn, std::vector<ui
         std::vector<float> f(part.pos.size());
         for (size_t i = 0; i < part.pos.size(); ++i) f[i] = clip.field(part.pos[i]);
         std::unordered_map<uint64_t, uint32_t> cut;
-        auto kOn = [&](uint32_t a, uint32_t b) { return saturate(f[a] / (f[a] - f[b])); };
+        // Where the boundary crosses edge a-b: refined on the true field (bisection), so
+        // the cut follows the curve even when the field is not linear along long edges.
+        std::unordered_map<uint64_t, float> kCache;
+        auto kOn = [&](uint32_t a, uint32_t b) {
+            const bool swap = a > b;
+            if (swap) std::swap(a, b);
+            uint64_t key = uint64_t(a) << 32 | b;
+            auto it = kCache.find(key);
+            float k;
+            if (it != kCache.end()) k = it->second;
+            else {
+                float lo = 0, hi = 1, flo = f[a];
+                for (int i = 0; i < 12; ++i) {
+                    float mid = 0.5f * (lo + hi), fm = clip.field(lerp(part.pos[a], part.pos[b], mid));
+                    if ((fm < 0) == (flo < 0)) lo = mid, flo = fm;
+                    else hi = mid;
+                }
+                k = 0.5f * (lo + hi);
+                kCache.emplace(key, k);
+            }
+            return swap ? 1.0f - k : k;
+        };
         auto edge = [&](uint32_t a, uint32_t b) {
             uint64_t key = a < b ? (uint64_t(a) << 32 | b) : (uint64_t(b) << 32 | a);
             auto it = cut.find(key);
@@ -351,7 +372,7 @@ std::vector<float> cavityShade(const Part& part, const std::vector<Vec3>& faceN,
     std::vector<float> out(nv, 1.0f);
     for (size_t i = 0; i < nv; ++i) {
         float hp = kap[i] - lo[i];
-        out[i] = hp > 0 ? 1.0f - strength * std::min(0.30f, hp * 2.2f) : 1.0f + strength * std::min(0.10f, -hp * 1.2f);
+        out[i] = hp > 0 ? 1.0f - strength * std::min(0.24f, hp * 2.0f) : 1.0f + strength * std::min(0.09f, -hp * 1.1f);
     }
     return out;
 }

@@ -31,7 +31,7 @@ namespace detail {
 
 LodSpec lodSpec(int lod) {
     switch (lod) {
-        case 0: return {28, 24, 14, 10, 8, 8, 24, 7, false};
+        case 0: return {28, 24, 14, 16, 8, 8, 24, 7, false};
         case 1: return {16, 16, 8, 8, 6, 5, 16, 5, true};
         default: return {12, 12, 6, 6, 4, 4, 12, 4, true};
     }
@@ -244,13 +244,13 @@ Vec3 Builder::torsoPoint(float t, float th) const {
         n -= 0.022f * h * cl * bump(u / 0.12f) * bump((t - 1.02f) / 0.035f);
         // Pectorals: a slab with a crisp lower edge rising towards the armpit, a sternal
         // groove and a softer top fading under the clavicle.
-        const float pecK = 0.08f * h * an.pecs * (1.0f - saturate(B * 1.6f));
+        const float pecK = 0.075f * h * std::min(an.pecs, 1.1f) * (1.0f - saturate(B * 1.6f));
         if (pecK > 0) {
             float tlow = 0.715f + 0.075f * u * u;
             float ft = smoothstep(tlow - 0.012f, tlow + 0.03f, t) * smoothstep(0.995f, 0.86f, t);
             float fu = smoothstep(0.02f, 0.10f, u) * smoothstep(0.98f, 0.72f, u);
             n += pecK * ft * fu * (0.55f + 0.45f * bump((u - 0.45f) / 0.55f));
-            n -= pecK * 0.35f * def * bump((t - (tlow - 0.012f)) / 0.02f) * fu;
+            n -= pecK * 0.25f * def * bump((t - (tlow - 0.012f)) / 0.02f) * fu;
         }
         // Ribcage: the costal arch, an inverted V from the base of the sternum.
         n += 0.016f * h * (0.4f + an.ribcage) * def * smoothstep(-0.02f, 0.03f, t - (0.67f - 0.17f * u)) *
@@ -258,13 +258,13 @@ Vec3 Builder::torsoPoint(float t, float th) const {
         // Serratus on the flank under the armpit.
         n += 0.020f * h * an.serratus * def * smoothstep(0.62f, 0.85f, u) * (bump((t - 0.70f) / 0.035f) + 0.7f * bump((t - 0.635f) / 0.03f));
         // Abdominals: rectus slab, linea alba, three tendinous intersections above the navel.
-        const float absK = 0.075f * h * an.abs * def * (1.0f - std::min(1.0f, 2.5f * g.body.belly)) * (1.0f - 0.5f * fem);
+        const float absK = 0.070f * h * std::min(an.abs, 1.0f) * def * (1.0f - std::min(1.0f, 2.5f * g.body.belly)) * (1.0f - 0.5f * fem);
         if (absK > 0) {
             float hw = lerp(0.24f, 0.36f, smoothstep(0.15f, 0.60f, t));
             float ft = smoothstep(0.12f, 0.20f, t) * smoothstep(0.69f, 0.64f, t);
             float slab = smoothstep(hw + 0.02f, hw - 0.08f, u) * ft;
-            float grooves = (bump((t - 0.445f) / 0.022f) + bump((t - 0.525f) / 0.022f) + bump((t - 0.605f) / 0.022f)) * smoothstep(0.40f, 0.43f, t);
-            n += absK * slab * (0.55f - 0.75f * grooves) - absK * 0.9f * bump(u / 0.065f) * ft;
+            float grooves = (bump((t - 0.445f) / 0.034f) + bump((t - 0.525f) / 0.034f) + bump((t - 0.605f) / 0.034f)) * smoothstep(0.40f, 0.43f, t);
+            n += absK * slab * (0.5f - 0.6f * std::min(grooves, 1.0f)) - absK * 0.8f * bump(u / 0.07f) * ft;
         }
         // Obliques, the inguinal "V" from the hip bone to the pubis, and the hip bone.
         n += 0.022f * h * an.obliques * smoothstep(0.45f, 0.75f, u) * bump((t - 0.33f) / 0.15f);
@@ -433,11 +433,17 @@ void Builder::buildTorso() {
     auto rings = mergeRings(base, {}, lod.sparseRings);
     const int N = lod.torsoSeg;
     Loft L;
-    for (float t : rings) {
+    for (size_t i = 0; i < rings.size(); ++i) {
+        // The lowest rings are saddles: high over the hips, dipping at the front and
+        // back midline down to the crotch, so the legs attach without twisted quads.
+        const float drop = i == 0 ? kTorsoBase : i == 1 ? 0.07f : i == 2 ? 0.025f : 0.0f;
         std::vector<Vec3> ring(static_cast<size_t>(N));
-        for (int j = 0; j < N; ++j) ring[size_t(j)] = torsoPoint(t, warpTheta(kTau * j / N));
+        for (int j = 0; j < N; ++j) {
+            float th = warpTheta(kTau * j / N), sn = std::sin(th);
+            ring[size_t(j)] = torsoPoint(rings[i] - drop * std::pow(sn * sn, 1.5f), th);
+        }
         L.rings.push_back(ring);
-        L.t.push_back(t);
+        L.t.push_back(rings[i]);
     }
     // The neck continues the same surface up into the head (no seam at its base):
     // sternocleidomastoid ridges run from behind the ears down to the sternal notch,
@@ -471,6 +477,7 @@ void Builder::buildTorso() {
     L.tEnd = 1.55f;
 
     auto wf = [&, S](float t, float th, Vec3 p) {
+        if (t <= 1.0f) t = torsoT(p.y);  // rings near the hips are not horizontal
         SkinW w = chainWeights({{0.12f, r.hips}, {0.40f, r.spine}, {0.66f, r.chest}, {1.0f, r.chest}, {1.16f, r.neck}, {1.38f, r.neck},
                                 {1.50f, r.head}}, t);
         if (r.bustL >= 0 && t < 1.0f) {  // soft tissue follows the bust bones (secondary motion)
@@ -490,7 +497,7 @@ void Builder::buildTorso() {
     Part& tp = newPart();
     bodyGroup_ = tp.id;
     torsoPart_ = parts.size() - 1;
-    tp.cavity = (0.40f + 0.70f * g.body.anat.definition) * (1.0f - 0.35f * g.femininity);
+    tp.cavity = (0.35f + 0.55f * g.body.anat.definition) * (1.0f - 0.35f * g.femininity);
     addUnderwear(tp, true);
     if (g.body.bust > 0.05f)  // the bust is one soft form: no creases across it
         tp.smoothAt = [this](Vec3 p) {
@@ -588,7 +595,7 @@ void Builder::buildArms() {
         int clav = rig.root, up = rig.upper, lo = rig.lower, hand = rig.end;
         Part& ap = newPart();
         armGroup_ = ap.id;
-        ap.cavity = (0.40f + 0.70f * an.definition) * (1.0f - 0.35f * g.femininity);
+        ap.cavity = (0.35f + 0.55f * an.definition) * (1.0f - 0.35f * g.femininity);
         // Normal transfer: where the shoulder cap runs into the torso it takes the
         // torso's normal, so the join reads as one surface (only the silhouette remains).
         if (a.pair == 0)
@@ -621,13 +628,27 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     struct K {
         float t, w, th, curl;
     };
-    // Palm, knuckle line, then the fingers as one softly curled block.
-    const K keys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.46f, 1.0f, 1.0f, 0.04f},
-                      {0.56f, 0.97f, 0.88f, 0.10f}, {0.74f, 0.92f, 0.80f, 0.30f}, {0.88f, 0.84f, 0.68f, 0.55f}};
+    // Palm, knuckle line, then the fingers as one softly curled block whose
+    // separations are grooves on both faces (the cavity shading draws them).
+    const K keys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.40f, 1.0f, 1.0f, 0.02f}, {0.48f, 1.0f, 1.0f, 0.05f},
+                      {0.58f, 0.97f, 0.86f, 0.10f}, {0.74f, 0.93f, 0.78f, 0.30f}, {0.88f, 0.86f, 0.66f, 0.55f}};
+    const int n = lod.handSeg;
     Loft L;
     for (const K& k : keys) {
         Vec3 c = a.wrist + d * (k.t * Lh) + palm * (k.curl * th);
-        L.rings.push_back(makeRing(c, u, v, SuperRing{th * k.th, 0, hw * k.w, hw * k.w, 2.6f, 2.6f}, lod.handSeg));
+        const float wu = th * k.th, wv = hw * k.w;
+        const float fingers = smoothstep(0.50f, 0.60f, k.t), knuckle = bump((k.t - 0.44f) / 0.07f);
+        std::vector<Vec3> ring(static_cast<size_t>(n));
+        for (int j = 0; j < n; ++j) {
+            float al = kTau * float(j) / float(n);
+            float x = wu * spow(std::cos(al), 2.0f / 2.6f), z = wv * spow(std::sin(al), 2.0f / 2.6f);
+            float zz = z / wv, back = (x * a.side < 0) ? 1.0f : 0.0f;
+            float groove = bump((zz + 0.5f) / 0.2f) + bump(zz / 0.2f) + bump((zz - 0.5f) / 0.2f);
+            x -= std::copysign(0.20f * wu * fingers * groove, x);
+            x += std::copysign(0.10f * wu * knuckle * back * (1.0f - groove), x);
+            ring[size_t(j)] = c + u * x + v * z;
+        }
+        L.rings.push_back(ring);
         L.t.push_back(k.t);
     }
     L.poleEnd = true;
@@ -635,17 +656,18 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     L.tEnd = 1;
     Part& hp = newPart();
     hp.id = armGroup_;
+    hp.cavity = 0.8f;
     emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
 
     // Thumb.
     Vec3 tb = a.wrist + d * (0.2f * Lh) + v * (0.65f * hw) + palm * (0.3f * th);
     Vec3 td = normalize(d * 0.55f + v * 0.45f + palm * 0.55f);
     Vec3 tv = orthoFront(td), tu = cross(td, tv);
-    float tl = 0.42f * Lh, tr = 0.34f * hw;
+    float tl = 0.46f * Lh, tr = 0.38f * hw;
     Loft T;
-    for (float t : {0.0f, 0.5f, 0.85f}) {
-        float rr = tr * (1.0f - 0.22f * t);
-        T.rings.push_back(makeRing(tb + td * (t * tl), tu, tv, SuperRing{rr, 0, rr, rr}, 6));
+    for (float t : {0.0f, 0.35f, 0.65f, 0.88f}) {
+        float rr = tr * (1.0f - 0.25f * t) * (1.0f + 0.25f * bump(t / 0.4f));  // thenar mass at the base
+        T.rings.push_back(makeRing(tb + td * (t * tl), tu, tv, SuperRing{rr, 0, rr, rr}, 8));
         T.t.push_back(t);
     }
     T.poleEnd = true;
@@ -677,16 +699,15 @@ void Builder::buildLegs() {
     // Crotch bridge shared by both legs: down the front midline, under, up the back.
     std::vector<uint32_t> bridge;
     {
-        // Men get a soft rounded bulge at the front of the crotch instead of a notch.
+        // The torso's bottom ring already reaches the crotch at its front and back
+        // midline; the bridge closes the gap between them under the crotch. Men get a
+        // soft rounded bulge at the front instead of a notch.
         const float bulge = (1.0f - g.femininity) * h;
-        Vec3 crotch = (torsoPoint(0.0f, 0.5f * kPi) + torsoPoint(0.0f, 1.5f * kPi)) * 0.5f;
-        crotch.y = m.crotchY - 0.01f * h - 0.03f * bulge;
-        crotch.z += 0.05f * bulge;
-        const Vec3 front = torsoPoint(0.2f * kTorsoBase, 0.5f * kPi) + Vec3{0, -0.03f * bulge, 0.06f * bulge};
+        const Vec3 rf = bp.pos[torsoRing0_[size_t(q)]], rb = bp.pos[torsoRing0_[size_t(3 * q)]];
+        Vec3 crotch{0, m.crotchY - 0.012f * h - 0.02f * bulge, lerp(rb.z, rf.z, 0.55f) + 0.04f * bulge};
         std::vector<Vec3> pts;
-        if (lod.sparseRings) pts = {torsoPoint(0.5f * kTorsoBase, 0.5f * kPi), crotch, torsoPoint(0.5f * kTorsoBase, 1.5f * kPi)};
-        else pts = {torsoPoint(0.6f * kTorsoBase, 0.5f * kPi) + Vec3{0, 0, 0.02f * bulge}, front, crotch,
-                    torsoPoint(0.2f * kTorsoBase, 1.5f * kPi), torsoPoint(0.6f * kTorsoBase, 1.5f * kPi)};
+        if (lod.sparseRings) pts = {crotch};
+        else pts = {lerp(rf, crotch, 0.5f) + Vec3{0, -0.012f * h - 0.01f * bulge, 0.03f * bulge}, crotch, lerp(rb, crotch, 0.5f) + Vec3{0, -0.012f * h, 0}};
         for (Vec3 p : pts) bridge.push_back(addV(p, one(hips)));
     }
     const int nb = int(bridge.size()), mid = nb / 2;
@@ -793,12 +814,17 @@ void Builder::buildLegs() {
         };
         const std::vector<Vec3> ring1 = ringAt(t1);
 
-        // Junction rings: interpolate loop -> first thigh ring, keeping the hip/glute volume.
-        std::vector<uint32_t> prev = loop;
+        // Junction rings: interpolate loop -> first thigh ring, keeping the hip/glute volume,
+        // then relax the crotch side (Laplacian smoothing with the loop and the first
+        // thigh ring held fixed) so the saddle around the bridge never folds.
         const int K = lod.sparseRings ? 1 : 2;
+        std::vector<std::vector<Vec3>> J(size_t(K + 2), std::vector<Vec3>(M));
+        for (size_t j = 0; j < M; ++j) {
+            J[0][j] = bp.pos[loop[j]];
+            J[size_t(K + 1)][j] = ring1[j];
+        }
         for (int k = 1; k <= K; ++k) {
             float f = float(k) / float(K + 1);
-            std::vector<uint32_t> cur(M);
             for (size_t j = 0; j < M; ++j) {
                 Vec3 p = lerp(bp.pos[loop[j]], ring1[j], f);
                 if (outer[j] > 0) {
@@ -807,6 +833,25 @@ void Builder::buildLegs() {
                     float rp = length(Vec2{p.x, p.z - zc}), rs = length(Vec2{sp.x, sp.z - zc});
                     if (rs > rp) p = lerp(p, sp, outer[j] * smoothstep(-0.05f, 0.04f, torsoT(p.y)));
                 }
+                J[size_t(k)][j] = p;
+            }
+        }
+        for (int it = 0; it < 0; ++it) {
+            auto prevJ = J;
+            for (int k = 1; k <= K; ++k)
+                for (size_t j = 0; j < M; ++j) {
+                    float w = 0.55f * (1.0f - outer[j]);
+                    if (w <= 0) continue;
+                    Vec3 avg = (prevJ[size_t(k)][(j + M - 1) % M] + prevJ[size_t(k)][(j + 1) % M] + prevJ[size_t(k - 1)][j] +
+                                prevJ[size_t(k + 1)][j]) * 0.25f;
+                    J[size_t(k)][j] = lerp(prevJ[size_t(k)][j], avg, w);
+                }
+        }
+        std::vector<uint32_t> prev = loop;
+        for (int k = 1; k <= K; ++k) {
+            std::vector<uint32_t> cur(M);
+            for (size_t j = 0; j < M; ++j) {
+                const Vec3 p = J[size_t(k)][j];
                 float te = (Hj.y - p.y) / std::max(1e-4f, -d1.y * Lt);
                 cur[j] = addV(p, weights(te));
             }

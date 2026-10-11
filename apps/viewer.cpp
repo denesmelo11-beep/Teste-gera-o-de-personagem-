@@ -649,7 +649,9 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         // Debug close-ups: CHARGEN_FOCUS="y zoom" (y as a fraction of height).
         float fy = 0.5f, zoom = 1.0f;
         if (const char* f = std::getenv("CHARGEN_FOCUS")) std::sscanf(f, "%f %f", &fy, &zoom);
-        Camera3D cam = makeCam({0, H * fy, 0}, yaws[v % 4], 0.02f, H * 3.0f / zoom, 21.0f);
+        float pitch = 0.02f;
+        if (const char* pp = std::getenv("CHARGEN_PITCH")) pitch = float(std::atof(pp));
+        Camera3D cam = makeCam({0, H * fy, 0}, yaws[v % 4], pitch, H * 3.0f / zoom, 21.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
         ClearBackground(BLACK);
@@ -667,10 +669,62 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
     return 0;
 }
 
+// Population sheet: a row of natural characters (mixed sex, age, persona) and a row
+// of the stylised presets, front view in studio light.
+int runPopulation(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int n = 8, pw = 220, ph = 560;
+    Image sheet = GenImageColor(n * pw, 2 * ph, BLACK);
+    const cg::Archetype presets[] = {cg::Archetype::Bombshell, cg::Archetype::Dorito, cg::Archetype::Brute, cg::Archetype::Amazon,
+                                     cg::Archetype::Slender, cg::Archetype::Natural, cg::Archetype::Natural, cg::Archetype::Monster};
+    for (int row = 0; row < 2; ++row)
+        for (int i = 0; i < n; ++i) {
+            for (auto& a : s.actors) unload(a);
+            s.actors.clear();
+            cg::GenomeOptions o;
+            if (row == 1) {
+                o.archetype = presets[i];
+                if (i == 5) o.age = cg::AgeGroup::Elder;
+                if (i == 6) o.age = cg::AgeGroup::Young;
+            }
+            s.actors.emplace_back();
+            Actor& a = s.actors.back();
+            a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(row * 100 + i), o), gGen);
+            a.clips = cg::makeDefaultClips(a.ch);
+            a.sim = new cg::SecondaryMotion(a.ch);
+            a.posed = true;
+            a.fixed = showcasePose(a.ch);
+            buildMeshes(a, s.body, s.decal);
+            a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+            for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+            float H = 2.1f;  // common scale so heights compare
+            Camera3D cam = makeCam({0, H * 0.5f, 0}, 0.25f, 0.02f, H * 3.0f, 21.0f);
+            RenderTexture2D prt = LoadRenderTexture(pw, ph);
+            BeginTextureMode(prt);
+            ClearBackground(BLACK);
+            drawScene(s, cam, pw, ph);
+            EndTextureMode();
+            Image img = grab(prt, 1);
+            char buf[96];
+            std::snprintf(buf, sizeof buf, "%s %s %s", std::string(cg::toString(a.ch.genome.sex)).c_str(),
+                          std::string(cg::toString(a.ch.genome.ageGroup)).c_str(),
+                          row ? std::string(cg::toString(a.ch.genome.archetype)).c_str() : std::string(cg::toString(a.ch.genome.persona)).c_str());
+            ImageDrawText(&img, buf, 6, ph - 16, 10, Color{220, 220, 225, 255});
+            ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float(i * pw), float(row * ph), float(pw), float(ph)}, WHITE);
+            UnloadImage(img);
+            UnloadRenderTexture(prt);
+        }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio;
+    std::string shots, studio, population;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -678,6 +732,7 @@ int main(int argc, char** argv) {
         std::string a = argv[i];
         if (a == "--shots" && i + 1 < argc) shots = argv[++i];
         else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
+        else if (a == "--population" && i + 1 < argc) population = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.creaseAngle = 180.0f;
         else if (a == "--flat") gGen.faceted = true;
@@ -710,6 +765,12 @@ int main(int argc, char** argv) {
     }
 
     s.faceted = faceted;
+    if (!population.empty()) {
+        int rc = runPopulation(s, population, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
     if (!studio.empty()) {
         int rc = runStudio(s, studio, seed);
         for (auto& a : s.actors) unload(a);

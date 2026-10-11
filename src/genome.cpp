@@ -187,7 +187,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         b.muscle = saturate(0.22f + 0.13f * mus);
         b.thigh = 0.34f + 0.022f * fat + 0.008f * mus;
         b.calf = 0.205f + 0.009f * fat + 0.006f * mus;
-        b.arm = 0.125f + 0.007f * fat + 0.005f * mus;
+        b.arm = std::max(0.115f, 0.127f + 0.007f * fat + 0.005f * mus);  // never noodle arms
         b.handSize = 0.94f + 0.02f * frame;
         b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
     } else {
@@ -201,7 +201,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         b.muscle = saturate(0.50f + 0.17f * mus);
         b.thigh = 0.34f + 0.014f * fat + 0.016f * mus;
         b.calf = 0.235f + 0.008f * fat + 0.010f * mus;
-        b.arm = 0.150f + 0.007f * fat + 0.012f * mus;
+        b.arm = std::max(0.138f, 0.152f + 0.007f * fat + 0.012f * mus);
         b.handSize = 1.0f + 0.03f * frame;
         b.posture = 0.45f + 0.05f * z(rb);
     }
@@ -231,7 +231,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         case Archetype::Bombshell:
             b.bust = rb.range(0.95f, 1.2f); b.butt = rb.range(0.9f, 1.15f);
             b.waistWidth = rb.range(0.39f, 0.43f); b.hipWidth = rb.range(0.74f, 0.80f);
-            b.headsTall = rb.range(6.2f, 6.5f); b.thigh = rb.range(0.32f, 0.35f);
+            b.headsTall = rb.range(6.2f, 6.5f); b.thigh = rb.range(0.36f, 0.39f); b.height = rb.range(1.64f, 1.76f);
             break;
         case Archetype::Dorito:
             b.shoulderWidth = rb.range(0.98f, 1.08f); b.chestWidth = rb.range(0.74f, 0.80f);
