@@ -30,46 +30,47 @@ constexpr ArchetypeSpec kSpecs[] = {
     //            shoulder      chest        waist          hip            depth
     //            bust          butt         belly          muscle
     //            thigh         calf         arm            hand           foot
-    {"heroine",   {1.58f,1.74f},{6.2f,6.8f},{0.48f,0.51f},{0.24f,0.32f},{0.15f,0.17f},
-                  {0.80f,0.90f},{0.62f,0.68f},{0.44f,0.49f},{0.74f,0.82f},{0.38f,0.42f},
+    // hair weights: short bob long ponytail braid hime sideswept buzz
+    {"heroine",   {1.60f,1.75f},{6.6f,7.2f},{0.49f,0.52f},{0.28f,0.36f},{0.14f,0.155f},
+                  {0.80f,0.88f},{0.60f,0.66f},{0.52f,0.57f},{0.74f,0.82f},{0.38f,0.42f},
                   {0.40f,0.75f},{0.45f,0.75f},{0,0},{0.15f,0.35f},
-                  {0.33f,0.37f},{0.19f,0.21f},{0.135f,0.150f},{1.10f,1.20f},{1.05f,1.15f},
-                  1.0f, 0.15f, {1,4,4,4,3,3,0,0}},
-    {"bombshell", {1.66f,1.84f},{6.5f,7.1f},{0.49f,0.52f},{0.24f,0.32f},{0.15f,0.17f},
-                  {0.84f,0.94f},{0.66f,0.72f},{0.42f,0.47f},{0.88f,0.98f},{0.40f,0.44f},
-                  {0.85f,1.10f},{0.85f,1.10f},{0,0},{0.20f,0.40f},
-                  {0.37f,0.42f},{0.20f,0.23f},{0.140f,0.155f},{1.10f,1.20f},{1.05f,1.15f},
-                  1.0f, 0.2f, {0,3,5,4,2,3,0,0}},
-    {"dorito",    {1.78f,1.95f},{6.8f,7.4f},{0.47f,0.50f},{0.20f,0.28f},{0.21f,0.25f},
-                  {1.15f,1.32f},{0.88f,1.00f},{0.56f,0.64f},{0.68f,0.76f},{0.48f,0.54f},
-                  {0,0},{0.25f,0.45f},{0,0},{0.65f,0.95f},
-                  {0.36f,0.40f},{0.22f,0.25f},{0.18f,0.21f},{1.20f,1.32f},{1.15f,1.25f},
-                  0.0f, 0.15f, {6,1,2,2,0,0,2,2}},
-    {"brute",     {1.95f,2.30f},{6.8f,7.6f},{0.40f,0.45f},{0.10f,0.20f},{0.28f,0.34f},
-                  {1.45f,1.80f},{1.15f,1.40f},{0.85f,1.05f},{0.82f,0.95f},{0.60f,0.70f},
-                  {0,0},{0.25f,0.45f},{0.3f,0.7f},{0.85f,1.00f},
-                  {0.44f,0.52f},{0.27f,0.32f},{0.24f,0.29f},{1.35f,1.55f},{1.25f,1.40f},
-                  0.0f, 0.5f, {2,0,1,1,0,0,4,4}},
-    {"slender",   {1.70f,1.88f},{6.8f,7.4f},{0.50f,0.53f},{0.28f,0.36f},{0.14f,0.155f},
-                  {0.80f,0.90f},{0.60f,0.68f},{0.44f,0.50f},{0.66f,0.76f},{0.36f,0.40f},
-                  {0.10f,0.45f},{0.30f,0.55f},{0,0},{0.05f,0.25f},
-                  {0.30f,0.33f},{0.17f,0.19f},{0.12f,0.135f},{1.05f,1.15f},{1.0f,1.1f},
-                  0.6f, 0.35f, {1,2,5,3,1,4,0,0}},
+                  {0.31f,0.35f},{0.18f,0.20f},{0.125f,0.140f},{1.00f,1.08f},{1.0f,1.08f},
+                  1.0f, 0.08f, {0.5f,3,4,4,3,1,4,0}},
+    {"bombshell", {1.66f,1.82f},{7.0f,7.6f},{0.50f,0.53f},{0.28f,0.36f},{0.14f,0.155f},
+                  {0.84f,0.92f},{0.64f,0.70f},{0.52f,0.57f},{0.84f,0.92f},{0.40f,0.44f},
+                  {0.85f,1.15f},{0.85f,1.10f},{0,0},{0.20f,0.40f},
+                  {0.35f,0.40f},{0.19f,0.22f},{0.130f,0.145f},{1.00f,1.08f},{1.0f,1.08f},
+                  1.0f, 0.10f, {0,2,5,3,2,1,5,0}},
+    {"dorito",    {1.78f,1.95f},{7.4f,8.0f},{0.48f,0.51f},{0.24f,0.30f},{0.19f,0.23f},
+                  {1.10f,1.25f},{0.86f,0.96f},{0.60f,0.68f},{0.68f,0.76f},{0.46f,0.52f},
+                  {0,0},{0.25f,0.45f},{0,0},{0.60f,0.90f},
+                  {0.34f,0.38f},{0.21f,0.24f},{0.165f,0.19f},{1.05f,1.15f},{1.05f,1.15f},
+                  0.0f, 0.08f, {6,1,1,2,0,0,2,2}},
+    {"brute",     {1.95f,2.25f},{7.4f,8.2f},{0.44f,0.48f},{0.12f,0.20f},{0.27f,0.33f},
+                  {1.40f,1.65f},{1.10f,1.30f},{0.76f,0.90f},{0.78f,0.90f},{0.58f,0.66f},
+                  {0,0},{0.30f,0.50f},{0.0f,0.25f},{0.85f,1.00f},
+                  {0.42f,0.48f},{0.26f,0.30f},{0.23f,0.27f},{1.15f,1.30f},{1.15f,1.25f},
+                  0.0f, 0.35f, {3,0,1,1,1,0,0,4}},
+    {"slender",   {1.70f,1.88f},{7.2f,7.8f},{0.50f,0.53f},{0.30f,0.38f},{0.13f,0.145f},
+                  {0.80f,0.90f},{0.60f,0.66f},{0.50f,0.56f},{0.70f,0.78f},{0.36f,0.40f},
+                  {0.15f,0.45f},{0.30f,0.55f},{0,0},{0.05f,0.25f},
+                  {0.29f,0.32f},{0.17f,0.18f},{0.115f,0.13f},{1.0f,1.05f},{1.0f,1.05f},
+                  0.6f, 0.35f, {0.5f,2,5,3,3,3,4,0}},
     {"chibi",     {0.95f,1.20f},{3.0f,3.7f},{0.33f,0.37f},{0.06f,0.10f},{0.11f,0.13f},
                   {0.56f,0.64f},{0.48f,0.54f},{0.44f,0.50f},{0.52f,0.58f},{0.30f,0.34f},
                   {0.0f,0.15f},{0.20f,0.35f},{0.0f,0.15f},{0.0f,0.1f},
                   {0.21f,0.24f},{0.13f,0.15f},{0.095f,0.11f},{1.0f,1.1f},{1.0f,1.1f},
-                  0.6f, 0.3f, {3,3,2,3,4,2,0,0}},
-    {"amazon",    {1.84f,2.02f},{6.9f,7.5f},{0.50f,0.53f},{0.22f,0.30f},{0.18f,0.20f},
-                  {0.98f,1.10f},{0.74f,0.82f},{0.48f,0.54f},{0.88f,0.98f},{0.42f,0.46f},
+                  0.6f, 0.3f, {2,3,2,3,2,2,2,0}},
+    {"amazon",    {1.82f,2.00f},{7.2f,7.8f},{0.50f,0.53f},{0.24f,0.32f},{0.17f,0.19f},
+                  {0.98f,1.08f},{0.74f,0.80f},{0.54f,0.60f},{0.88f,0.96f},{0.42f,0.46f},
                   {0.60f,0.95f},{0.70f,1.00f},{0,0},{0.55f,0.85f},
-                  {0.39f,0.44f},{0.22f,0.25f},{0.16f,0.18f},{1.15f,1.25f},{1.1f,1.2f},
-                  0.85f, 0.3f, {1,2,3,5,1,1,2,0}},
-    {"monster",   {1.90f,2.50f},{6.4f,7.8f},{0.38f,0.48f},{0.08f,0.22f},{0.24f,0.36f},
-                  {1.25f,1.95f},{0.95f,1.45f},{0.60f,1.05f},{0.70f,1.00f},{0.50f,0.72f},
-                  {0.0f,0.6f},{0.3f,0.8f},{0.0f,0.9f},{0.70f,1.00f},
-                  {0.38f,0.54f},{0.24f,0.34f},{0.20f,0.30f},{1.35f,1.70f},{1.25f,1.50f},
-                  0.2f, 1.0f, {3,0,2,1,0,0,4,4}},
+                  {0.38f,0.42f},{0.21f,0.24f},{0.15f,0.17f},{1.05f,1.12f},{1.05f,1.12f},
+                  0.85f, 0.12f, {1,2,3,5,4,0,2,1}},
+    {"monster",   {1.95f,2.40f},{7.0f,8.2f},{0.42f,0.48f},{0.10f,0.22f},{0.24f,0.34f},
+                  {1.30f,1.70f},{1.00f,1.30f},{0.70f,0.95f},{0.75f,0.95f},{0.52f,0.68f},
+                  {0.0f,0.6f},{0.3f,0.7f},{0.0f,0.5f},{0.70f,1.00f},
+                  {0.40f,0.50f},{0.24f,0.32f},{0.20f,0.27f},{1.15f,1.35f},{1.10f,1.30f},
+                  0.2f, 1.0f, {3,0,3,1,2,0,1,3}},
 };
 // clang-format on
 
@@ -86,23 +87,24 @@ Vec3 jitter(Rng& r, Vec3 c, float amount) {
 Vec3 pickSkin(Rng& r, bool fantasy) {
     static constexpr Vec3 human[] = {{1.00f, 0.90f, 0.84f}, {1.00f, 0.85f, 0.74f}, {0.96f, 0.78f, 0.64f},
                                      {0.86f, 0.64f, 0.48f}, {0.66f, 0.45f, 0.32f}, {0.45f, 0.30f, 0.22f}};
-    static constexpr Vec3 fantasySkins[] = {{0.55f, 0.72f, 0.45f}, {0.50f, 0.62f, 0.85f}, {0.80f, 0.36f, 0.34f},
-                                            {0.62f, 0.55f, 0.80f}, {0.62f, 0.64f, 0.70f}, {0.35f, 0.32f, 0.45f}};
-    if (fantasy) return jitter(r, fantasySkins[r.rangeInt(0, 5)], 0.04f);
+    // Muted fantasy skins: orc green, frost blue-grey, demon red, dusk violet, ash, dark elf.
+    static constexpr Vec3 fantasySkins[] = {{0.52f, 0.62f, 0.44f}, {0.62f, 0.68f, 0.76f}, {0.66f, 0.30f, 0.27f},
+                                            {0.58f, 0.52f, 0.66f}, {0.58f, 0.58f, 0.60f}, {0.36f, 0.33f, 0.42f}};
+    if (fantasy) return jitter(r, fantasySkins[r.weighted({2, 1, 1.5f, 0.6f, 1.5f, 1.5f})], 0.03f);
     int i = r.weighted({4, 4, 3, 2, 1.5f, 1});
     return jitter(r, human[i], 0.02f);
 }
 
 Vec3 pickHair(Rng& r) {
     // Anime hair: naturals plus vivid colours.
-    switch (r.weighted({2, 1.2f, 1, 1, 1, 1, 1, 1, 0.8f, 0.8f})) {
+    switch (r.weighted({3, 3, 2.2f, 1.6f, 0.35f, 0.3f, 2.2f, 0.25f, 0.15f, 0.5f})) {
         case 0: return hsv(r.range(0.70f, 0.75f), r.range(0.2f, 0.4f), r.range(0.12f, 0.22f));  // near black
         case 1: return hsv(r.range(0.06f, 0.09f), r.range(0.5f, 0.7f), r.range(0.35f, 0.55f));  // brown
         case 2: return hsv(r.range(0.11f, 0.14f), r.range(0.45f, 0.65f), r.range(0.85f, 0.98f));  // blonde
         case 3: return hsv(r.range(0.0f, 0.02f), r.range(0.7f, 0.85f), r.range(0.65f, 0.85f));  // red
         case 4: return hsv(r.range(0.92f, 0.97f), r.range(0.35f, 0.55f), r.range(0.9f, 1.0f));  // pink
         case 5: return hsv(r.range(0.55f, 0.62f), r.range(0.5f, 0.75f), r.range(0.6f, 0.9f));  // blue
-        case 6: return hsv(r.range(0.6f, 0.65f), r.range(0.03f, 0.1f), r.range(0.82f, 0.95f));  // silver
+        case 6: return hsv(r.range(0.08f, 0.62f), r.range(0.02f, 0.08f), r.range(0.80f, 0.95f));  // silver / white
         case 7: return hsv(r.range(0.74f, 0.80f), r.range(0.4f, 0.6f), r.range(0.55f, 0.8f));  // purple
         case 8: return hsv(r.range(0.38f, 0.47f), r.range(0.45f, 0.65f), r.range(0.55f, 0.8f));  // green/teal
         default: return hsv(r.range(0.07f, 0.10f), r.range(0.75f, 0.9f), r.range(0.9f, 1.0f));  // orange
@@ -120,21 +122,21 @@ void makePalette(Rng& r, Genome& g, bool fantasy) {
     p.iris2 = hsv(ih + r.range(-0.06f, 0.06f), r.range(0.3f, 0.6f), 1.0f);
 
     // Cloth: colour-scheme based palettes so outfits always look designed.
-    int scheme = r.weighted({3, 3, 2, 1.2f});
+    int scheme = r.weighted({3, 4, 1.5f, 0.3f});
     float h = r.uniform();
-    float s = r.range(0.35f, 0.8f);
+    float s = r.range(0.22f, 0.55f);
     if (scheme == 0) {  // complementary
         p.cloth[0] = hsv(h, s, r.range(0.3f, 0.6f));
         p.cloth[1] = hsv(h, s * 0.15f, r.range(0.85f, 0.97f));
-        p.cloth[2] = hsv(h + 0.5f, r.range(0.6f, 0.9f), r.range(0.7f, 0.95f));
+        p.cloth[2] = hsv(h + 0.5f, r.range(0.35f, 0.6f), r.range(0.55f, 0.8f));
     } else if (scheme == 1) {  // analogous
         p.cloth[0] = hsv(h, s, r.range(0.25f, 0.5f));
         p.cloth[1] = hsv(h + 0.08f, s * 0.8f, r.range(0.6f, 0.85f));
-        p.cloth[2] = hsv(h - 0.1f, r.range(0.6f, 0.9f), r.range(0.8f, 0.97f));
+        p.cloth[2] = hsv(h - 0.1f, r.range(0.35f, 0.6f), r.range(0.6f, 0.85f));
     } else if (scheme == 2) {  // triad
         p.cloth[0] = hsv(h, s, r.range(0.35f, 0.65f));
         p.cloth[1] = hsv(h + 0.333f, s * 0.6f, r.range(0.7f, 0.9f));
-        p.cloth[2] = hsv(h + 0.666f, r.range(0.6f, 0.9f), r.range(0.75f, 0.95f));
+        p.cloth[2] = hsv(h + 0.666f, r.range(0.35f, 0.6f), r.range(0.55f, 0.8f));
     } else {  // chess: black & white with one accent (Hyper Chess homage)
         bool dark = r.chance(0.5f);
         p.cloth[0] = dark ? Vec3{0.12f, 0.12f, 0.14f} : Vec3{0.94f, 0.94f, 0.96f};
@@ -146,6 +148,10 @@ void makePalette(Rng& r, Genome& g, bool fantasy) {
     p.metal = r.chance(0.5f) ? hsv(r.range(0.1f, 0.13f), r.range(0.45f, 0.6f), r.range(0.8f, 0.95f))  // gold
                              : hsv(r.range(0.55f, 0.65f), r.range(0.05f, 0.15f), r.range(0.6f, 0.85f));  // steel
     p.horn = fantasy && r.chance(0.5f) ? hsv(r.uniform(), 0.4f, 0.25f) : Vec3{0.92f, 0.88f, 0.78f};
+    // Lips: natural (skin-derived) or a painted colour.
+    p.lips = r.chance(0.6f) ? lerp(p.skin * Vec3{0.92f, 0.62f, 0.62f}, Vec3{0.7f, 0.3f, 0.32f}, 0.35f)
+                            : hsv(r.range(-0.04f, 0.02f), r.range(0.45f, 0.7f), r.range(0.35f, 0.65f));
+    p.eyeShadow = r.chance(0.5f) ? lerp(p.skin * 0.5f, Vec3{0.25f, 0.15f, 0.2f}, 0.5f) : hsv(r.uniform(), 0.35f, 0.4f);
 }
 
 template <class E>
@@ -158,7 +164,7 @@ E pickEnum(Rng& r, std::initializer_list<float> w) {
 std::string_view toString(Archetype a) { return a < Archetype::Count ? kSpecs[size_t(a)].name : "?"; }
 
 std::string_view toString(HairStyle a) {
-    static constexpr std::string_view n[] = {"spiky", "bob", "long", "ponytail", "twintails", "hime", "mohawk", "buzz"};
+    static constexpr std::string_view n[] = {"short", "bob", "long", "ponytail", "braid", "hime", "sideswept", "buzz"};
     return a < HairStyle::Count ? n[size_t(a)] : "?";
 }
 
@@ -168,12 +174,24 @@ std::optional<Archetype> archetypeFromString(std::string_view s) {
     return std::nullopt;
 }
 
+void stripToBase(Genome& g) {
+    Outfit& o = g.outfit;
+    o = Outfit{};
+    o.top = g.femininity > 0.5f || g.body.bust > 0.2f ? TopStyle::Bandeau : TopStyle::None;
+    o.bottom = BottomStyle::Briefs;
+    o.gloves = GloveStyle::None;
+    o.boots = BootStyle::Shoe;
+    o.belt = false;
+    o.pattern = Pattern::Plain;
+    g.palette.cloth[0] = g.palette.cloth[1] = Vec3{0.22f, 0.22f, 0.25f};
+}
+
 Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     Genome g;
     g.seed = seed;
     Rng root(seed);
     Rng ra = root.fork(1);
-    g.archetype = opt.archetype ? *opt.archetype : Archetype(ra.weighted({4, 3, 3, 1.5f, 2, 1, 2, 1}));
+    g.archetype = opt.archetype ? *opt.archetype : Archetype(ra.weighted({4, 3, 3, 1.5f, 2, 0, 2, 1}));  // chibi only on request
     const ArchetypeSpec& sp = kSpecs[size_t(g.archetype)];
 
     // ---- body ----
@@ -187,14 +205,14 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.neckThick = pick(rb, sp.neckThick);
     b.shoulderWidth = exaggerate(pick(rb, sp.shoulder), 0.95f, e);
     b.chestWidth = exaggerate(pick(rb, sp.chest), 0.72f, e);
-    b.waistWidth = std::max(0.30f, exaggerate(pick(rb, sp.waist), 0.52f, e));
-    b.hipWidth = exaggerate(pick(rb, sp.hip), 0.78f, e);
+    b.waistWidth = std::max(0.34f, exaggerate(pick(rb, sp.waist), 0.58f, e));
+    b.hipWidth = exaggerate(pick(rb, sp.hip), 0.80f, e);
     b.chestDepth = pick(rb, sp.depth);
     b.bust = std::max(0.0f, pick(rb, sp.bust) * (1.0f + 0.6f * e));
     b.butt = std::max(0.0f, pick(rb, sp.butt) * (1.0f + 0.5f * e));
     b.belly = pick(rb, sp.belly);
     b.muscle = pick(rb, sp.muscle);
-    b.thigh = exaggerate(pick(rb, sp.thigh), 0.37f, e * 0.7f);
+    b.thigh = exaggerate(pick(rb, sp.thigh), 0.36f, e * 0.7f);
     b.calf = exaggerate(pick(rb, sp.calf), 0.21f, e * 0.7f);
     b.arm = exaggerate(pick(rb, sp.arm), 0.15f, e * 0.8f);
     b.handSize = exaggerate(pick(rb, sp.hand), 1.0f, e * 0.6f);
@@ -212,7 +230,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.tailLength = rx.range(0.7f, 1.3f);
     b.horns = (monster ? rx.chance(0.75f) : (fantasy && rx.chance(0.3f))) ? 2 : 0;
     b.hornSize = rx.range(0.7f, 1.6f) * (monster ? 1.3f : 1.0f);
-    b.ears = fantasy ? pickEnum<EarStyle>(rx, {1, 3, 2}) : EarStyle::Human;
+    b.ears = fantasy ? pickEnum<EarStyle>(rx, {1.5f, 3, sp.femininity > 0.5f ? 0.4f : 0.0f}) : EarStyle::Human;
 
     // ---- face ----
     Rng rf = root.fork(4);
@@ -226,9 +244,20 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.lashWeight = saturate(lerp(0.25f, 0.95f, fem) + rf.range(-0.1f, 0.1f));
     f.browThick = saturate(lerp(0.85f, 0.4f, fem) + rf.range(-0.1f, 0.1f));
     f.mouthWidth = rf.range(0.85f, 1.15f) * (fem < 0.5f ? 1.15f : 1.0f);
-    f.pupil = fantasy ? pickEnum<PupilStyle>(rf, {1, 3, 1, 0.6f}) : (rf.chance(0.06f) ? PupilStyle::Star : PupilStyle::Round);
-    f.fang = rf.chance(fantasy ? 0.6f : 0.12f);
-    f.blush = rf.chance(fem * 0.5f);
+    f.pupil = fantasy ? pickEnum<PupilStyle>(rf, {2, 3, 0.5f, 0}) : PupilStyle::Round;
+    f.fang = rf.chance(fantasy ? 0.35f : 0.04f);
+    f.eyeShape = rf.weighted({3, fem > 0.5f ? 1.5f : 0.4f, 2, fem > 0.5f ? 2.0f : 1.0f, 1.5f});
+    f.maturity = saturate(rf.range(0.45f, 0.95f) - (g.archetype == Archetype::Chibi ? 0.6f : 0.0f));
+    f.lipFullness = saturate(lerp(0.15f, 0.7f, fem) + rf.range(-0.15f, 0.25f));
+    f.noseSize = rf.range(0.85f, 1.2f) * (fem < 0.5f ? 1.15f : 1.0f);
+    f.browShape = rf.rangeInt(0, 2);
+    f.eyeShadow = fem > 0.5f ? rf.range(0.1f, 0.8f) : rf.range(0.0f, 0.15f);
+    f.freckles = rf.chance(0.12f);
+    f.scar = fem < 0.5f && rf.chance(0.25f);
+    f.jaw = saturate(rf.range(0.0f, 0.6f) + (1 - fem) * 0.5f) * 2 - 1;
+    f.chin = rf.range(-0.8f, 0.8f);
+    f.cheek = rf.range(-0.8f, 0.8f);
+    f.blush = rf.chance(fem * 0.15f);
 
     // ---- hair ----
     Rng rh = root.fork(5);

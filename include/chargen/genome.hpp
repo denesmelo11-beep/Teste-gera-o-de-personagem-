@@ -11,7 +11,7 @@
 namespace cg {
 
 enum class Archetype : uint8_t { Heroine, Bombshell, Dorito, Brute, Slender, Chibi, Amazon, Monster, Count };
-enum class HairStyle : uint8_t { Spiky, Bob, Long, Ponytail, TwinTails, Hime, Mohawk, Buzz, Count };
+enum class HairStyle : uint8_t { Short, Bob, Long, Ponytail, Braid, Hime, SideSwept, Buzz, Count };
 enum class TopStyle : uint8_t { None, Tank, Tee, LongSleeve, Crop, Bandeau, Armor, Count };
 enum class BottomStyle : uint8_t { Pants, Shorts, Briefs, Skirt, Loincloth, Count };
 enum class GloveStyle : uint8_t { None, Short, Gauntlet, Long, Count };
@@ -70,6 +70,19 @@ struct FaceStyle {
     PupilStyle pupil = PupilStyle::Round;
     bool fang = false;
     bool blush = false;
+    // Shape & maturity (serious fantasy faces vary a lot more than eye colour).
+    int eyeShape = 0;        // 0 almond, 1 round, 2 hooded/narrow, 3 upturned (cat), 4 downturned (soft)
+    float maturity = 0.6f;   // 0 youthful anime .. 1 mature semi-realistic
+    float lipFullness = 0.5f;
+    float noseSize = 1.0f;
+    int browShape = 0;       // 0 straight, 1 arched, 2 angled
+    float eyeShadow = 0.3f;  // makeup intensity
+    bool freckles = false;
+    bool scar = false;
+    // Head structure (multipliers around 1 / offsets around 0).
+    float jaw = 0.0f;        // -1 narrow V jaw .. +1 square heavy jaw
+    float chin = 0.0f;       // -1 soft/short .. +1 long/prominent
+    float cheek = 0.0f;      // cheekbone width
 };
 
 struct Palette {
@@ -82,6 +95,8 @@ struct Palette {
     Vec3 leather{0.3f, 0.2f, 0.15f};
     Vec3 metal{0.75f, 0.72f, 0.65f};
     Vec3 horn{0.9f, 0.85f, 0.75f};
+    Vec3 lips{0.78f, 0.42f, 0.42f};
+    Vec3 eyeShadow{0.45f, 0.3f, 0.35f};
 };
 
 struct Outfit {
@@ -122,5 +137,7 @@ struct GenomeOptions {
 };
 
 Genome randomGenome(uint64_t seed, const GenomeOptions& opt = {});
+// Strips the outfit down to underwear: for judging the body itself.
+void stripToBase(Genome& g);
 
 }  // namespace cg

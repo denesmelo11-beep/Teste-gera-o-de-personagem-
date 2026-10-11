@@ -33,8 +33,8 @@ void Builder::buildHair() {
     const RigInfo& rig = ch.rig;
     Rng r = Rng(g.seed).fork(55);
     const HairStyle style = g.hair;
-    const bool shellStyle = style == HairStyle::Bob || style == HairStyle::Long || style == HairStyle::Hime;
-    const float thick = (style == HairStyle::Buzz ? 0.022f : 0.075f * vol) * h;
+    const bool shellStyle = style == HairStyle::Bob || style == HairStyle::Long || style == HairStyle::Hime || style == HairStyle::SideSwept;
+    const float thick = (style == HairStyle::Buzz ? 0.022f : 0.062f * vol) * h;
     const Vec3 hc = headCenter();
     const float deg = kPi / 180.0f;
     const int head = rig.head, chest = rig.chest;
@@ -44,7 +44,7 @@ void Builder::buildHair() {
     auto hairWeight = [=](Vec3 p) { return blend(head, chest, saturate((neckY - p.y) / (0.8f * h))); };
 
     // ---- tight cap for styles without a full shell ----
-    if (!shellStyle && style != HairStyle::Mohawk) {
+    if (!shellStyle) {
         Curve line{{0.0f, style == HairStyle::Buzz ? 0.84f : 0.80f}, {0.8f, 0.64f}, {1.57f, 0.47f},
                    {2.3f, 0.33f}, {kPi, style == HairStyle::Buzz ? 0.30f : 0.22f}};
         const int cols = lod.capCols, rows = lod.capRows;
@@ -164,18 +164,42 @@ void Builder::buildHair() {
             locks.push_back(L);
         }
     };
-    auto spikes = [&](int n, float length) {
-        for (int i = 0; i < n; ++i) {
-            float th = kTau * (i + r.range(-0.2f, 0.2f)) / n + kPi / 2 + kPi / n;
-            float s = r.range(0.74f, 0.92f);
-            Vec3 out = normalize(headSurface(th, s, 0) - hc);
-            Vec3 dir = normalize(out + Vec3{0, 0.5f, 0} + Vec3{0, 0, -0.45f});
-            float l = length * r.range(0.8f, 1.15f) * (std::sin(th) > 0.5f ? 0.7f : 1.0f);
-            LockSpec L{th, s, dir, l, 0.30f * h * vol, 0.12f * h, 0.15f, 0.85f, -0.1f};
-            L.tipWidth = 0.12f;
-            L.sides = 4;
+    // Fringe parted in the middle: locks sweep from the part out to the temples.
+    auto curtainBangs = [&](float length) {
+        for (float sd : {1.0f, -1.0f})
+            for (int i = 0; i < 2; ++i) {
+                float th = (90.0f - sd * (8.0f + 22.0f * i)) * deg;
+                Vec3 dir = normalize(fwd * 0.55f + Vec3{sd * 0.75f, 0, 0} + down * 0.35f);
+                LockSpec L{th, 0.97f, dir, length * (1.0f + 0.25f * i), 0.30f * h * vol, 0.08f * h, 0.9f, 0.5f, 0.2f};
+                L.tipWidth = 0.4f;
+                locks.push_back(L);
+            }
+    };
+    // Side part: every lock sweeps across the forehead to the other side.
+    auto sweptBangs = [&](float sd, float length) {
+        for (int i = 0; i < 4; ++i) {
+            float th = (90.0f + sd * (32.0f - 18.0f * i)) * deg;
+            Vec3 dir = normalize(fwd * 0.5f + Vec3{-sd * 0.8f, 0, 0} + down * 0.35f);
+            LockSpec L{th, 0.975f, dir, length * (0.8f + 0.12f * i), 0.32f * h * vol, 0.085f * h, 0.85f, 0.55f, 0.2f};
+            L.tipWidth = 0.35f;
             locks.push_back(L);
         }
+    };
+    // Short masculine cut: volume swept back over the crown, a soft fringe.
+    auto sweptBack = [&]() {
+        for (int i = 0; i < 5; ++i) {
+            float f = float(i) / 4;
+            float th = lerp(55.0f, 125.0f, f) * deg;
+            Vec3 dir = normalize(Vec3{0, 0.25f, -1} + thetaDir(th) * 0.3f);
+            LockSpec L{th, 0.90f, dir, 0.42f * h * r.range(0.9f, 1.1f), 0.30f * h * vol, 0.10f * h * vol, 0.4f, 0.6f, 0.45f};
+            L.tipWidth = 0.45f;
+            locks.push_back(L);
+        }
+        float sd = r.chance(0.5f) ? 1.0f : -1.0f;
+        LockSpec F{(90.0f + sd * 12.0f) * deg, 0.95f, normalize(fwd * 0.6f + down * 0.5f + Vec3{-sd * 0.3f, 0, 0}), 0.30f * h,
+                   0.26f * h * vol, 0.08f * h, 0.9f, 0.5f, 0.25f};
+        F.tipWidth = 0.35f;
+        locks.push_back(F);
     };
     auto tail = [&](float th, float s, Vec3 dir, float length, int chain) {
         LockSpec L{th, s, dir, length, 0.30f * h * vol, 0.30f * h * vol, 1.0f, 0.45f, 0.0f};
@@ -185,58 +209,59 @@ void Builder::buildHair() {
         L.chain = chain;
         locks.push_back(L);
     };
+    const int fringe = r.rangeInt(0, 2);  // 0 curtain, 1 swept, 2 straight
+    const float partSide = r.chance(0.5f) ? 1.0f : -1.0f;
+    auto anyFringe = [&](float length) {
+        if (fringe == 0) curtainBangs(length);
+        else if (fringe == 1) sweptBangs(partSide, length);
+        else bangs(4, length, false);
+    };
 
     switch (style) {
-        case HairStyle::Spiky:
-            spikes(8, 0.42f * h * vol);
-            bangs(3, 0.40f * h, false);
+        case HairStyle::Short:
+            sweptBack();
             break;
         case HairStyle::Bob:
-            bangs(4, 0.46f * h, false);
+            anyFringe(0.46f * h);
             sideLocks(0.62f * h, 0.24f);
             break;
         case HairStyle::Long:
-            bangs(4, 0.46f * h, false);
+            anyFringe(0.48f * h);
             sideLocks(1.35f * h * len, 0.26f);
             break;
+        case HairStyle::SideSwept: {
+            sweptBangs(partSide, 0.55f * h);
+            LockSpec L{(90.0f - partSide * 62.0f) * deg, 0.86f, normalize(down + fwd * 0.35f), 1.5f * h * len, 0.30f * h * vol, 0.09f * h, 1.0f, 0.4f, 0.2f};
+            L.tipWidth = 0.4f;
+            L.faceFront = true;
+            locks.push_back(L);
+            break;
+        }
         case HairStyle::Ponytail:
-            bangs(4, 0.44f * h, false);
+            if (fringe == 2) sweptBack();
+            else curtainBangs(0.42f * h);
             sideLocks(0.62f * h, 0.20f);
             ch.rig.hairChains.push_back({});
             tail(270 * deg, 0.86f, normalize(Vec3{0, 0.25f, -1}), 1.9f * h * len, 0);
             break;
-        case HairStyle::TwinTails:
-            bangs(4, 0.44f * h, false);
+        case HairStyle::Braid: {
+            anyFringe(0.44f * h);
             ch.rig.hairChains.push_back({});
-            ch.rig.hairChains.push_back({});
-            tail(325 * deg, 0.86f, normalize(Vec3{0.8f, 0.1f, -0.5f}), 1.7f * h * len, 0);
-            tail(215 * deg, 0.86f, normalize(Vec3{-0.8f, 0.1f, -0.5f}), 1.7f * h * len, 1);
+            tail(270 * deg, 0.50f, normalize(Vec3{0, -0.3f, -1}), 2.4f * h * len, 0);
+            locks.back().width = locks.back().thick = 0.24f * h * vol;
+            locks.back().tipWidth = 0.45f;
             break;
+        }
         case HairStyle::Hime:
             bangs(5, 0.44f * h, true);
             sideLocks(0.80f * h, 0.24f);
             break;
-        case HairStyle::Mohawk: {
-            const int n = 6;
-            for (int i = 0; i < n; ++i) {
-                float f = float(i) / (n - 1);
-                float th = f < 0.4f ? 90 * deg : 270 * deg;
-                float s = f < 0.4f ? lerp(0.86f, 0.99f, f / 0.4f) : lerp(0.99f, 0.62f, (f - 0.4f) / 0.6f);
-                Vec3 out = normalize(headSurface(th, s, 0) - hc);
-                float l = 0.38f * h * vol * (0.7f + 0.45f * bump((f - 0.4f) / 0.7f));
-                LockSpec L{th, s, normalize(out + Vec3{0, 0.1f, -0.35f}), l, 0.32f * h, 0.12f * h, 0.1f, 0.9f, -0.1f};
-                L.tipWidth = 0.15f;
-                L.sides = 4;
-                locks.push_back(L);
-            }
-            break;
-        }
         case HairStyle::Buzz:
         default: break;
     }
 
     // ---- grow ----
-    const int steps = lod.lockSteps;
+    const int steps = style == HairStyle::Braid ? lod.lockSteps * 2 : lod.lockSteps;
     std::vector<std::vector<Vec3>> grown(locks.size());
     for (size_t li = 0; li < locks.size(); ++li) {
         const LockSpec& L = locks[li];
@@ -285,7 +310,8 @@ void Builder::buildHair() {
             Vec3 v = normalize(out - tan * dot(out, tan), {0, 0, 1});
             Vec3 u = cross(tan, v);
             float taper = lerp(1.0f, L.tipWidth, std::pow(t, 1.3f));
-            if (L.tube) taper *= 1.0f + 0.25f * std::sin(kPi * std::min(1.0f, t * 1.8f)) - (k == 1 ? 0.0f : 0.0f);
+            if (L.tube && style != HairStyle::Braid) taper *= 1.0f + 0.25f * std::sin(kPi * std::min(1.0f, t * 1.8f));
+            if (L.tube && style == HairStyle::Braid && k > 1) taper *= (k % 2) ? 1.12f : 0.82f;  // braid knots
             float w = L.width * 0.5f * taper, th = L.thick * 0.5f * (L.tube ? taper : (0.7f + 0.3f * taper));
             SuperRing sr = L.tube ? SuperRing{w, 0, th, th, 2, 2} : SuperRing{w, 0, th, th * 0.5f, 3.0f, 3.0f};
             if (L.tube && k == 1) {  // hair tie
@@ -322,13 +348,13 @@ void Builder::buildHair() {
 
     // ---- beard (masculine low-poly heroes) ----
     Rng rb = Rng(g.seed).fork(56);
-    if (g.femininity < 0.3f && rb.chance(g.archetype == Archetype::Brute ? 0.6f : 0.3f)) {
-        float bl = rb.range(0.15f, 0.55f) * h;  // length below the chin
+    if (g.femininity < 0.3f && rb.chance(g.archetype == Archetype::Brute ? 0.35f : 0.15f)) {
+        float bl = rb.range(0.04f, 0.22f) * h;  // length below the chin
         Part& p = newPart(true);
         Mat bm{g.palette.hair * 0.92f, MaterialClass::Hair};
         // A chunky wedge hugging the jaw: rings from the sideburns down to the tip.
         Loft L;
-        const float ss[] = {0.40f, 0.28f, 0.15f, 0.04f};
+        const float ss[] = {0.40f, 0.28f, 0.16f, 0.06f, -0.01f};
         const int N = 10;
         for (float s : ss) {
             SuperRing hr = headRing(s);
@@ -339,8 +365,8 @@ void Builder::buildHair() {
                 float a = kPi * float(outer ? j : N - j) / float(N / 2);
                 Vec2 q = hr.point(std::clamp(a, 0.05f, kPi - 0.05f));
                 // Keep the mouth free: the front of the upper rings dives into the face.
-                float mouthGap = s > 0.12f ? bump((a - kPi / 2) / 0.75f) : 0.0f;
-                float k = outer ? 1.12f - 0.2f * mouthGap : 0.85f;
+                float mouthGap = s > 0.09f ? bump((a - kPi / 2) / 0.85f) : 0.0f;
+                float k = outer ? 1.10f - 0.32f * mouthGap : 0.85f;
                 ring[size_t(j)] = m.headOrigin + Vec3{q.x * k, s * h, hr.zc + (q.y - hr.zc) * k};
             }
             L.rings.push_back(ring);
@@ -349,7 +375,7 @@ void Builder::buildHair() {
         // Rings go downward: reverse for outward winding.
         for (auto& ring : L.rings) std::reverse(ring.begin() + 1, ring.end());
         L.poleEnd = true;
-        L.endPole = m.headOrigin + Vec3{0, -bl, hZc_(0) * h + 0.02f * h};
+        L.endPole = m.headOrigin + Vec3{0, -bl, hZc_(0) * h - 0.04f * h};
         L.tEnd = 1.2f;
         emitLoft(p, L, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return bm; });
     }

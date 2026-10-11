@@ -62,7 +62,6 @@ private:
     void computeMarks();
     void buildSkeleton();
     void buildTorso();
-    void buildBust();
     void buildNeck();
     void buildHead();
     void buildFaceDecals();
@@ -85,6 +84,10 @@ private:
     Mat topPaint(float t, float theta) const;
     Mat paintTorsoAt(Vec3 p) const;
     float gluteDepth(float t) const;
+    float warpTheta(float phi) const;
+    float bustField(float t, float th) const;
+    Vec3 torsoPoint(float t, float th) const;  // sculpted torso surface
+    Vec3 insideTorso(Vec3 p, float k) const;   // clamp a point inside the torso (k = fraction of the surface radius)
     Mat clothAt(Vec3 base, float t, float theta) const;  // applies pattern
 
     uint16_t headPartId_ = 0, bodyGroup_ = 0, armGroup_ = 0;

@@ -154,8 +154,18 @@ void emitLoft(Part& part, const Loft& loft, const WeightFn& wf, const PaintFn& p
             uint32_t a = idx(i, j), b = idx(i + 1, j), c = idx(i + 1, j + 1), d = idx(i, j + 1);
             Mat m = part.paintAt ? part.paintAt((part.pos[a] + part.pos[b] + part.pos[c] + part.pos[d]) * 0.25f)
                                  : pf(tm, midTheta(j));
-            part.tris.push_back({a, b, c, m});
-            part.tris.push_back({a, c, d, m});
+            // Split along the diagonal that keeps the two triangles most coplanar:
+            // fewer sliver facets on curved, low-poly surfaces.
+            const Vec3 &A = part.pos[a], &B = part.pos[b], &C = part.pos[c], &D = part.pos[d];
+            float k1 = dot(normalize(cross(B - A, C - A), {0, 0, 0}), normalize(cross(C - A, D - A), {0, 0, 0}));
+            float k2 = dot(normalize(cross(B - A, D - A), {0, 0, 0}), normalize(cross(C - B, D - B), {0, 0, 0}));
+            if (k2 > k1 + 1e-3f) {
+                part.tris.push_back({a, b, d, m});
+                part.tris.push_back({b, c, d, m});
+            } else {
+                part.tris.push_back({a, b, c, m});
+                part.tris.push_back({a, c, d, m});
+            }
         }
     }
     if (loft.poleStart) {
@@ -215,7 +225,7 @@ void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted) {
         Submesh sm{kind, uint32_t(mesh.indices.size()), 0};
         for (Part& part : parts) {
             if (part.kind != kind || part.tris.empty()) continue;
-            const bool flat = faceted || part.flat;
+            const bool flat = (faceted && !part.smoothAlways) || part.flat;
             // Angle-weighted smooth normals per logical vertex.
             std::vector<Vec3> nrm(part.pos.size(), Vec3{});
             std::vector<Vec3> faceN(part.tris.size());

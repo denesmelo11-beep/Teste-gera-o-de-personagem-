@@ -66,8 +66,10 @@ void usage() {
         "  faces   --seed N [--archetype A] [--out faces.png]      (folha de expressoes)\n"
         "  anim    --seed N --clip idle|walk|run|attack [--frames 8] [--yaw 0.9] [--out anim.png]\n"
         "  sheet   --seed N [--archetype A] [--out sheet.png]      (turnaround: frente, 3/4, perfil, costas)\n"
+        "  portraits --seed N --count K [--out portraits.png]      (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
+        "--base: so roupa intima (avaliar o corpo)\n"
         "estilo: padrao low-poly facetado; --toon = cel shading com contorno; --smooth = normais suaves\n"
         "arquetipos: heroine bombshell dorito brute slender chibi amazon monster");
 }
@@ -81,7 +83,11 @@ RenderSettings style(const Args& a) {
     return rs;
 }
 
-Character make(const Args& a, uint64_t seed) { return generateCharacter(randomGenome(seed, genomeOpts(a)), genOpts(a)); }
+Character make(const Args& a, uint64_t seed) {
+    Genome g = randomGenome(seed, genomeOpts(a));
+    if (a.flag("base")) stripToBase(g);
+    return generateCharacter(g, genOpts(a));
+}
 
 int cmdLineup(const Args& a) {
     uint64_t seed = uint64_t(a.num("seed", 1));
@@ -193,6 +199,33 @@ int cmdSheet(const Args& a) {
     return writePng(out, sheet) ? (std::printf("%s\n", out.c_str()), 0) : 1;
 }
 
+// Portrait grid: one head close-up per seed (face / hair variety).
+int cmdPortraits(const Args& a) {
+    uint64_t seed = uint64_t(a.num("seed", 1));
+    int count = int(a.num("count", 8)), cols = std::min(count, 4), cell = 256;
+    int rows = (count + cols - 1) / cols;
+    Image sheet(cell * cols, cell * rows);
+    std::vector<Mat4> global, skin;
+    std::vector<Vec3> pos, nrm;
+    for (int i = 0; i < count; ++i) {
+        Character c = make(a, seed + uint64_t(i));
+        poseMatrices(c.skeleton, restPose(c.skeleton), global, skin);
+        skinMesh(c.mesh, skin, pos, nrm);
+        Vec3 head = global[size_t(c.rig.head)].point({0, 0, 0});
+        float hh = c.height / c.genome.body.headsTall;
+        Vec3 target = head + Vec3{0, 0.30f * hh, 0.1f * hh};
+        ToonRenderer r(cell, cell, 2, style(a));
+        float yaw = 0.35f;
+        r.setCamera(target + Vec3{std::sin(yaw), 0.06f, std::cos(yaw)} * (hh * 4.6f), target, 0.45f);
+        r.clearSky({0.30f, 0.29f, 0.31f}, {0.20f, 0.19f, 0.21f});
+        r.drawCharacter(c, pos, nrm, Mat4::identity(), FaceState{}, 10);
+        r.drawText(std::string(toString(c.genome.archetype)) + " #" + std::to_string(c.genome.seed), 6, cell - 18, 1, {0.85f, 0.85f, 0.85f});
+        sheet.blit(r.finish(), (i % cols) * cell, (i / cols) * cell);
+    }
+    std::string out = a.get("out", "portraits.png");
+    return writePng(out, sheet) ? (std::printf("%s\n", out.c_str()), 0) : 1;
+}
+
 int cmdAtlas(const Args& a) {
     Character c = make(a, uint64_t(a.num("seed", 1)));
     std::string out = a.get("out", "atlas.png");
@@ -243,6 +276,7 @@ int main(int argc, char** argv) {
     if (a.cmd == "anim") return cmdAnim(a);
     if (a.cmd == "atlas") return cmdAtlas(a);
     if (a.cmd == "sheet") return cmdSheet(a);
+    if (a.cmd == "portraits") return cmdPortraits(a);
     if (a.cmd == "stats") return cmdStats(a);
     usage();
     return a.cmd.empty() ? 0 : 1;

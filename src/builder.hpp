@@ -40,6 +40,7 @@ struct Part {
     };
     std::vector<Tri> tris;
     bool flat = false;
+    bool smoothAlways = false;  // keep smooth normals even in faceted mode (head)
     SubmeshKind kind = SubmeshKind::Body;
     uint16_t id = 0;
     std::function<Vec3(Vec3 pos, Vec3 normal)> normalFn;  // optional normal edit (smooth parts)
