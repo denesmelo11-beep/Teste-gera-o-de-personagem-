@@ -46,12 +46,14 @@ public:
 
     // Torso
     SuperRing torsoRing(float t) const;
+    static constexpr float kTorsoBase = 0.12f;  // hip line: the torso loft starts here, legs below
     float torsoT(float y) const { return (y - m.crotchY) / m.torsoLen; }
     float warpTheta(float phi) const;
     float bustField(float t, float th) const;
     float gluteDepth(float t) const;
     Vec3 torsoPoint(float t, float th) const;   // sculpted torso surface
     Vec3 insideTorso(Vec3 p, float k) const;    // clamp a point inside the torso
+    Vec3 torsoSurfaceToward(Vec3 p, float* theta = nullptr) const;  // torso surface on the ray from its axis through p
 
     // Head (head.cpp). x in head units (unscaled by headWidth), s from chin.
     SuperRing headRing(float s) const;           // metres, relative to headOrigin
@@ -67,7 +69,6 @@ private:
     void computeMarks();
     void buildSkeleton();
     void buildTorso();
-    void buildNeck();
     void buildArms();
     void buildHand(const ArmMarks& a, const LimbRig& rig);
     void buildLegs();
@@ -84,8 +85,9 @@ private:
     void buildHorns();
     void buildEars();
 
-    Mat underwearAt(float t, float th) const;
-    Mat paintTorsoAt(Vec3 p) const;
+    void addUnderwear(Part& p, bool chestBand) const;
+    size_t torsoPart_ = 0;               // index into parts: torso + legs share one surface
+    std::vector<uint32_t> torsoRing0_;   // bottom ring of the torso (hip line), split by the legs
 
     uint16_t headPartId_ = 0, bodyGroup_ = 0, armGroup_ = 0;
     Curve cHw_, cDf_, cDb_, cZc_;

@@ -169,36 +169,39 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     BodyShape& b = g.body;
     const float ageH = young ? 0.99f : elder ? 0.975f : 1.0f;
     b.height = (fem ? 1.65f + 0.065f * tz : 1.78f + 0.07f * tz) * ageH;
-    b.headsTall = (fem ? 7.3f : 7.5f) + 0.12f * tz - (young ? 0.15f : 0.0f);
-    b.legRatio = clamp(0.515f + 0.008f * z(rb) + (fem ? 0.005f : 0.0f), 0.49f, 0.54f);
-    b.neckLength = clamp((fem ? 0.29f : 0.25f) + 0.025f * z(rb) - 0.02f * std::max(0.0f, mus), 0.12f, 0.38f);
-    b.neckThick = (fem ? 0.14f : 0.18f) + 0.010f * frame + 0.015f * std::max(0.0f, mus) + 0.008f * fat;
+    // Stylised-heroic canon: a slightly large head (6.4-6.6 heads) keeps faces readable at
+    // low resolution; limbs are full, torsos taper cleanly (shoulders > chest > waist).
+    b.headsTall = (fem ? 6.4f : 6.6f) + 0.10f * tz - (young ? 0.12f : 0.0f);
+    b.legRatio = clamp((fem ? 0.505f : 0.50f) + 0.007f * z(rb), 0.48f, 0.53f);
+    b.neckLength = clamp((fem ? 0.27f : 0.23f) + 0.022f * z(rb) - 0.02f * std::max(0.0f, mus), 0.12f, 0.34f);
+    b.neckThick = (fem ? 0.125f : 0.16f) + 0.007f * frame + 0.014f * std::max(0.0f, mus) + 0.007f * fat;
     if (fem) {
-        b.shoulderWidth = 0.82f + 0.035f * frame + 0.025f * mus;
-        b.chestWidth = 0.62f + 0.025f * frame + 0.025f * fat;
-        b.waistWidth = 0.53f + 0.055f * fat - 0.01f * mus;
-        b.hipWidth = 0.79f + 0.035f * frame + 0.045f * fat;
-        b.chestDepth = 0.39f + 0.02f * fat;
-        b.bust = clamp(0.55f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.2f);
-        b.butt = clamp(0.55f + 0.15f * z(rb) + 0.10f * fat, 0.2f, 1.2f);
+        // Hourglass: waist ~half the hip width, full thighs, arms that read at low res.
+        b.shoulderWidth = 0.63f + 0.025f * frame + 0.02f * mus;
+        b.chestWidth = 0.49f + 0.02f * frame + 0.02f * fat;
+        b.waistWidth = 0.345f + 0.045f * fat - 0.005f * mus;
+        b.hipWidth = 0.71f + 0.03f * frame + 0.04f * fat;
+        b.chestDepth = 0.34f + 0.018f * fat;
+        b.bust = clamp(0.6f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.25f);
+        b.butt = clamp(0.62f + 0.15f * z(rb) + 0.10f * fat, 0.25f, 1.25f);
         b.muscle = saturate(0.22f + 0.13f * mus);
-        b.thigh = 0.31f + 0.022f * fat + 0.010f * mus;
-        b.calf = 0.175f + 0.010f * fat + 0.006f * mus;
-        b.arm = 0.115f + 0.007f * fat + 0.006f * mus;
+        b.thigh = 0.34f + 0.022f * fat + 0.008f * mus;
+        b.calf = 0.205f + 0.009f * fat + 0.006f * mus;
+        b.arm = 0.125f + 0.007f * fat + 0.005f * mus;
         b.handSize = 0.94f + 0.02f * frame;
         b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
     } else {
-        b.shoulderWidth = 1.06f + 0.045f * frame + 0.05f * mus;
-        b.chestWidth = 0.84f + 0.03f * frame + 0.035f * mus + 0.02f * fat;
-        b.waistWidth = 0.58f + 0.07f * fat - 0.015f * mus;
-        b.hipWidth = 0.71f + 0.025f * frame + 0.03f * fat;
-        b.chestDepth = 0.45f + 0.02f * mus + 0.02f * fat;
+        b.shoulderWidth = 0.74f + 0.03f * frame + 0.04f * mus;
+        b.chestWidth = 0.58f + 0.022f * frame + 0.03f * mus + 0.02f * fat;
+        b.waistWidth = 0.455f + 0.055f * fat - 0.006f * mus;
+        b.hipWidth = 0.56f + 0.02f * frame + 0.025f * fat;
+        b.chestDepth = 0.42f + 0.018f * mus + 0.018f * fat;
         b.bust = std::max(0.0f, 0.12f * (fat - 1.0f));  // only heavier men get chest softness
-        b.butt = clamp(0.30f + 0.08f * z(rb) + 0.05f * mus, 0.1f, 0.6f);
+        b.butt = clamp(0.32f + 0.08f * z(rb) + 0.05f * mus, 0.12f, 0.65f);
         b.muscle = saturate(0.50f + 0.17f * mus);
-        b.thigh = 0.31f + 0.015f * fat + 0.020f * mus;
-        b.calf = 0.19f + 0.008f * fat + 0.012f * mus;
-        b.arm = 0.135f + 0.008f * fat + 0.014f * mus;
+        b.thigh = 0.34f + 0.014f * fat + 0.016f * mus;
+        b.calf = 0.235f + 0.008f * fat + 0.010f * mus;
+        b.arm = 0.150f + 0.007f * fat + 0.012f * mus;
         b.handSize = 1.0f + 0.03f * frame;
         b.posture = 0.45f + 0.05f * z(rb);
     }
@@ -227,55 +230,89 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     switch (arch) {
         case Archetype::Bombshell:
             b.bust = rb.range(0.95f, 1.2f); b.butt = rb.range(0.9f, 1.15f);
-            b.waistWidth = rb.range(0.52f, 0.56f); b.hipWidth = rb.range(0.86f, 0.94f);
-            b.headsTall = rb.range(7.0f, 7.4f); b.thigh = rb.range(0.36f, 0.40f);
+            b.waistWidth = rb.range(0.39f, 0.43f); b.hipWidth = rb.range(0.74f, 0.80f);
+            b.headsTall = rb.range(6.2f, 6.5f); b.thigh = rb.range(0.32f, 0.35f);
             break;
         case Archetype::Dorito:
-            b.shoulderWidth = rb.range(1.12f, 1.25f); b.chestWidth = rb.range(0.88f, 0.96f);
-            b.waistWidth = rb.range(0.60f, 0.66f); b.hipWidth = rb.range(0.68f, 0.74f);
-            b.muscle = rb.range(0.75f, 0.95f); b.arm = rb.range(0.17f, 0.19f); b.belly = 0;
-            b.headsTall = rb.range(7.4f, 7.9f); b.height = rb.range(1.82f, 1.95f);
+            b.shoulderWidth = rb.range(0.98f, 1.08f); b.chestWidth = rb.range(0.74f, 0.80f);
+            b.waistWidth = rb.range(0.48f, 0.52f); b.hipWidth = rb.range(0.56f, 0.60f);
+            b.muscle = rb.range(0.75f, 0.95f); b.arm = rb.range(0.155f, 0.17f); b.belly = 0;
+            b.headsTall = rb.range(6.6f, 7.0f); b.height = rb.range(1.82f, 1.95f);
             break;
         case Archetype::Brute:
-            b.height = rb.range(2.0f, 2.3f); b.headsTall = rb.range(7.6f, 8.2f); b.legRatio = rb.range(0.44f, 0.47f);
-            b.shoulderWidth = rb.range(1.4f, 1.65f); b.chestWidth = rb.range(1.1f, 1.3f);
-            b.waistWidth = rb.range(0.8f, 0.92f); b.hipWidth = rb.range(0.8f, 0.9f); b.chestDepth = rb.range(0.58f, 0.66f);
-            b.muscle = rb.range(0.9f, 1.0f); b.thigh = rb.range(0.42f, 0.47f); b.calf = rb.range(0.26f, 0.30f);
-            b.arm = rb.range(0.23f, 0.27f); b.neckThick = rb.range(0.27f, 0.32f); b.neckLength = rb.range(0.12f, 0.2f);
-            b.handSize = b.footSize = rb.range(1.15f, 1.3f); b.belly = rb.range(0.0f, 0.25f);
+            b.height = rb.range(2.0f, 2.3f); b.headsTall = rb.range(6.9f, 7.4f); b.legRatio = rb.range(0.44f, 0.47f);
+            b.shoulderWidth = rb.range(1.25f, 1.45f); b.chestWidth = rb.range(0.98f, 1.12f);
+            b.waistWidth = rb.range(0.72f, 0.82f); b.hipWidth = rb.range(0.70f, 0.78f); b.chestDepth = rb.range(0.52f, 0.58f);
+            b.muscle = rb.range(0.9f, 1.0f); b.thigh = rb.range(0.38f, 0.42f); b.calf = rb.range(0.28f, 0.32f);
+            b.arm = rb.range(0.21f, 0.24f); b.neckThick = rb.range(0.25f, 0.29f); b.neckLength = rb.range(0.12f, 0.18f);
+            b.handSize = b.footSize = rb.range(1.1f, 1.2f); b.belly = rb.range(0.0f, 0.25f);
             break;
         case Archetype::Amazon:
-            b.height = rb.range(1.84f, 2.0f); b.headsTall = rb.range(7.2f, 7.7f); b.muscle = rb.range(0.6f, 0.85f);
-            b.shoulderWidth = rb.range(0.98f, 1.08f); b.chestWidth = rb.range(0.74f, 0.8f); b.waistWidth = rb.range(0.55f, 0.6f);
-            b.hipWidth = rb.range(0.88f, 0.95f); b.bust = rb.range(0.6f, 0.9f); b.butt = rb.range(0.75f, 1.0f);
-            b.thigh = rb.range(0.38f, 0.42f); b.calf = rb.range(0.21f, 0.24f); b.arm = rb.range(0.15f, 0.17f);
+            b.height = rb.range(1.84f, 2.0f); b.headsTall = rb.range(6.5f, 6.9f); b.muscle = rb.range(0.6f, 0.85f);
+            b.shoulderWidth = rb.range(0.82f, 0.90f); b.chestWidth = rb.range(0.62f, 0.67f); b.waistWidth = rb.range(0.44f, 0.48f);
+            b.hipWidth = rb.range(0.72f, 0.78f); b.bust = rb.range(0.6f, 0.9f); b.butt = rb.range(0.75f, 1.0f);
+            b.thigh = rb.range(0.33f, 0.36f); b.calf = rb.range(0.23f, 0.26f); b.arm = rb.range(0.13f, 0.145f);
             break;
         case Archetype::Slender:
-            b.height *= 1.04f; b.headsTall = rb.range(7.3f, 7.7f); b.waistWidth -= 0.04f; b.hipWidth -= 0.05f;
-            b.thigh = rb.range(0.28f, 0.31f); b.calf = rb.range(0.16f, 0.18f); b.arm = rb.range(0.11f, 0.125f);
+            b.height *= 1.04f; b.headsTall = rb.range(6.6f, 7.0f); b.waistWidth -= 0.03f; b.hipWidth -= 0.04f;
+            b.thigh = rb.range(0.26f, 0.28f); b.calf = rb.range(0.18f, 0.20f); b.arm = rb.range(0.10f, 0.11f);
             b.muscle = rb.range(0.05f, 0.2f); b.bust = std::min(b.bust, 0.4f); b.legRatio = 0.52f;
             break;
         case Archetype::Chibi:
             b.height = rb.range(0.95f, 1.2f); b.headsTall = rb.range(3.0f, 3.7f); b.legRatio = rb.range(0.33f, 0.37f);
             b.neckLength = 0.08f; b.neckThick = 0.12f; b.shoulderWidth = 0.6f; b.chestWidth = 0.5f; b.waistWidth = 0.47f;
             b.hipWidth = 0.55f; b.chestDepth = 0.32f; b.bust = 0.1f; b.butt = 0.25f; b.muscle = 0.05f;
-            b.thigh = 0.22f; b.calf = 0.14f; b.arm = 0.1f; b.sag = b.hunch = 0;
+            b.thigh = 0.22f; b.calf = 0.15f; b.arm = 0.1f; b.sag = b.hunch = 0;
             break;
         case Archetype::Monster:
-            b.height = rb.range(1.95f, 2.4f); b.headsTall = rb.range(7.0f, 8.0f); b.legRatio = rb.range(0.42f, 0.48f);
-            b.shoulderWidth = rb.range(1.3f, 1.7f); b.chestWidth = rb.range(1.0f, 1.3f); b.waistWidth = rb.range(0.7f, 0.95f);
-            b.hipWidth = rb.range(0.75f, 0.95f); b.chestDepth = rb.range(0.52f, 0.68f); b.muscle = rb.range(0.7f, 1.0f);
-            b.thigh = rb.range(0.4f, 0.5f); b.calf = rb.range(0.24f, 0.32f); b.arm = rb.range(0.2f, 0.27f);
-            b.neckThick = rb.range(0.24f, 0.34f); b.neckLength = rb.range(0.1f, 0.22f);
-            b.handSize = b.footSize = rb.range(1.15f, 1.35f);
+            b.height = rb.range(1.95f, 2.4f); b.headsTall = rb.range(6.6f, 7.4f); b.legRatio = rb.range(0.42f, 0.48f);
+            b.shoulderWidth = rb.range(1.15f, 1.5f); b.chestWidth = rb.range(0.88f, 1.12f); b.waistWidth = rb.range(0.62f, 0.82f);
+            b.hipWidth = rb.range(0.66f, 0.82f); b.chestDepth = rb.range(0.46f, 0.60f); b.muscle = rb.range(0.7f, 1.0f);
+            b.thigh = rb.range(0.36f, 0.44f); b.calf = rb.range(0.27f, 0.33f); b.arm = rb.range(0.18f, 0.24f);
+            b.neckThick = rb.range(0.22f, 0.30f); b.neckLength = rb.range(0.1f, 0.2f);
+            b.handSize = b.footSize = rb.range(1.1f, 1.25f);
             break;
         default: break;
     }
+    // ---- anatomy: muscle groups follow the muscle axis with individual variation;
+    //      definition follows leanness; bones show more on lean, bony and older bodies.
+    {
+        Anatomy& an = b.anat;
+        const float m = b.muscle, lean = saturate(0.55f - 0.22f * fat + 0.12f * mus);
+        auto grp = [&](float bias) { return clamp(m * (1.0f + 0.22f * z(rb)) + bias, 0.0f, 1.4f); };
+        an.definition = saturate(lean + 0.25f * (m - 0.4f) + 0.06f * z(rb) - (elder ? 0.1f : 0.0f));
+        an.neck = grp(fem ? -0.1f : 0.1f);
+        an.traps = grp(fem ? -0.15f : 0.05f);
+        an.deltoids = grp(0.05f);
+        an.pecs = grp(fem ? -0.2f : 0.05f);
+        an.lats = grp(fem ? -0.15f : 0.0f);
+        an.abs = grp(0.0f);
+        an.obliques = grp(0.0f);
+        an.serratus = grp(-0.05f);
+        an.biceps = grp(0.0f);
+        an.triceps = grp(0.0f);
+        an.forearms = grp(0.0f);
+        an.glutes = clamp(0.4f + 0.5f * m + 0.12f * z(rb) + (fem ? 0.15f : 0.0f), 0.0f, 1.4f);
+        an.quads = grp(fem ? 0.05f : 0.05f);
+        an.adductors = clamp(0.35f + 0.25f * m + 0.25f * std::max(0.0f, fat) + (fem ? 0.15f : 0.0f), 0.0f, 1.3f);
+        an.hamstrings = grp(0.0f);
+        an.calves = grp(0.05f);
+        const float bony = saturate(0.5f + 0.15f * frame - 0.22f * fat + 0.1f * z(rb) + (elder ? 0.2f : 0.0f));
+        an.clavicles = saturate(bony + (fem ? 0.1f : 0.0f));
+        an.ribcage = saturate(bony - 0.1f);
+        an.scapulae = saturate(bony);
+        an.pelvis = saturate(bony + (fem ? 0.12f : -0.05f));
+        an.knees = saturate(bony + 0.1f);
+        an.elbows = bony;
+        an.wrists = bony;
+        if (per == Persona::Heroic || per == Persona::Rogue) an.definition = saturate(an.definition + 0.1f);
+    }
+
     const float e = opt.exaggeration;
     auto ex = [e](float v, float canon) { return canon + (v - canon) * (1.0f + 1.4f * e); };
-    b.shoulderWidth = ex(b.shoulderWidth, 0.92f);
-    b.waistWidth = std::max(0.34f, ex(b.waistWidth, 0.59f));
-    b.hipWidth = ex(b.hipWidth, 0.76f);
+    b.shoulderWidth = ex(b.shoulderWidth, 0.75f);
+    b.waistWidth = std::max(0.30f, ex(b.waistWidth, 0.43f));
+    b.hipWidth = ex(b.hipWidth, 0.62f);
     b.bust *= 1.0f + 0.5f * e;
     b.butt *= 1.0f + 0.4f * e;
 
@@ -326,7 +363,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.roundness = saturate((young ? 0.35f : 0.0f) + (per == Persona::Cute ? 0.4f : 0.0f) + 0.15f * fat);
     f.ageLines = saturate((g.age - 36.0f) / 36.0f);
     f.freckles = rf.chance(young ? 0.18f : 0.10f);
-    f.scar = rf.chance(per == Persona::Rogue ? 0.45f : per == Persona::Heroic ? 0.2f : fem ? 0.04f : 0.1f);
+    f.scar = rf.chance(per == Persona::Rogue ? 0.30f : per == Persona::Heroic ? 0.10f : fem ? 0.03f : 0.06f);
     f.fang = fantasy && per == Persona::Villainous && rf.chance(0.3f);
     f.blush = per == Persona::Cute && rf.chance(0.3f);
 
@@ -357,7 +394,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         default: break;
     }
     if (arch == Archetype::Brute || arch == Archetype::Monster) { W(H::Bald) += 1.5f; W(H::Buzz) += 1; }
-    g.hair = HairStyle(rh.weighted(std::span<const float>(w)));
+    g.hair = opt.hair ? *opt.hair : HairStyle(rh.weighted(std::span<const float>(w)));
     const bool shortHair = g.hair <= HairStyle::Undercut;
     g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.2f}));
     if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz) g.fringe = Fringe::None;
@@ -382,8 +419,9 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     pal.iris = pickIris(rc, fantasy);
     pal.lips = lerp(pal.skin * Vec3{0.90f, 0.62f, 0.60f}, Vec3{0.60f, 0.25f, 0.28f},
                     (fem ? 0.35f : 0.15f) + (per == Persona::Sexy && fem ? 0.25f : 0.0f));
-    static constexpr Vec3 kUnder[] = {{0.86f, 0.83f, 0.76f}, {0.55f, 0.55f, 0.56f}, {0.20f, 0.20f, 0.22f}, {0.48f, 0.38f, 0.28f}};
-    pal.underwear = kUnder[rc.rangeInt(0, 3)];
+    // Muted mid tones: never near-black, which would swallow the body's form.
+    static constexpr Vec3 kUnder[] = {{0.80f, 0.76f, 0.68f}, {0.52f, 0.52f, 0.54f}, {0.36f, 0.36f, 0.39f}, {0.47f, 0.38f, 0.30f}};
+    pal.underwear = kUnder[rc.weighted({1.0f, 1.6f, 1.2f, 1.0f})];
     pal.horn = fantasy && rc.chance(0.5f) ? hsv(rc.uniform(), 0.3f, 0.22f) : Vec3{0.88f, 0.84f, 0.74f};
     return g;
 }

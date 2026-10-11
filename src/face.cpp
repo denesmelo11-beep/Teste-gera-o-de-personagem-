@@ -167,13 +167,14 @@ struct EyeShape {
 EyeShape eyeShapeFor(const Genome& g) {
     const FaceStyle& f = g.face;
     EyeShape e{};
-    e.W = 0.074f * f.eyeSize;
+    // Large, sharp anime eyes: they must read as shapes at low resolution.
+    e.W = 0.094f * f.eyeSize;
     switch (f.eyeShape) {
-        case 1: e.Hh = 0.042f; e.peak = 0.0f; e.lowK = 0.75f; e.tilt = 0.0f; break;     // round
-        case 2: e.Hh = 0.027f; e.peak = 0.15f; e.lowK = 0.50f; e.tilt = 0.02f; break;   // hooded
-        case 3: e.Hh = 0.031f; e.peak = 0.25f; e.lowK = 0.45f; e.tilt = 0.12f; break;   // upturned
-        case 4: e.Hh = 0.034f; e.peak = -0.20f; e.lowK = 0.62f; e.tilt = -0.10f; break; // downturned
-        default: e.Hh = 0.033f; e.peak = 0.10f; e.lowK = 0.55f; e.tilt = 0.04f; break;  // almond
+        case 1: e.Hh = 0.051f; e.peak = 0.0f; e.lowK = 0.72f; e.tilt = 0.0f; break;     // round
+        case 2: e.Hh = 0.037f; e.peak = 0.15f; e.lowK = 0.50f; e.tilt = 0.03f; break;   // hooded
+        case 3: e.Hh = 0.042f; e.peak = 0.28f; e.lowK = 0.46f; e.tilt = 0.13f; break;   // upturned
+        case 4: e.Hh = 0.044f; e.peak = -0.20f; e.lowK = 0.62f; e.tilt = -0.10f; break; // downturned
+        default: e.Hh = 0.044f; e.peak = 0.14f; e.lowK = 0.55f; e.tilt = 0.06f; break;  // almond
     }
     e.Hh *= f.eyeSize * (g.ageGroup == AgeGroup::Young ? 1.08f : 1.0f);
     e.tilt += f.eyeTilt;
@@ -186,7 +187,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     const EyeParams P = eyeParams(expr);
     const EyeShape S = eyeShapeFor(g);
     const float W = S.W, Hh = S.Hh;
-    const float ey = 0.47f, exOff = 0.165f * f.eyeSpacing;
+    const float ey = 0.465f, exOff = 0.175f * f.eyeSpacing;
     const Vec3 lash = lerp(pal.brow * 0.4f, Vec3{0.08f, 0.05f, 0.05f}, 0.6f);
     const Vec3 skinDark = pal.skin * Vec3{0.70f, 0.56f, 0.54f};
     const float lidDrop = saturate(f.restLid + 0.18f * f.ageLines + P.lidDrop);
@@ -235,7 +236,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                     else y -= 0.004f * t;
                     return Vec2{x, y};
                 },
-                [&](float t) { return (0.007f + 0.010f * f.browThick) * (1.0f - 0.55f * t) + 0.002f; });
+                [&](float t) { return (0.0045f + 0.0075f * f.browThick) * (1.0f - 0.6f * t) + 0.0016f; });
             strokeLocal(st, Vec4(pal.brow, 1.0f));
         }
 
@@ -258,56 +259,60 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                 }
         } else {
             auto openSdf = [&](Vec2 p) { return sdBetween(toLocal(p), W, yUp, yLo); };
-            Vec3 sclera = lerp(Vec3{0.90f, 0.88f, 0.86f}, pal.skin, 0.12f);
+            Vec3 sclera = lerp(Vec3{0.94f, 0.93f, 0.92f}, pal.skin, 0.08f);
             cp.fill(openSdf, [&](Vec2 p) {
                 Vec2 l = toLocal(p);
-                float sh = smoothstep(yUp(l.x) - 0.6f * Hh, yUp(l.x), l.y);
-                return Vec4(lerp(sclera, sclera * Vec3{0.72f, 0.68f, 0.70f}, sh), 1);
+                float sh = smoothstep(yUp(l.x) - 0.5f * Hh, yUp(l.x), l.y);
+                return Vec4(lerp(sclera, sclera * Vec3{0.70f, 0.68f, 0.74f}, sh), 1);
             }, lo, hi);
-            // Iris: big enough to read at low resolution; clipped by the lids.
-            Vec2 ic{0.0f, -0.08f * Hh};
-            float irR = std::max(0.55f * W, 1.05f * Hh) * P.irisScale;
-            Vec2 ir{irR, irR};
+            // Iris: a tall oval filling most of the opening, dark under the lid,
+            // brighter below, with a crisp rim; pupil; one sharp highlight.
+            Vec2 ic{0.04f * W, -0.06f * Hh};
+            float irR = std::max(0.60f * W, 1.12f * Hh) * P.irisScale;
+            Vec2 ir{0.80f * irR, irR};
             const Vec2 icF = toFace(ic);
             const Vec2 ilo = icF - Vec2{irR * 1.1f, irR * 1.1f}, ihi = icF + Vec2{irR * 1.1f, irR * 1.1f};
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir)); },
                     [&](Vec2 p) {
                         Vec2 l = toLocal(p) - ic;
-                        float top = smoothstep(-0.2f * irR, 0.6f * irR, l.y);
-                        float rim = smoothstep(0.65f, 1.0f, length(l) / irR);
-                        Vec3 col = lerp(pal.iris * 1.1f, pal.iris * 0.55f, top);
-                        return Vec4(lerp(col, pal.iris * 0.35f, rim * 0.7f), 1);
+                        float k = length(Vec2{l.x / ir.x, l.y / ir.y});
+                        float top = smoothstep(-0.3f, 0.55f, l.y / irR);
+                        Vec3 col = lerp(pal.iris * 1.25f, pal.iris * 0.42f, top);
+                        col = lerp(col, pal.iris * 0.25f, smoothstep(0.78f, 0.95f, k));
+                        return Vec4(col, 1);
                     }, ilo, ihi);
-            float pr = irR * 0.42f;
             Sdf pupil = g.face.pupil == PupilStyle::Slit
-                            ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{0.18f * irR, 0.85f * irR}); })
-                            : Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{pr, pr}); });
-            cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.08f, 1), ilo, ihi);
-            Vec2 hl = ic + Vec2{-0.35f * irR, 0.35f * irR};
-            cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.20f * irR, 0.20f * irR})); },
-                    Vec4(1, 1, 1, 0.85f), ilo, ihi);
-            // Upper lash line: the defining dark stroke.
+                            ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{0.16f * irR, 0.80f * irR}); })
+                            : Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.05f * irR}, Vec2{0.30f * irR, 0.40f * irR}); });
+            cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.06f, 1), ilo, ihi);
+            Vec2 hl = ic + Vec2{-0.30f * irR, 0.38f * irR};
+            cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.17f * irR, 0.21f * irR})); },
+                    Vec4(1, 1, 1, 0.95f), ilo, ihi);
+            // Upper lash line: bold, thickest towards the outer corner, ending in a
+            // short wing; it defines the eye's shape and attitude.
             Stroke up = curveStroke([&](float x01) {
-                float x = lerp(-1.02f * W, 1.06f * W, x01);
-                return Vec2{x, yUp(x) + 0.002f};
-            }, [&](float t) { return 0.0045f + (0.0035f + 0.006f * lw) * smoothstep(0.0f, 0.85f, t); });
-            if (lw > 0.6f) {
+                float x = lerp(-1.03f * W, 1.07f * W, x01);
+                return Vec2{x, yUp(x) + 0.0025f};
+            }, [&](float t) { return 0.0050f + (0.0045f + 0.0065f * lw) * smoothstep(0.0f, 0.75f, t); });
+            {
                 Vec2 end = up.pts.back();
-                up.pts.push_back(end + Vec2{0.014f * lw, 0.006f + 0.004f * lw});
-                up.w.push_back(0.0015f);
+                up.pts.push_back(end + Vec2{0.010f + 0.010f * lw, 0.002f + 0.006f * lw});
+                up.w.push_back(0.0016f);
             }
             strokeLocal(up, Vec4(lash, 1));
-            // Lower lid: a soft line; lid crease above.
+            // Lower lid: only a short, thin mark on the outer half.
             Stroke lower = curveStroke([&](float t) {
-                float x = lerp(-0.7f * W, 1.0f * W, t);
+                float x = lerp(0.15f * W, 1.0f * W, t);
                 return Vec2{x, yLo(x) - 0.0015f};
-            }, [&](float t) { return 0.0018f + 0.0018f * t; }, 12);
-            strokeLocal(lower, Vec4(lerp(lash, skinDark, 0.5f), 0.55f));
-            Stroke crease = curveStroke([&](float t) {
-                float x = lerp(-0.5f * W, 0.95f * W, t);
-                return Vec2{x, std::max(yUp(x), Hh * 0.5f) + 0.013f + 0.004f * lidDrop};
-            }, [&](float t) { return 0.0015f + 0.0022f * std::sin(kPi * t); }, 12);
-            strokeLocal(crease, Vec4(skinDark, 0.40f));
+            }, [&](float t) { return 0.0012f + 0.0024f * t; }, 10);
+            strokeLocal(lower, Vec4(lash, 0.75f));
+            if (f.ageLines > 0.3f || f.eyeShape == 2) {  // lid crease only for mature or hooded eyes
+                Stroke crease = curveStroke([&](float t) {
+                    float x = lerp(-0.4f * W, 0.9f * W, t);
+                    return Vec2{x, std::max(yUp(x), Hh * 0.5f) + 0.012f + 0.004f * lidDrop};
+                }, [&](float t) { return 0.0012f + 0.0018f * std::sin(kPi * t); }, 12);
+                strokeLocal(crease, Vec4(skinDark, 0.35f));
+            }
         }
         // Age: crow's feet and the under-eye fold.
         if (f.ageLines > 0.05f) {
@@ -343,7 +348,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     if (f.scar) {  // a pale slash through the left brow onto the cheek
         Vec2 a0{0.12f, 0.60f}, a1{0.21f, 0.38f};
         Stroke st{{a0, (a0 + a1) * 0.5f + Vec2{0.008f, 0}, a1}, {0.003f, 0.006f, 0.0025f}};
-        cp.fill(st, Vec4(lerp(pal.skin, Vec3{0.95f, 0.85f, 0.82f}, 0.5f), 0.95f), {0.09f, 0.35f}, {0.25f, 0.63f});
+        cp.fill(st, Vec4(lerp(pal.skin, Vec3{0.92f, 0.72f, 0.70f}, 0.45f), 0.8f), {0.09f, 0.35f}, {0.25f, 0.63f});
         Stroke edge{{a0 + Vec2{0.005f, 0}, a1 + Vec2{0.005f, 0}}, {0.0012f, 0.0012f}};
         cp.fill(edge, Vec4(pal.skin * 0.6f, 0.5f), {0.09f, 0.35f}, {0.25f, 0.63f});
     }
@@ -385,12 +390,13 @@ void paintMouth(CellPainter& cp, const Genome& g, MouthExpr e) {
             float u = clamp(x / (0.84f * mw), -1.0f, 1.0f);
             return yM(x) - Hl * std::pow(std::max(0.0f, 1 - u * u), 0.6f);
         };
-        cp.fill([=](Vec2 p) { return sdBetween(p, 0.84f * mw, yM, yBot); }, Vec4(lipC, 0.85f), lo, hi);
-        cp.fill([=](Vec2 p) { return sdBetween(p, mw, yTop, yM); }, Vec4(lipC * 0.82f, 0.85f), lo, hi);
+        const float lipA = 0.25f + 0.6f * lf;  // lips read as colour only when full
+        cp.fill([=](Vec2 p) { return sdBetween(p, 0.84f * mw, yM, yBot); }, Vec4(lipC, lipA), lo, hi);
+        cp.fill([=](Vec2 p) { return sdBetween(p, mw, yTop, yM); }, Vec4(lipC * 0.82f, lipA), lo, hi);
         Stroke ml = curveStroke([=](float t) {
             float x = lerp(-mw, mw, t);
             return Vec2{x, yM(x)};
-        }, [](float t) { return 0.0025f + 0.0015f * std::sin(kPi * t); }, 16);
+        }, [](float t) { return 0.0028f + 0.0012f * std::sin(kPi * t); }, 16);
         cp.fill(ml, Vec4(line, 1), lo, hi);
         Stroke under = curveStroke([=](float t) {
             float x = lerp(-0.45f * mw, 0.45f * mw, t);

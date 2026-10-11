@@ -44,6 +44,30 @@ void main() {
 }
 )";
 
+// Decals: same inputs, pulled 3 mm towards the camera in view space so the painted
+// face never sinks into the sculpted head (engines can use polygon offset instead).
+const char* kVSDecal = R"(#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+uniform mat4 matView;
+uniform mat4 matProjection;
+out vec3 fragPos;
+out vec3 fragNormal;
+out vec4 fragColor;
+out vec2 fragUV;
+void main() {
+    fragPos = vertexPosition;
+    fragNormal = vertexNormal;
+    fragColor = vertexColor;
+    fragUV = vertexTexCoord;
+    vec4 vp = matView * vec4(vertexPosition, 1.0);
+    vp.xyz += normalize(-vp.xyz) * 0.003;
+    gl_Position = matProjection * vp;
+}
+)";
+
 // Body: vertex colour (sRGB) + material class in alpha.
 const char* kFSBody = R"(#version 330
 in vec3 fragPos;
@@ -54,25 +78,35 @@ uniform vec3 lightDir;
 uniform vec3 viewPos;
 uniform vec3 skyColor;
 uniform vec3 groundColor;
+uniform int faceted;
 out vec4 finalColor;
 const vec3 shadowTint[7] = vec3[7](vec3(0.84,0.62,0.62), vec3(0.62,0.62,0.78), vec3(0.64,0.58,0.62),
                                    vec3(0.48,0.50,0.62), vec3(0.58,0.56,0.78), vec3(0.66,0.64,0.72), vec3(0.66,0.62,0.70));
 void main() {
     vec3 N = normalize(fragNormal);
+    if (faceted != 0) {
+        vec3 fn = normalize(cross(dFdx(fragPos), dFdy(fragPos)));
+        N = dot(fn, N) < 0.0 ? -fn : fn;
+    }
     vec3 L = normalize(lightDir);
     vec3 V = normalize(viewPos - fragPos);
     int cls = clamp(int(fragColor.a * 255.0 / 32.0), 0, 6);
     vec3 base = fragColor.rgb;
     float ndl = dot(N, L);
-    // Soft two-band ramp: a clear light/shadow read with a gentle terminator.
-    float band = smoothstep(-0.05, 0.22, ndl);
-    float form = smoothstep(-0.7, 1.0, ndl);
-    float light = mix(form, band, 0.6);
-    vec3 shade = base * shadowTint[cls] * 0.64;
-    vec3 col = mix(shade, base * 1.03, light);
-    // Hemispheric fill (sky from above, warm bounce from the ground).
+    // Form-revealing ramp: continuous wrap lighting (planes read as distinct tones)
+    // blended with a soft terminator for the stylised two-tone read.
+    float wrap = clamp((ndl + 0.35) / 1.35, 0.0, 1.0);
+    wrap = wrap * wrap * (3.0 - 2.0 * wrap);
+    float band = smoothstep(0.02, 0.30, ndl);
+    float light = mix(wrap, band, 0.45);
+    vec3 shade = base * shadowTint[cls] * 0.56;
+    vec3 col = mix(shade, base * 1.06, light);
+    // Cool, dim fill from the opposite side keeps shadows readable.
+    float fill = clamp(dot(N, normalize(vec3(0.65, 0.15, 0.75))), 0.0, 1.0);
+    col += base * vec3(0.09, 0.10, 0.13) * fill;
+    // Hemispheric bounce (sky from above, warm ground from below).
     float hemi = N.y * 0.5 + 0.5;
-    col += base * mix(groundColor, skyColor, hemi) * 0.12;
+    col += base * mix(groundColor, skyColor, hemi) * 0.07;
     // Rim and sheen.
     float rim = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0) * smoothstep(-0.2, 0.4, N.y + 0.2);
     col += vec3(1.0, 0.96, 0.92) * rim * 0.14;
@@ -123,7 +157,11 @@ struct Actor {
     float runPhase = 0, runRadius = 2.0f;
     cg::FaceState face;
     bool faceOverride = false;
+    bool posed = false;  // studio: hold showcasePose instead of playing a clip
+    cg::Pose fixed;
 };
+
+cg::GenOptions gGen;  // mesh style for every spawned character (--smooth / --flat)
 
 cg::Quat yawQuat(float y) { return cg::Quat::axisAngle({0, 1, 0}, y); }
 
@@ -213,7 +251,7 @@ void update(Actor& a, float dt) {
     }
     const cg::Clip& clip = a.clips[size_t(a.clip)];
     float t = clip.loop ? a.time : std::fmod(a.time, clip.duration() + 0.6f);
-    cg::Pose pose = cg::sampleClip(clip, t);
+    cg::Pose pose = a.posed ? a.fixed : cg::sampleClip(clip, t);
     a.sim->step(pose, a.worldPos, yawQuat(a.yaw), dt);
     if (!a.faceOverride) a.face = cg::sampleFace(clip, t);
     cg::poseMatrices(a.ch.skeleton, pose, a.global, a.skin);
@@ -243,7 +281,25 @@ struct Scene {
     Model disc{}, plane{};
     cg::Vec3 light = cg::normalize(cg::Vec3{-0.55f, 0.72f, 0.42f});
     Color skyTop{92, 146, 222, 255}, skyBottom{200, 222, 246, 255};
+    bool studio = false, faceted = false;  // studio: neutral grey backdrop, no arena
+    int locFaceted = -1;
 };
+
+// Model-sheet stance: arms lowered from the bind A-pose to ~25 degrees, soft elbows.
+cg::Pose showcasePose(const cg::Character& c) {
+    cg::Pose p = cg::restPose(c.skeleton);
+    for (const cg::LimbRig& a : c.rig.arms) {
+        float lower = a.restDir.y < -0.85f ? 0.0f : 0.36f;
+        p.rot[size_t(a.upper)] = cg::Quat::axisAngle({0, 0, 1}, -a.side * lower);
+        cg::Vec3 flex = cg::normalize(cg::cross(a.restDir, {0, 0, 1}));
+        p.rot[size_t(a.lower)] = cg::Quat::axisAngle(flex, 0.12f);
+    }
+    for (const cg::LimbRig& l : c.rig.legs) {  // relaxed stance: feet a little wider than the hips
+        p.rot[size_t(l.upper)] = cg::Quat::axisAngle({0, 0, 1}, l.side * 0.09f);
+        p.rot[size_t(l.end)] = cg::Quat::axisAngle({0, 0, 1}, -l.side * 0.09f);
+    }
+    return p;
+}
 
 void spawn(Scene& s, uint64_t seed, int count, const cg::GenomeOptions& opt, float spacing) {
     for (auto& a : s.actors) unload(a);
@@ -252,7 +308,7 @@ void spawn(Scene& s, uint64_t seed, int count, const cg::GenomeOptions& opt, flo
     for (int i = 0; i < count; ++i) {
         s.actors.emplace_back();
         Actor& a = s.actors.back();
-        a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i), opt));
+        a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i), opt), gGen);
         a.clips = cg::makeDefaultClips(a.ch);
         a.sim = new cg::SecondaryMotion(a.ch);
         a.worldPos = {(float(i) - (count - 1) * 0.5f) * spacing, 0, 0};
@@ -265,9 +321,10 @@ void spawn(Scene& s, uint64_t seed, int count, const cg::GenomeOptions& opt, flo
 }
 
 void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
-    DrawRectangleGradientV(0, 0, w, h, s.skyTop, s.skyBottom);
+    if (s.studio) DrawRectangleGradientV(0, 0, w, h, Color{84, 84, 88, 255}, Color{62, 62, 66, 255});
+    else DrawRectangleGradientV(0, 0, w, h, s.skyTop, s.skyBottom);
     BeginMode3D(cam);
-    DrawModel(s.plane, {0, 0, 0}, 1.0f, WHITE);
+    if (!s.studio) DrawModel(s.plane, {0, 0, 0}, 1.0f, WHITE);
     // Soft blob shadows (after the ground so they blend over it).
     BeginBlendMode(BLEND_ALPHA);
     rlDisableDepthMask();
@@ -285,6 +342,8 @@ void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
     SetShaderValue(s.body, s.locView, vp, SHADER_UNIFORM_VEC3);
     SetShaderValue(s.body, s.locSky, sky, SHADER_UNIFORM_VEC3);
     SetShaderValue(s.body, s.locGround, gnd, SHADER_UNIFORM_VEC3);
+    int fc = s.faceted ? 1 : 0;
+    SetShaderValue(s.body, s.locFaceted, &fc, SHADER_UNIFORM_INT);
     SetShaderValue(s.decal, s.locLightD, lp, SHADER_UNIFORM_VEC3);
     for (Actor& a : s.actors) {
         DrawModel(a.bodyModel, {0, 0, 0}, 1.0f, WHITE);
@@ -494,7 +553,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
             o.age = cg::AgeGroup(i % 4);
             s.actors.emplace_back();
             Actor& a = s.actors.back();
-            a.ch = cg::generateCharacter(cg::randomGenome(seed + 500 + uint64_t(i), o));
+            a.ch = cg::generateCharacter(cg::randomGenome(seed + 500 + uint64_t(i), o), gGen);
             a.clips = cg::makeDefaultClips(a.ch);
             a.sim = new cg::SecondaryMotion(a.ch);
             a.worldPos = {(float(i) - 3.5f) * 0.82f, 0, 0};
@@ -511,20 +570,117 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
         });
         shoot(rt, cam, "10_personas_lowres.png", scale);
     }
+    // 6) Every haircut, 3/4 portraits (hair silhouette is identity at low resolution).
+    {
+        const int n = int(cg::HairStyle::Count), cols = 6, cw = 240, chh = 270;
+        Image sheet = GenImageColor(cols * cw, ((n + cols - 1) / cols) * chh, BLACK);
+        for (int i = 0; i < n; ++i) {
+            for (auto& a : s.actors) unload(a);
+            s.actors.clear();
+            cg::GenomeOptions o;
+            o.hair = cg::HairStyle(i);
+            o.age = cg::AgeGroup::Adult;
+            bool masc = i <= int(cg::HairStyle::Undercut) || i == int(cg::HairStyle::ManBun);
+            o.sex = masc ? cg::Sex::Male : cg::Sex::Female;
+            if (i == int(cg::HairStyle::Bald)) o.age = cg::AgeGroup::Elder;
+            s.actors.emplace_back();
+            Actor& a = s.actors.back();
+            a.ch = cg::generateCharacter(cg::randomGenome(seed + 900 + uint64_t(i), o), gGen);
+            a.clips = cg::makeDefaultClips(a.ch);
+            a.sim = new cg::SecondaryMotion(a.ch);
+            buildMeshes(a, s.body, s.decal);
+            a.sim->reset(cg::sampleClip(a.clips[0], 0), a.worldPos, cg::Quat{});
+            for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+            cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
+            float hh = a.ch.height / a.ch.genome.body.headsTall;
+            Camera3D cam = makeCam({head.x, head.y + 0.1f * hh, head.z}, 0.75f, 0.10f, hh * 7.0f, 30.0f);
+            RenderTexture2D prt = LoadRenderTexture(cw, chh);
+            BeginTextureMode(prt);
+            ClearBackground(BLACK);
+            drawScene(s, cam, cw, chh);
+            EndTextureMode();
+            Image img = grab(prt, 1);
+            ImageDrawText(&img, std::string(cg::toString(cg::HairStyle(i))).c_str(), 6, chh - 18, 12, Color{20, 20, 30, 255});
+            ImageDraw(&sheet, img, {0, 0, float(cw), float(chh)}, {float((i % cols) * cw), float((i / cols) * chh), float(cw), float(chh)}, WHITE);
+            UnloadImage(img);
+            UnloadRenderTexture(prt);
+        }
+        ExportImage(sheet, (dir + "/11_cortes.png").c_str());
+        UnloadImage(sheet);
+        std::printf("%s/11_cortes.png\n", dir.c_str());
+    }
     UnloadRenderTexture(rt);
     UnloadRenderTexture(hi);
+    return 0;
+}
+
+// Model sheet of a natural adult woman and man: front and three-quarter views on a
+// neutral backdrop (how base meshes are judged).
+int runStudio(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    for (auto& a : s.actors) unload(a);
+    s.actors.clear();
+    s.actors.reserve(2);
+    for (int i = 0; i < 2; ++i) {
+        cg::GenomeOptions o;
+        o.sex = i == 0 ? cg::Sex::Female : cg::Sex::Male;
+        o.age = cg::AgeGroup::Adult;
+        o.persona = cg::Persona::Heroic;
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i), o), gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+    }
+    // Rows: woman, man. Columns: front, three-quarter, side, back.
+    const int pw = 340, ph = 640;
+    const float yaws[4] = {0.0f, 0.75f, 1.5708f, 3.1416f};
+    Image sheet = GenImageColor(4 * pw, 2 * ph, BLACK);
+    for (int v = 0; v < 8; ++v) {
+        Actor& a = s.actors[size_t(v / 4)];
+        for (Actor& o : s.actors) o.worldPos = &o == &a ? cg::Vec3{} : cg::Vec3{50, 0, 50};
+        for (Actor& o : s.actors) update(o, 0.0f);
+        float H = a.ch.height;
+        // Debug close-ups: CHARGEN_FOCUS="y zoom" (y as a fraction of height).
+        float fy = 0.5f, zoom = 1.0f;
+        if (const char* f = std::getenv("CHARGEN_FOCUS")) std::sscanf(f, "%f %f", &fy, &zoom);
+        Camera3D cam = makeCam({0, H * fy, 0}, yaws[v % 4], 0.02f, H * 3.0f / zoom, 21.0f);
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((v % 4) * pw), float((v / 4) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
     return 0;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots;
+    std::string shots, studio;
+    bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--shots" && i + 1 < argc) shots = argv[++i];
+        else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
+        else if (a == "--faceted") faceted = true;
+        else if (a == "--smooth") gGen.creaseAngle = 180.0f;
+        else if (a == "--flat") gGen.faceted = true;
         else if (a == "--seed" && i + 1 < argc) seed = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--count" && i + 1 < argc) count = std::atoi(argv[++i]);
         else if (a == "--res" && i + 1 < argc) res = std::atoi(argv[++i]);
@@ -534,11 +690,12 @@ int main(int argc, char** argv) {
     InitWindow(1440, 810, "chargen viewer");
     Scene s;
     s.body = LoadShaderFromMemory(kVS, kFSBody);
-    s.decal = LoadShaderFromMemory(kVS, kFSDecal);
+    s.decal = LoadShaderFromMemory(kVSDecal, kFSDecal);
     s.locLight = GetShaderLocation(s.body, "lightDir");
     s.locView = GetShaderLocation(s.body, "viewPos");
     s.locSky = GetShaderLocation(s.body, "skyColor");
     s.locGround = GetShaderLocation(s.body, "groundColor");
+    s.locFaceted = GetShaderLocation(s.body, "faceted");
     s.locEye = GetShaderLocation(s.decal, "eyeOffset");
     s.locMouth = GetShaderLocation(s.decal, "mouthOffset");
     s.locLightD = GetShaderLocation(s.decal, "lightDir");
@@ -552,6 +709,13 @@ int main(int argc, char** argv) {
         s.plane.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = t;
     }
 
+    s.faceted = faceted;
+    if (!studio.empty()) {
+        int rc = runStudio(s, studio, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
     if (!shots.empty()) {
         int rc = runShots(s, shots, seed);
         for (auto& a : s.actors) unload(a);

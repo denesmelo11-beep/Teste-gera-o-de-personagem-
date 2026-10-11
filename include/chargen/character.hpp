@@ -160,7 +160,9 @@ struct Character {
 
 struct GenOptions {
     int lod = 0;            // 0 full, 1 reduced, 2 low
-    bool faceted = false;   // flat facets; default is smooth low-poly (Hyper Chess look)
+    bool faceted = false;       // flat facets everywhere except head and hair
+    float creaseAngle = 34.0f;  // smooth shading split at sharper edges: forms stay soft while
+                                // anatomical folds (pec shelf, abs, knees) stay crisp; 180 = fully smooth
 };
 
 Character generateCharacter(const Genome& g, const GenOptions& opt = {});

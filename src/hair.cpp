@@ -77,6 +77,7 @@ void Builder::buildHair() {
         const int cols = lod.capCols, rows = lod.capRows;
         const bool closed = cs.top >= 0.999f;
         Part& p = newPart();
+        p.smoothAlways = true;
         for (int i = 0; i <= rows; ++i)
             for (int j = 0; j < cols; ++j) {
                 float th = kTau * j / cols;
@@ -109,7 +110,7 @@ void Builder::buildHair() {
     const CapSpec longCap{0.80f, 0.66f, 0.50f, 0.32f, 0.24f, capT, 1.0f};
     const CapSpec tightCap{0.80f, 0.66f, 0.48f, 0.34f, 0.26f, 0.032f * h, 1.0f};
     switch (style) {
-        case HairStyle::Bald: cap({0.47f, 0.47f, 0.44f, 0.30f, 0.26f, 0.025f * h, 0.60f}, 0); break;  // horseshoe
+        case HairStyle::Bald: cap({0.62f, 0.60f, 0.42f, 0.30f, 0.26f, 0.025f * h, 0.60f}, 0); break;  // horseshoe (sides/back only)
         case HairStyle::Buzz: cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.016f * h, 1.0f}, 0); break;
         case HairStyle::Undercut:
             cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.013f * h, 1.0f}, 0);       // shaved sides
@@ -160,25 +161,15 @@ void Builder::buildHair() {
             default: break;
         }
     };
-    // Volume lying on the skull, swept back (or across from the part).
-    auto topSwept = [&](int n, float length, float across, float thick) {
-        for (int i = 0; i < n; ++i) {
-            float f = n == 1 ? 0.5f : float(i) / (n - 1);
-            float th = lerp(58.0f, 122.0f, f) * deg;
-            Vec3 dir = normalize(back + Vec3{0, 0.2f, 0} + Vec3{-part * across, 0, 0} + thetaDir(th) * 0.15f);
-            LockSpec L{th, 0.90f, dir, length * h * r.range(0.9f, 1.1f), 0.30f * h * vol, thick * h * vol};
-            L.gravity = 0.3f; L.stiffness = 0.7f; L.curl = 0.6f; L.tipWidth = 0.5f; L.bones = 2; L.pStiff = 3.0f; L.pDrag = 0.7f;
-            add(L);
-        }
-    };
     // Locks hanging all around the head (bob, shoulder length, messy).
     auto around = [&](int n, float length, float sRoot, float width, float curl, bool frontGap) {
         for (int i = 0; i < n; ++i) {
             float th = kPi / 2 + kTau * (i + 0.5f) / n;
             float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
             if (frontGap && phi < 0.75f) continue;  // keep the face clear
-            Vec3 dir = normalize(down + thetaDir(th) * 0.45f);
-            LockSpec L{th, sRoot + 0.06f * bump((phi - kPi) / 1.2f), dir, length * h * r.range(0.92f, 1.08f), width * h * vol, 0.055f * h * vol};
+            Vec3 dir = normalize(down + thetaDir(th) * 0.22f);
+            LockSpec L{th, sRoot + 0.06f * bump((phi - kPi) / 1.2f), dir, length * h * r.range(0.92f, 1.08f), width * h * vol, 0.045f * h * vol};
+            L.faceFront = phi < 1.2f;
             L.gravity = 1.0f; L.curl = curl; L.tipWidth = 0.55f; L.wave = g.hairWave; L.bones = 3; L.pStiff = 1.6f; L.pDrag = 0.45f;
             add(L);
         }
@@ -188,10 +179,15 @@ void Builder::buildHair() {
         for (int layer = 0; layer < 2; ++layer)
             for (int i = 0; i < n - layer; ++i) {
                 float f = (i + 0.5f + 0.5f * layer) / n;
-                float th = lerp(200.0f, 340.0f, f) * deg;
-                float sRoot = layer == 0 ? 0.80f : 0.58f;
-                Vec3 dir = normalize(down + thetaDir(th) * 0.35f + back * 0.25f);
-                LockSpec L{th, sRoot, dir, length * h * (layer ? 0.92f : 1.0f) * r.range(0.95f, 1.05f), width * h * vol, 0.06f * h * vol};
+                // Outer layer wraps from temple to temple: its front locks frame the face.
+                float th = layer == 0 ? lerp(148.0f, 392.0f, f) * deg : lerp(195.0f, 345.0f, f) * deg;
+                float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
+                bool front = phi < 1.25f;
+                float sRoot = layer == 0 ? (front ? 0.78f : 0.82f) : 0.58f;
+                Vec3 dir = normalize(down + thetaDir(th) * (front ? 0.15f : 0.30f) + (front ? fwd * 0.25f : back * 0.25f));
+                float lenK = front ? 0.72f : (layer ? 0.92f : 1.0f);
+                LockSpec L{th, sRoot, dir, length * h * lenK * r.range(0.95f, 1.05f), width * h * vol * (front ? 0.8f : 1.0f), 0.045f * h * vol};
+                L.faceFront = front;
                 L.gravity = 1.0f; L.curl = 0.05f; L.tipWidth = 0.55f; L.wave = g.hairWave; L.bones = 4;
                 L.pStiff = 0.9f - 0.15f * g.hairWave; L.pDrag = 0.38f; L.pGrav = 0.05f;
                 add(L);
@@ -224,11 +220,13 @@ void Builder::buildHair() {
         e.rU = e.rV = radius * h;
         e.lat = 6;
         e.lon = lod.lockSeg + 2;
-        emitEllipsoid(newPart(), e, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return hairMat; });
+        Part& bp = newPart();
+        bp.smoothAlways = true;
+        emitEllipsoid(bp, e, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return hairMat; });
     };
 
     switch (style) {
-        case HairStyle::ShortCrop: fringe(0.6f); break;
+        case HairStyle::ShortCrop: break;
         case HairStyle::SidePart: fringe(0.75f); break;
         case HairStyle::SlickedBack: break;
         case HairStyle::Messy:
@@ -240,12 +238,11 @@ void Builder::buildHair() {
             around(7, 0.24f, 0.62f, 0.34f, 0.3f, true);
             fringe(0.85f);
             break;
-        case HairStyle::Bob: around(11, 0.66f, 0.82f, 0.42f, 0.45f, true); sideFrame(0.62f, 0.30f); fringe(1.0f); break;
-        case HairStyle::Shoulder: around(11, 1.15f * len, 0.82f, 0.44f, 0.12f, true); sideFrame(1.1f * len, 0.32f); fringe(1.0f); break;
+        case HairStyle::Bob: around(12, 0.66f, 0.82f, 0.46f, 0.40f, true); fringe(1.0f); break;
+        case HairStyle::Shoulder: around(12, 1.15f * len, 0.82f, 0.50f, 0.12f, true); fringe(1.0f); break;
         case HairStyle::LongStraight:
         case HairStyle::LongWavy:
-            curtain(7, 2.1f * len, 0.50f);
-            sideFrame(1.45f * len, 0.32f);
+            curtain(10, 2.1f * len, 0.50f);
             fringe(1.0f);
             break;
         case HairStyle::Ponytail:
@@ -262,10 +259,10 @@ void Builder::buildHair() {
             break;
         case HairStyle::Bun:
             bunAt(270 * deg, 0.72f, 0.20f * vol);
-            sideFrame(0.9f, 0.18f);
+            sideFrame(0.62f, 0.26f);
             break;
         case HairStyle::HalfUp:
-            curtain(6, 1.8f * len, 0.50f);
+            curtain(9, 1.8f * len, 0.50f);
             tail(270 * deg, 0.84f, normalize(back + Vec3{0, 0.1f, 0}), 0.7f, 0.09f, false);
             fringe(1.0f);
             break;
@@ -362,7 +359,9 @@ void Builder::buildHair() {
         const bool tube = L.tube;
         const float tieT = 1.0f / (n - 1);
         const Vec3 tieCol = lerp(c0 * 0.3f, Vec3{0.12f, 0.08f, 0.07f}, 0.5f);
-        emitLoft(newPart(), lf, [=](float t, float, Vec3) {
+        Part& lp = newPart();
+        lp.smoothAlways = true;  // hair keeps smooth shading and its sheen in either style
+        emitLoft(lp, lf, [=](float t, float, Vec3) {
             float f = saturate(t) * nb;
             int i0 = std::clamp(int(f), 0, nb - 1);
             if (i0 >= nb - 1) return one(bones[size_t(nb - 1)]);
@@ -390,17 +389,18 @@ void Builder::buildFacialHair() {
             case FacialHair::Goatee: return ((!mouth && ax < 0.13f && s < 0.215f && std::sin(th) > 0.2f) || stache) ? 1.0f : 0.0f;
             case FacialHair::ShortBeard:
             case FacialHair::FullBeard: {
-                bool jaw = s < 0.34f - 0.10f * std::max(0.0f, std::sin(th)) && std::sin(th) > -0.25f;
+                bool jaw = s < 0.29f - 0.08f * std::max(0.0f, std::sin(th)) && std::sin(th) > -0.15f;
                 bool cheekClear = s > 0.27f && ax < 0.20f && !stache;
                 return ((jaw && !mouth && !cheekClear) || stache) ? 1.0f : 0.0f;
             }
             default: return 0.0f;
         }
     };
-    const float thick = fh == FacialHair::FullBeard ? 0.045f * h : fh == FacialHair::ShortBeard ? 0.018f * h : 0.022f * h;
-    const float drop = fh == FacialHair::FullBeard ? 0.20f * h * g.hairLength : 0.0f;
+    const float thick = fh == FacialHair::FullBeard ? 0.035f * h : fh == FacialHair::ShortBeard ? 0.016f * h : 0.020f * h;
+    const float drop = fh == FacialHair::FullBeard ? 0.12f * h * g.hairLength : 0.0f;
     const int cols = 22, rows = 14;
     Part& p = newPart();
+    p.smoothAlways = true;
     std::vector<int> vid(size_t((cols + 1) * (rows + 1)), -1);
     auto vert = [&](int i, int j) {
         int& id = vid[size_t(j * (cols + 1) + i)];

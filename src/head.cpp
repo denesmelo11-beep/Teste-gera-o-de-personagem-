@@ -10,8 +10,9 @@ namespace cg::detail {
 
 void Builder::initHead() {
     // Normalised to head height: s = 0 chin, 1 crown. Eye line ~0.47.
-    hW_ = Curve{{0, 0.11f},     {0.06f, 0.19f}, {0.15f, 0.28f}, {0.25f, 0.335f}, {0.36f, 0.365f}, {0.47f, 0.38f},
-                {0.60f, 0.395f}, {0.74f, 0.39f}, {0.86f, 0.34f}, {0.95f, 0.23f}, {1.0f, 0.05f}};
+    // Stylised: the lower face narrows to a defined chin, the cranium stays full.
+    hW_ = Curve{{0, 0.075f},    {0.06f, 0.15f}, {0.15f, 0.235f}, {0.25f, 0.30f}, {0.36f, 0.35f}, {0.47f, 0.375f},
+                {0.60f, 0.392f}, {0.74f, 0.39f}, {0.86f, 0.345f}, {0.95f, 0.235f}, {1.0f, 0.05f}};
     hZc_ = Curve{{0, 0.20f}, {0.06f, 0.16f}, {0.15f, 0.10f}, {0.28f, 0.03f}, {0.42f, -0.01f},
                  {0.58f, -0.035f}, {0.74f, -0.05f}, {0.88f, -0.06f}, {1.0f, -0.06f}};
     hDf_ = Curve{{0, 0.07f},     {0.06f, 0.14f}, {0.15f, 0.24f}, {0.28f, 0.35f}, {0.42f, 0.41f},
@@ -64,8 +65,8 @@ float Builder::faceRelief(float xn, float s) const {
     r += (0.010f + 0.012f * f.cheek) * bump((s - 0.375f) / 0.05f) * bump((ax - 0.235f) / 0.09f);
     // Lips, the dip below them, and the chin.
     const float mw = f.mouthWidth;
-    r += (0.007f + 0.009f * f.lipFullness) * bump((s - 0.252f) / 0.020f) * bump(xn / (0.062f * mw));
-    r += (0.009f + 0.011f * f.lipFullness) * bump((s - 0.218f) / 0.020f) * bump(xn / (0.055f * mw));
+    r += (0.003f + 0.004f * f.lipFullness) * bump((s - 0.252f) / 0.024f) * bump(xn / (0.075f * mw));
+    r += (0.004f + 0.005f * f.lipFullness) * bump((s - 0.218f) / 0.024f) * bump(xn / (0.068f * mw));
     r -= 0.007f * bump((s - 0.188f) / 0.018f) * bump(xn / 0.07f);
     r += (0.010f + 0.012f * f.chin) * bump((s - 0.09f) / 0.06f) * bump(xn / 0.11f);
     return r;
@@ -188,7 +189,7 @@ void Builder::buildHead() {
 // head. Their UVs point at the Neutral cells; expressions are UV offsets.
 void Builder::buildFaceDecals() {
     const int head = ch.rig.head;
-    const float h = m.h, eps = 0.0035f * h;
+    const float h = m.h, eps = 0.0050f * h;
     auto patch = [&](SubmeshKind kind, float x0, float x1, float s0, float s1, int nx, int ny, int cellX, int cellY,
                      int cellW, int cellH) {
         Part& p = newPart(false, kind);

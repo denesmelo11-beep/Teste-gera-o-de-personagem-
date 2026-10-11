@@ -1,5 +1,7 @@
 #include "builder.hpp"
 
+#include <algorithm>
+#include <array>
 #include <unordered_map>
 
 namespace cg::detail {
@@ -134,6 +136,28 @@ std::vector<Vec3> makeRing(Vec3 c, Vec3 u, Vec3 v, const SuperRing& sr, int n) {
 }
 
 // ---------------- emission ----------------
+namespace {
+// Split along the diagonal that keeps the two triangles most coplanar:
+// fewer sliver facets on curved, low-poly surfaces.
+void emitQuad(Part& part, uint32_t a, uint32_t b, uint32_t c, uint32_t d, const Mat& m) {
+    const Vec3 &A = part.pos[a], &B = part.pos[b], &C = part.pos[c], &D = part.pos[d];
+    float k1 = dot(normalize(cross(B - A, C - A), {0, 0, 0}), normalize(cross(C - A, D - A), {0, 0, 0}));
+    float k2 = dot(normalize(cross(B - A, D - A), {0, 0, 0}), normalize(cross(C - B, D - B), {0, 0, 0}));
+    if (k2 > k1 + 1e-3f) {
+        part.tris.push_back({a, b, d, m});
+        part.tris.push_back({b, c, d, m});
+    } else {
+        part.tris.push_back({a, b, c, m});
+        part.tris.push_back({a, c, d, m});
+    }
+}
+}  // namespace
+
+void emitStrip(Part& part, const std::vector<uint32_t>& A, const std::vector<uint32_t>& B, const Mat& m) {
+    const size_t n = A.size();
+    for (size_t j = 0; j < n; ++j) emitQuad(part, A[j], B[j], B[(j + 1) % n], A[(j + 1) % n], m);
+}
+
 void emitLoft(Part& part, const Loft& loft, const WeightFn& wf, const PaintFn& pf) {
     const size_t R = loft.rings.size();
     if (R == 0) return;
@@ -154,18 +178,7 @@ void emitLoft(Part& part, const Loft& loft, const WeightFn& wf, const PaintFn& p
             uint32_t a = idx(i, j), b = idx(i + 1, j), c = idx(i + 1, j + 1), d = idx(i, j + 1);
             Mat m = part.paintAt ? part.paintAt((part.pos[a] + part.pos[b] + part.pos[c] + part.pos[d]) * 0.25f)
                                  : pf(tm, midTheta(j));
-            // Split along the diagonal that keeps the two triangles most coplanar:
-            // fewer sliver facets on curved, low-poly surfaces.
-            const Vec3 &A = part.pos[a], &B = part.pos[b], &C = part.pos[c], &D = part.pos[d];
-            float k1 = dot(normalize(cross(B - A, C - A), {0, 0, 0}), normalize(cross(C - A, D - A), {0, 0, 0}));
-            float k2 = dot(normalize(cross(B - A, D - A), {0, 0, 0}), normalize(cross(C - B, D - B), {0, 0, 0}));
-            if (k2 > k1 + 1e-3f) {
-                part.tris.push_back({a, b, d, m});
-                part.tris.push_back({b, c, d, m});
-            } else {
-                part.tris.push_back({a, b, c, m});
-                part.tris.push_back({a, c, d, m});
-            }
+            emitQuad(part, a, b, c, d, m);
         }
     }
     if (loft.poleStart) {
@@ -219,61 +232,263 @@ uint32_t packMat(const Mat& m) {
 }
 }  // namespace
 
-void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted) {
+namespace {
+
+// Splits the part's triangles along each clip boundary. New vertices interpolate
+// position, weights and uv; every triangle carries its own corner normals, which
+// are interpolated along the cut edge so the cut leaves no shading seam.
+void applyClips(Part& part, std::vector<std::array<Vec3, 3>>& cn, std::vector<uint32_t>& src, std::vector<float>& shade) {
+    src.resize(part.tris.size());
+    for (size_t t = 0; t < part.tris.size(); ++t) src[t] = uint32_t(t);
+    for (const ClipRegion& clip : part.clips) {
+        std::vector<float> f(part.pos.size());
+        for (size_t i = 0; i < part.pos.size(); ++i) f[i] = clip.field(part.pos[i]);
+        std::unordered_map<uint64_t, uint32_t> cut;
+        auto kOn = [&](uint32_t a, uint32_t b) { return saturate(f[a] / (f[a] - f[b])); };
+        auto edge = [&](uint32_t a, uint32_t b) {
+            uint64_t key = a < b ? (uint64_t(a) << 32 | b) : (uint64_t(b) << 32 | a);
+            auto it = cut.find(key);
+            if (it != cut.end()) return it->second;
+            float k = kOn(a, b);
+            SkinW w;
+            for (int i = 0; i < 4; ++i) {
+                w.add(part.w[a].j[i], part.w[a].w[i] * (1 - k));
+                w.add(part.w[b].j[i], part.w[b].w[i] * k);
+            }
+            uint32_t n = uint32_t(part.pos.size());
+            part.pos.push_back(lerp(part.pos[a], part.pos[b], k));
+            part.w.push_back(w);
+            part.uv.push_back(lerp(part.uv[a], part.uv[b], k));
+            if (!shade.empty()) shade.push_back(lerp(shade[a], shade[b], k));
+            f.push_back(0.0f);
+            cut.emplace(key, n);
+            return n;
+        };
+        std::vector<Part::Tri> out;
+        std::vector<std::array<Vec3, 3>> outN;
+        std::vector<uint32_t> outSrc;
+        out.reserve(part.tris.size() + part.tris.size() / 8);
+        for (size_t t = 0; t < part.tris.size(); ++t) {
+            Part::Tri tr = part.tris[t];
+            const uint32_t v[3] = {tr.a, tr.b, tr.c};
+            const bool in[3] = {f[v[0]] < 0, f[v[1]] < 0, f[v[2]] < 0};
+            const int nIn = int(in[0]) + int(in[1]) + int(in[2]);
+            if (nIn == 0 || nIn == 3) {
+                if (nIn == 3) tr.m = clip.m;
+                out.push_back(tr);
+                outN.push_back(cn[t]);
+                outSrc.push_back(src[t]);
+                continue;
+            }
+            // The vertex on its own side of the boundary, then the other two in winding order.
+            int lone = 0;
+            for (int i = 0; i < 3; ++i)
+                if (in[i] == (nIn == 1)) lone = i;
+            const int ib = (lone + 1) % 3, ic = (lone + 2) % 3;
+            uint32_t a = v[lone], b = v[ib], c = v[ic];
+            const float kab = kOn(a, b), kca = kOn(c, a);
+            uint32_t ab = edge(a, b), ca = edge(c, a);
+            const Vec3 na = cn[t][size_t(lone)], nb = cn[t][size_t(ib)], nc = cn[t][size_t(ic)];
+            const Vec3 nab = normalize(lerp(na, nb, kab), na), nca = normalize(lerp(nc, na, kca), na);
+            Mat loneM = in[lone] ? clip.m : tr.m, restM = in[lone] ? tr.m : clip.m;
+            out.push_back({a, ab, ca, loneM});
+            outN.push_back({na, nab, nca});
+            out.push_back({ab, b, c, restM});
+            outN.push_back({nab, nb, nc});
+            out.push_back({ab, c, ca, restM});
+            outN.push_back({nab, nc, nca});
+            for (int i = 0; i < 3; ++i) outSrc.push_back(src[t]);
+        }
+        part.tris.swap(out);
+        cn.swap(outN);
+        src.swap(outSrc);
+    }
+}
+
+// Curvature shading ("cavity"): how much each vertex sits below (+) or above (-)
+// its neighbours relative to the surface normal, high-passed so that only local
+// forms count (a groove between abdominal blocks, the pectoral shelf, a ridge of
+// the clavicle), not the overall roundness of a limb. Returns a multiplier per vertex.
+std::vector<float> cavityShade(const Part& part, const std::vector<Vec3>& faceN, float strength) {
+    const size_t nv = part.pos.size();
+    std::vector<Vec3> nrm(nv, Vec3{}), sum(nv, Vec3{});
+    std::vector<float> cnt(nv, 0.0f), edge(nv, 0.0f);
+    std::vector<std::vector<uint32_t>> nb(nv);
+    auto link = [&](uint32_t a, uint32_t b) {
+        if (std::find(nb[a].begin(), nb[a].end(), b) == nb[a].end()) nb[a].push_back(b);
+    };
+    for (size_t t = 0; t < part.tris.size(); ++t) {
+        const auto& tr = part.tris[t];
+        const uint32_t v[3] = {tr.a, tr.b, tr.c};
+        for (int k = 0; k < 3; ++k) {
+            nrm[v[k]] += faceN[t];
+            link(v[k], v[(k + 1) % 3]);
+            link(v[k], v[(k + 2) % 3]);
+        }
+    }
+    std::vector<float> kap(nv, 0.0f);
+    for (size_t i = 0; i < nv; ++i) {
+        if (nb[i].empty()) continue;
+        Vec3 c{};
+        float e = 0;
+        for (uint32_t j : nb[i]) {
+            c += part.pos[j];
+            e += length(part.pos[j] - part.pos[i]);
+        }
+        c = c / float(nb[i].size());
+        e /= float(nb[i].size());
+        kap[i] = e > 1e-6f ? dot(c - part.pos[i], normalize(nrm[i], {0, 1, 0})) / e : 0.0f;
+    }
+    std::vector<float> lo = kap, tmp(nv);
+    for (int it = 0; it < 3; ++it) {
+        for (size_t i = 0; i < nv; ++i) {
+            float a = lo[i];
+            for (uint32_t j : nb[i]) a += lo[j];
+            tmp[i] = a / float(nb[i].size() + 1);
+        }
+        lo.swap(tmp);
+    }
+    std::vector<float> out(nv, 1.0f);
+    for (size_t i = 0; i < nv; ++i) {
+        float hp = kap[i] - lo[i];
+        out[i] = hp > 0 ? 1.0f - strength * std::min(0.30f, hp * 2.2f) : 1.0f + strength * std::min(0.10f, -hp * 1.2f);
+    }
+    return out;
+}
+
+// Corner normals with crease detection ("auto smooth"): around each vertex, faces
+// joined across an edge with a dihedral angle below the threshold share one
+// angle-weighted normal; sharper edges stay crisp. cosThr <= -1 smooths everything,
+// cosThr > 1 gives flat facets.
+std::vector<std::array<Vec3, 3>> cornerNormals(const Part& part, const std::vector<Vec3>& faceN, float cosThr) {
+    const size_t nt = part.tris.size();
+    std::vector<std::array<Vec3, 3>> cn(nt);
+    std::vector<std::vector<std::pair<uint32_t, int>>> inc(part.pos.size());  // vertex -> (tri, corner)
+    for (size_t t = 0; t < nt; ++t) {
+        const auto& tr = part.tris[t];
+        inc[tr.a].push_back({uint32_t(t), 0});
+        inc[tr.b].push_back({uint32_t(t), 1});
+        inc[tr.c].push_back({uint32_t(t), 2});
+    }
+    auto vert = [&](uint32_t t, int k) {
+        const auto& tr = part.tris[t];
+        return k == 0 ? tr.a : k == 1 ? tr.b : tr.c;
+    };
+    auto angleAt = [&](uint32_t t, int k) {
+        Vec3 p = part.pos[vert(t, k)], q = part.pos[vert(t, (k + 1) % 3)], r = part.pos[vert(t, (k + 2) % 3)];
+        Vec3 e1 = normalize(q - p, {0, 0, 0}), e2 = normalize(r - p, {0, 0, 0});
+        return std::acos(clamp(dot(e1, e2), -1.0f, 1.0f));
+    };
+    std::vector<int> group;
+    std::vector<Vec3> sum;
+    for (size_t v = 0; v < inc.size(); ++v) {
+        const auto& fan = inc[v];
+        const size_t n = fan.size();
+        if (n == 0) continue;
+        group.resize(n);
+        for (size_t i = 0; i < n; ++i) group[i] = int(i);
+        auto root = [&](int i) {
+            while (group[size_t(i)] != i) i = group[size_t(i)] = group[size_t(group[size_t(i)])];
+            return i;
+        };
+        const float thr = part.smoothAt && cosThr <= 1.0f && part.smoothAt(part.pos[v]) ? -1.0f : cosThr;
+        if (thr <= 1.0f)
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    const auto [ti, ki] = fan[i];
+                    const auto [tj, kj] = fan[j];
+                    if (thr > -1.0f) {
+                        if (dot(faceN[ti], faceN[tj]) < thr) continue;
+                        uint32_t wi1 = vert(ti, (ki + 1) % 3), wi2 = vert(ti, (ki + 2) % 3);
+                        uint32_t wj1 = vert(tj, (kj + 1) % 3), wj2 = vert(tj, (kj + 2) % 3);
+                        if (!(wi1 == wj1 || wi1 == wj2 || wi2 == wj1 || wi2 == wj2)) continue;  // not edge neighbours
+                    }
+                    group[size_t(root(int(i)))] = root(int(j));
+                }
+        sum.assign(n, Vec3{});
+        for (size_t i = 0; i < n; ++i) sum[size_t(root(int(i)))] += faceN[fan[i].first] * angleAt(fan[i].first, fan[i].second);
+        for (size_t i = 0; i < n; ++i)
+            cn[fan[i].first][size_t(fan[i].second)] = normalize(sum[size_t(root(int(i)))], faceN[fan[i].first]);
+    }
+    return cn;
+}
+
+}  // namespace
+
+void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float creaseDeg) {
     const SubmeshKind order[] = {SubmeshKind::Body, SubmeshKind::FaceEyes, SubmeshKind::FaceMouth};
+    auto quant = [](Vec3 n) {
+        auto q = [](float c) { return uint64_t(std::lround((c + 1.0f) * 1023.0f)) & 0x7FF; };
+        return q(n.x) | (q(n.y) << 11) | (q(n.z) << 22);
+    };
     for (SubmeshKind kind : order) {
         Submesh sm{kind, uint32_t(mesh.indices.size()), 0};
         for (Part& part : parts) {
             if (part.kind != kind || part.tris.empty()) continue;
             const bool flat = (faceted && !part.smoothAlways) || part.flat;
-            // Angle-weighted smooth normals per logical vertex.
-            std::vector<Vec3> nrm(part.pos.size(), Vec3{});
             std::vector<Vec3> faceN(part.tris.size());
             for (size_t t = 0; t < part.tris.size(); ++t) {
                 const auto& tr = part.tris[t];
                 Vec3 a = part.pos[tr.a], b = part.pos[tr.b], c = part.pos[tr.c];
-                Vec3 n = cross(b - a, c - a);
-                faceN[t] = normalize(n, {0, 0, 0});
-                if (flat) continue;
-                auto ang = [](Vec3 p, Vec3 q, Vec3 r) {
-                    Vec3 e1 = normalize(q - p, {0, 0, 0}), e2 = normalize(r - p, {0, 0, 0});
-                    return std::acos(clamp(dot(e1, e2), -1.0f, 1.0f));
-                };
-                nrm[tr.a] += faceN[t] * ang(a, b, c);
-                nrm[tr.b] += faceN[t] * ang(b, c, a);
-                nrm[tr.c] += faceN[t] * ang(c, a, b);
+                faceN[t] = normalize(cross(b - a, c - a), {0, 0, 0});
             }
-            // Weld on (logical vertex, material[, face]).
-            std::unordered_map<uint64_t, uint32_t> weld;
+            // flat: every face its own normal; smoothAlways: no creases; else the crease angle.
+            const float cosThr = flat ? 2.0f : part.smoothAlways || creaseDeg >= 179.0f ? -1.0f : std::cos(creaseDeg * kPi / 180.0f);
+            std::vector<std::array<Vec3, 3>> cn = cornerNormals(part, faceN, cosThr);
+            std::vector<uint32_t> src;
+            std::vector<float> shade = part.cavity > 0 ? cavityShade(part, faceN, part.cavity) : std::vector<float>{};
+            applyClips(part, cn, src, shade);
+            // Weld on (logical vertex, normal, material).
+            std::unordered_map<uint64_t, std::vector<uint32_t>> weld;
             weld.reserve(part.tris.size() * 2);
             for (size_t t = 0; t < part.tris.size(); ++t) {
                 const auto& tr = part.tris[t];
-                if (faceN[t].x == 0 && faceN[t].y == 0 && faceN[t].z == 0) continue;  // degenerate
-                uint32_t pm = packMat(tr.m);
-                for (uint32_t li : {tr.a, tr.b, tr.c}) {
-                    uint64_t key = flat ? (uint64_t(t) << 32 | li) : (uint64_t(pm) << 32 | li);
-                    auto it = weld.find(key);
-                    if (it == weld.end()) {
+                const Vec3 fn = faceN[src[t]];
+                if (fn.x == 0 && fn.y == 0 && fn.z == 0) continue;  // degenerate
+                const uint32_t pm = packMat(tr.m);
+                const uint8_t alpha = kind == SubmeshKind::Body ? uint8_t(uint32_t(tr.m.cls) * 32 + 16) : uint8_t(255);
+                const uint32_t lis[3] = {tr.a, tr.b, tr.c};
+                for (int k = 0; k < 3; ++k) {
+                    const uint32_t li = lis[k];
+                    Vec3 nrm = cn[t][size_t(k)];
+                    if (part.normalFn && !flat) nrm = part.normalFn(part.pos[li], nrm);
+                    const uint64_t key = (uint64_t(li) << 33) ^ quant(nrm);
+                    auto& bucket = weld[key];
+                    // vertex colour = material colour shaded by curvature
+                    // (grooves take a warm, reddish darkening like skin in shadow)
+                    const float sh = shade.empty() ? 1.0f : shade[li];
+                    const float dk = std::max(0.0f, 1.0f - sh), lt = std::max(0.0f, sh - 1.0f);
+                    auto ch = [&](uint32_t c, float warm) {
+                        float f = 1.0f - dk * warm + lt;
+                        return uint8_t(std::clamp(int(std::lround(float(c & 0xFF) * f)), 0, 255));
+                    };
+                    const uint8_t c0 = ch(pm, 0.70f), c1 = ch(pm >> 8, 1.0f), c2 = ch(pm >> 16, 1.05f);
+                    uint32_t found = UINT32_MAX;
+                    for (uint32_t vi : bucket) {
+                        const Vertex& o = mesh.vertices[vi];
+                        if (o.color[0] == c0 && o.color[1] == c1 && o.color[2] == c2 && o.color[3] == alpha) found = vi;
+                    }
+                    if (found == UINT32_MAX) {
                         Vertex v{};
                         v.pos = part.pos[li];
-                        v.normal = flat ? faceN[t] : normalize(nrm[li]);
-                        if (part.normalFn && !flat) v.normal = part.normalFn(v.pos, v.normal);
+                        v.normal = nrm;
                         v.uv = part.uv[li];
-                        v.color[0] = uint8_t(pm & 0xFF);
-                        v.color[1] = uint8_t((pm >> 8) & 0xFF);
-                        v.color[2] = uint8_t((pm >> 16) & 0xFF);
-                        v.color[3] = kind == SubmeshKind::Body ? uint8_t(uint32_t(tr.m.cls) * 32 + 16) : uint8_t(255);
+                        v.color[0] = c0;
+                        v.color[1] = c1;
+                        v.color[2] = c2;
+                        v.color[3] = alpha;
                         SkinW sw = part.w[li];
                         sw.normalize();
-                        for (int k = 0; k < 4; ++k) {
-                            v.joints[k] = uint8_t(sw.w[k] > 0 ? sw.j[k] : 0);
-                            v.weights[k] = sw.w[k];
+                        for (int q = 0; q < 4; ++q) {
+                            v.joints[q] = uint8_t(sw.w[q] > 0 ? sw.j[q] : 0);
+                            v.weights[q] = sw.w[q];
                         }
-                        it = weld.emplace(key, uint32_t(mesh.vertices.size())).first;
+                        found = uint32_t(mesh.vertices.size());
+                        bucket.push_back(found);
                         mesh.vertices.push_back(v);
                         mesh.partIds.push_back(part.id);
                     }
-                    mesh.indices.push_back(it->second);
+                    mesh.indices.push_back(found);
                 }
             }
         }

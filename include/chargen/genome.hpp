@@ -41,6 +41,38 @@ std::optional<Archetype> archetypeFromString(std::string_view s);
 std::optional<Persona> personaFromString(std::string_view s);
 std::optional<AgeGroup> ageFromString(std::string_view s);
 
+// Muscles and bony landmarks, each about 0..1 (values above 1 for heroic builds).
+// Overall volume comes from the widths and radii in BodyShape; these fields shape
+// and reveal the anatomical forms, so they map one-to-one onto future sliders.
+struct Anatomy {
+    float definition = 0.4f;  // how visible forms are (low body fat): 0 soft .. 1 shredded
+    // Muscles
+    float neck = 0.5f;        // sternocleidomastoid, neck thickness
+    float traps = 0.5f;       // trapezius slope and upper-back diamond
+    float deltoids = 0.5f;
+    float pecs = 0.5f;
+    float lats = 0.5f;        // back width (V taper)
+    float abs = 0.5f;         // rectus abdominis blocks
+    float obliques = 0.5f;    // flanks, inguinal "V"
+    float serratus = 0.5f;
+    float biceps = 0.5f;
+    float triceps = 0.5f;
+    float forearms = 0.5f;
+    float glutes = 0.5f;
+    float quads = 0.5f;
+    float adductors = 0.5f;   // inner thigh fullness
+    float hamstrings = 0.5f;
+    float calves = 0.5f;
+    // Bones
+    float clavicles = 0.5f;
+    float ribcage = 0.5f;     // costal arch, rib flare
+    float scapulae = 0.5f;
+    float pelvis = 0.5f;      // iliac crest / hip bones
+    float knees = 0.5f;
+    float elbows = 0.5f;
+    float wrists = 0.5f;      // and ankles
+};
+
 struct BodyShape {
     float height = 1.68f;      // metres, crown to floor
     float headsTall = 6.9f;    // stylised-realistic 6.6-7.4, chibi 3-4
@@ -76,6 +108,7 @@ struct BodyShape {
     int horns = 0;
     float hornSize = 1.0f;
     EarStyle ears = EarStyle::Human;
+    Anatomy anat;
 };
 
 struct FaceStyle {
@@ -150,6 +183,7 @@ struct GenomeOptions {
     std::optional<Sex> sex;
     std::optional<AgeGroup> age;
     std::optional<Persona> persona;
+    std::optional<HairStyle> hair;
     float exaggeration = 0.0f;           // pushes proportions towards stylised extremes
 };
 

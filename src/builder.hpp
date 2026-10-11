@@ -26,6 +26,13 @@ struct Mat {
 };
 
 using PaintFn = std::function<Mat(float t, float theta)>;
+
+// Material region given by a signed field (< 0 inside). Triangles crossing the
+// boundary are split along it, so painted edges stay clean at any angle.
+struct ClipRegion {
+    std::function<float(Vec3)> field;
+    Mat m;
+};
 using WeightFn = std::function<SkinW(float t, float theta, Vec3 p)>;
 
 // One primitive (a loft, an ellipsoid, a hair lock...). Triangles carry their
@@ -44,7 +51,10 @@ struct Part {
     SubmeshKind kind = SubmeshKind::Body;
     uint16_t id = 0;
     std::function<Vec3(Vec3 pos, Vec3 normal)> normalFn;  // optional normal edit (smooth parts)
+    std::function<bool(Vec3 pos)> smoothAt;               // optional: never crease around these vertices
+    float cavity = 0.0f;  // strength of curvature shading baked into vertex colour (grooves darker, ridges lighter)
     std::function<Mat(Vec3 centroid)> paintAt;            // optional: paint faces by position
+    std::vector<ClipRegion> clips;                        // applied in order at finalize
 };
 
 // Monotone cubic (Fritsch-Carlson) curve through keys: smooth, no overshoot.
@@ -86,6 +96,10 @@ std::vector<Vec3> makeRing(Vec3 c, Vec3 u, Vec3 v, const SuperRing& sr, int n);
 
 void emitLoft(Part& part, const Loft& loft, const WeightFn& wf, const PaintFn& pf);
 
+// Quad strip between two closed loops of vertex indices of equal size; A is the
+// loop nearer the start of the surface (same orientation rules as a loft).
+void emitStrip(Part& part, const std::vector<uint32_t>& A, const std::vector<uint32_t>& B, const Mat& m);
+
 // Builds an ellipsoid as a loft between two poles along `axis`.
 struct Ellipsoid {
     Vec3 center;
@@ -95,7 +109,8 @@ struct Ellipsoid {
 };
 void emitEllipsoid(Part& part, const Ellipsoid& e, const WeightFn& wf, const PaintFn& pf);
 
-// Welds all parts into the final mesh (smooth or flat normals per part).
-void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted);
+// Welds all parts into the final mesh: flat facets, or smooth normals that keep a
+// crisp crease wherever adjacent faces meet at more than creaseDeg.
+void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float creaseDeg);
 
 }  // namespace cg::detail
