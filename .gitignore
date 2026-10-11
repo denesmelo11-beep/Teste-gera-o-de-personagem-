@@ -1,0 +1,3 @@
+build/
+*.glb
+test_export.glb
