@@ -68,6 +68,45 @@ struct RigInfo {
     int bustL = -1, bustR = -1;
     std::vector<int> tail;
     std::vector<std::vector<int>> hairChains;
+    // Equipment sockets (bone ids): weapons, shield, back, belt.
+    int socketHandR = -1, socketHandL = -1, socketBack = -1, socketHip = -1;
+};
+
+// ---- physics description (consumed by cg::SecondaryMotion or an engine) ----
+// Capsule collider attached to a bone; a == b gives a sphere. Offsets are in
+// the bone's rest frame (rest rotations are identity, so world-aligned).
+struct PhysCollider {
+    int bone = -1;
+    Vec3 a, b;
+    float radius = 0.05f;
+};
+
+// VRM-style spring chain: every bone points at the next one (the last at
+// `tail`), and is simulated as a damped pendulum with collisions.
+struct SpringChain {
+    std::vector<int> bones;
+    Vec3 tail;                 // tip offset from the last bone, rest frame
+    float stiffness = 0.4f;    // pull back to the animated rest direction (1/s)
+    float drag = 0.4f;         // 0..1 velocity loss per step
+    float gravity = 0.3f;      // m/s^2 scale
+    float hitRadius = 0.02f;   // particle radius for collisions
+    float maxAngle = 1.6f;     // max deviation from rest direction (radians)
+    std::string name;
+};
+
+// Soft-tissue spring (bust): point mass in the parent frame with per-axis limits.
+struct JiggleBone {
+    int bone = -1;
+    float frequency = 2.2f;    // Hz
+    float damping = 0.25f;     // ratio of critical
+    Vec3 limit{0.03f, 0.04f, 0.03f};  // max offset per axis (metres, parent frame)
+    float gravity = 0.15f;     // sag under acceleration
+};
+
+struct PhysicsRig {
+    std::vector<PhysCollider> colliders;
+    std::vector<SpringChain> chains;
+    std::vector<JiggleBone> jiggles;
 };
 
 // ---- 2D reactive face ----
@@ -89,8 +128,8 @@ struct FaceLayout {
     static constexpr int kAtlasW = 1024, kAtlasH = 512;
     static constexpr int kEyeCellW = 256, kEyeCellH = 128, kEyeCols = 4;
     static constexpr int kMouthCellW = 128, kMouthCellH = 96, kMouthY = 256;
-    static constexpr float kEyeX0 = -0.37f, kEyeX1 = 0.37f, kEyeS0 = 0.245f, kEyeS1 = 0.615f;
-    static constexpr float kMouthX0 = -0.16f, kMouthX1 = 0.16f, kMouthS0 = 0.07f, kMouthS1 = 0.31f;
+    static constexpr float kEyeX0 = -0.37f, kEyeX1 = 0.37f, kEyeS0 = 0.31f, kEyeS1 = 0.68f;
+    static constexpr float kMouthX0 = -0.16f, kMouthX1 = 0.16f, kMouthS0 = 0.115f, kMouthS1 = 0.355f;
 
     // Pixel origin (top-left) of a cell.
     static std::array<int, 2> eyeCell(EyeExpr e) {
@@ -113,14 +152,15 @@ struct Character {
     Genome genome;
     Skeleton skeleton;
     RigInfo rig;
+    PhysicsRig physics;
     Mesh mesh;
     Image faceAtlas;  // RGBA, FaceLayout::kAtlasW x kAtlasH
     float height = 0;
 };
 
 struct GenOptions {
-    int lod = 0;           // 0 full, 1 reduced, 2 low
-    bool faceted = true;   // flat-shaded low-poly facets (false = smooth normals for anime cel shading)
+    int lod = 0;            // 0 full, 1 reduced, 2 low
+    bool faceted = false;   // flat facets; default is smooth low-poly (Hyper Chess look)
 };
 
 Character generateCharacter(const Genome& g, const GenOptions& opt = {});

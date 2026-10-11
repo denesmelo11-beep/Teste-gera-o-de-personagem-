@@ -8,296 +8,383 @@ namespace cg {
 
 namespace {
 
-struct R {
-    float lo, hi;
-};
+constexpr std::string_view kArchNames[] = {"natural", "bombshell", "dorito", "brute", "amazon", "slender", "chibi", "monster"};
+constexpr std::string_view kPersonaNames[] = {"heroic", "villainous", "cute", "sexy", "stern", "gentle", "rogue", "noble"};
+constexpr std::string_view kAgeNames[] = {"young", "adult", "mature", "elder"};
+constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepart", "slickedback", "messy", "undercut", "pixie", "bob",
+                                           "shoulder", "longstraight", "longwavy", "ponytail", "highponytail", "braid", "bun", "halfup", "manbun"};
+constexpr std::string_view kBeardNames[] = {"none", "mustache", "goatee", "shortbeard", "fullbeard"};
 
-// Ranges per archetype (head units unless noted).
-struct ArchetypeSpec {
-    std::string_view name;
-    R height, heads, legs, neckLen, neckThick;
-    R shoulder, chest, waist, hip, depth;
-    R bust, butt, belly, muscle;
-    R thigh, calf, arm, hand, foot;
-    float femininity;
-    float fantasyChance;  // fantasy skin / beast parts
-    std::array<float, size_t(HairStyle::Count)> hairWeights;
-};
-
-// clang-format off
-constexpr ArchetypeSpec kSpecs[] = {
-    //            height        heads        legs           neckLen        neckThick
-    //            shoulder      chest        waist          hip            depth
-    //            bust          butt         belly          muscle
-    //            thigh         calf         arm            hand           foot
-    // hair weights: short bob long ponytail braid hime sideswept buzz
-    {"heroine",   {1.60f,1.75f},{6.6f,7.2f},{0.49f,0.52f},{0.28f,0.36f},{0.14f,0.155f},
-                  {0.80f,0.88f},{0.60f,0.66f},{0.52f,0.57f},{0.74f,0.82f},{0.38f,0.42f},
-                  {0.40f,0.75f},{0.45f,0.75f},{0,0},{0.15f,0.35f},
-                  {0.31f,0.35f},{0.18f,0.20f},{0.125f,0.140f},{1.00f,1.08f},{1.0f,1.08f},
-                  1.0f, 0.08f, {0.5f,3,4,4,3,1,4,0}},
-    {"bombshell", {1.66f,1.82f},{7.0f,7.6f},{0.50f,0.53f},{0.28f,0.36f},{0.14f,0.155f},
-                  {0.84f,0.92f},{0.64f,0.70f},{0.52f,0.57f},{0.84f,0.92f},{0.40f,0.44f},
-                  {0.85f,1.15f},{0.85f,1.10f},{0,0},{0.20f,0.40f},
-                  {0.35f,0.40f},{0.19f,0.22f},{0.130f,0.145f},{1.00f,1.08f},{1.0f,1.08f},
-                  1.0f, 0.10f, {0,2,5,3,2,1,5,0}},
-    {"dorito",    {1.78f,1.95f},{7.4f,8.0f},{0.48f,0.51f},{0.24f,0.30f},{0.19f,0.23f},
-                  {1.10f,1.25f},{0.86f,0.96f},{0.60f,0.68f},{0.68f,0.76f},{0.46f,0.52f},
-                  {0,0},{0.25f,0.45f},{0,0},{0.60f,0.90f},
-                  {0.34f,0.38f},{0.21f,0.24f},{0.165f,0.19f},{1.05f,1.15f},{1.05f,1.15f},
-                  0.0f, 0.08f, {6,1,1,2,0,0,2,2}},
-    {"brute",     {1.95f,2.25f},{7.4f,8.2f},{0.44f,0.48f},{0.12f,0.20f},{0.27f,0.33f},
-                  {1.40f,1.65f},{1.10f,1.30f},{0.76f,0.90f},{0.78f,0.90f},{0.58f,0.66f},
-                  {0,0},{0.30f,0.50f},{0.0f,0.25f},{0.85f,1.00f},
-                  {0.42f,0.48f},{0.26f,0.30f},{0.23f,0.27f},{1.15f,1.30f},{1.15f,1.25f},
-                  0.0f, 0.35f, {3,0,1,1,1,0,0,4}},
-    {"slender",   {1.70f,1.88f},{7.2f,7.8f},{0.50f,0.53f},{0.30f,0.38f},{0.13f,0.145f},
-                  {0.80f,0.90f},{0.60f,0.66f},{0.50f,0.56f},{0.70f,0.78f},{0.36f,0.40f},
-                  {0.15f,0.45f},{0.30f,0.55f},{0,0},{0.05f,0.25f},
-                  {0.29f,0.32f},{0.17f,0.18f},{0.115f,0.13f},{1.0f,1.05f},{1.0f,1.05f},
-                  0.6f, 0.35f, {0.5f,2,5,3,3,3,4,0}},
-    {"chibi",     {0.95f,1.20f},{3.0f,3.7f},{0.33f,0.37f},{0.06f,0.10f},{0.11f,0.13f},
-                  {0.56f,0.64f},{0.48f,0.54f},{0.44f,0.50f},{0.52f,0.58f},{0.30f,0.34f},
-                  {0.0f,0.15f},{0.20f,0.35f},{0.0f,0.15f},{0.0f,0.1f},
-                  {0.21f,0.24f},{0.13f,0.15f},{0.095f,0.11f},{1.0f,1.1f},{1.0f,1.1f},
-                  0.6f, 0.3f, {2,3,2,3,2,2,2,0}},
-    {"amazon",    {1.82f,2.00f},{7.2f,7.8f},{0.50f,0.53f},{0.24f,0.32f},{0.17f,0.19f},
-                  {0.98f,1.08f},{0.74f,0.80f},{0.54f,0.60f},{0.88f,0.96f},{0.42f,0.46f},
-                  {0.60f,0.95f},{0.70f,1.00f},{0,0},{0.55f,0.85f},
-                  {0.38f,0.42f},{0.21f,0.24f},{0.15f,0.17f},{1.05f,1.12f},{1.05f,1.12f},
-                  0.85f, 0.12f, {1,2,3,5,4,0,2,1}},
-    {"monster",   {1.95f,2.40f},{7.0f,8.2f},{0.42f,0.48f},{0.10f,0.22f},{0.24f,0.34f},
-                  {1.30f,1.70f},{1.00f,1.30f},{0.70f,0.95f},{0.75f,0.95f},{0.52f,0.68f},
-                  {0.0f,0.6f},{0.3f,0.7f},{0.0f,0.5f},{0.70f,1.00f},
-                  {0.40f,0.50f},{0.24f,0.32f},{0.20f,0.27f},{1.15f,1.35f},{1.10f,1.30f},
-                  0.2f, 1.0f, {3,0,3,1,2,0,1,3}},
-};
-// clang-format on
-
-float pick(Rng& r, R range) { return r.range(range.lo, range.hi); }
-
-// Push a value away from its "canon" centre.
-float exaggerate(float v, float canon, float e) { return canon + (v - canon) * (1.0f + 1.4f * e); }
-
-Vec3 jitter(Rng& r, Vec3 c, float amount) {
-    return {saturate(c.x + r.range(-amount, amount)), saturate(c.y + r.range(-amount, amount)),
-            saturate(c.z + r.range(-amount, amount))};
+template <size_t N>
+int indexOf(const std::string_view (&names)[N], std::string_view s) {
+    for (size_t i = 0; i < N; ++i)
+        if (names[i] == s) return int(i);
+    return -1;
 }
 
+float z(Rng& r) { return clamp(r.gauss(0, 1), -2.5f, 2.5f); }
+
+Vec3 jitter(Rng& r, Vec3 c, float a) {
+    return {saturate(c.x + r.range(-a, a)), saturate(c.y + r.range(-a, a)), saturate(c.z + r.range(-a, a))};
+}
+
+// Persona-indexed tables (Heroic, Villainous, Cute, Sexy, Stern, Gentle, Rogue, Noble).
+constexpr float kBrowTilt[] = {-0.10f, -0.30f, 0.18f, -0.05f, -0.22f, 0.15f, -0.08f, 0.0f};
+constexpr float kRestLid[] = {0.02f, 0.18f, 0.0f, 0.14f, 0.10f, 0.03f, 0.08f, 0.06f};
+constexpr float kMouthRest[] = {0.0f, 0.0f, 0.004f, 0.002f, -0.005f, 0.006f, 0.0f, -0.002f};
+constexpr float kMouthAsym[] = {0.0f, 0.006f, 0.0f, 0.002f, 0.0f, 0.0f, 0.005f, 0.0f};
+constexpr std::array<std::array<float, 5>, 8> kEyeShapeW = {{{3, 1, 1, 1, 0.5f},
+                                                              {1, 0.2f, 3, 2.5f, 0.3f},
+                                                              {1, 3, 0.2f, 0.6f, 1.5f},
+                                                              {2.5f, 0.5f, 1.5f, 2.5f, 0.5f},
+                                                              {2, 0.3f, 3, 1, 0.5f},
+                                                              {2, 1.5f, 0.5f, 0.5f, 2.5f},
+                                                              {2.5f, 0.5f, 1, 2, 0.5f},
+                                                              {3, 0.6f, 1.5f, 1.2f, 0.6f}}};
+constexpr std::array<std::array<float, 3>, 8> kBrowShapeW = {{{2, 1, 1.5f},
+                                                               {0.5f, 0.5f, 3},
+                                                               {1, 3, 0.2f},
+                                                               {1, 2.5f, 1.5f},
+                                                               {3, 0.3f, 1.5f},
+                                                               {1.5f, 2.5f, 0.2f},
+                                                               {1.5f, 1, 2},
+                                                               {1.5f, 2, 1}}};
+
 Vec3 pickSkin(Rng& r, bool fantasy) {
-    static constexpr Vec3 human[] = {{1.00f, 0.90f, 0.84f}, {1.00f, 0.85f, 0.74f}, {0.96f, 0.78f, 0.64f},
-                                     {0.86f, 0.64f, 0.48f}, {0.66f, 0.45f, 0.32f}, {0.45f, 0.30f, 0.22f}};
-    // Muted fantasy skins: orc green, frost blue-grey, demon red, dusk violet, ash, dark elf.
+    static constexpr Vec3 human[] = {{0.99f, 0.88f, 0.82f}, {0.97f, 0.82f, 0.71f}, {0.91f, 0.74f, 0.60f},
+                                     {0.80f, 0.60f, 0.45f}, {0.62f, 0.43f, 0.31f}, {0.42f, 0.29f, 0.22f}};
     static constexpr Vec3 fantasySkins[] = {{0.52f, 0.62f, 0.44f}, {0.62f, 0.68f, 0.76f}, {0.66f, 0.30f, 0.27f},
                                             {0.58f, 0.52f, 0.66f}, {0.58f, 0.58f, 0.60f}, {0.36f, 0.33f, 0.42f}};
     if (fantasy) return jitter(r, fantasySkins[r.weighted({2, 1, 1.5f, 0.6f, 1.5f, 1.5f})], 0.03f);
-    int i = r.weighted({4, 4, 3, 2, 1.5f, 1});
-    return jitter(r, human[i], 0.02f);
+    return jitter(r, human[r.weighted({3, 4, 3, 2.2f, 1.6f, 1.2f})], 0.02f);
 }
 
-Vec3 pickHair(Rng& r) {
-    // Anime hair: naturals plus vivid colours.
-    switch (r.weighted({3, 3, 2.2f, 1.6f, 0.35f, 0.3f, 2.2f, 0.25f, 0.15f, 0.5f})) {
-        case 0: return hsv(r.range(0.70f, 0.75f), r.range(0.2f, 0.4f), r.range(0.12f, 0.22f));  // near black
-        case 1: return hsv(r.range(0.06f, 0.09f), r.range(0.5f, 0.7f), r.range(0.35f, 0.55f));  // brown
-        case 2: return hsv(r.range(0.11f, 0.14f), r.range(0.45f, 0.65f), r.range(0.85f, 0.98f));  // blonde
-        case 3: return hsv(r.range(0.0f, 0.02f), r.range(0.7f, 0.85f), r.range(0.65f, 0.85f));  // red
-        case 4: return hsv(r.range(0.92f, 0.97f), r.range(0.35f, 0.55f), r.range(0.9f, 1.0f));  // pink
-        case 5: return hsv(r.range(0.55f, 0.62f), r.range(0.5f, 0.75f), r.range(0.6f, 0.9f));  // blue
-        case 6: return hsv(r.range(0.08f, 0.62f), r.range(0.02f, 0.08f), r.range(0.80f, 0.95f));  // silver / white
-        case 7: return hsv(r.range(0.74f, 0.80f), r.range(0.4f, 0.6f), r.range(0.55f, 0.8f));  // purple
-        case 8: return hsv(r.range(0.38f, 0.47f), r.range(0.45f, 0.65f), r.range(0.55f, 0.8f));  // green/teal
-        default: return hsv(r.range(0.07f, 0.10f), r.range(0.75f, 0.9f), r.range(0.9f, 1.0f));  // orange
+Vec3 pickHair(Rng& r, Persona p) {
+    const bool dark = p == Persona::Villainous || p == Persona::Noble;
+    switch (r.weighted({3, 3, 2.5f, 1, 0.7f, 2, 0.6f, dark ? 0.9f : 0.3f, 0.2f, 0.3f})) {
+        case 0: return hsv(r.range(0.05f, 0.08f), r.range(0.2f, 0.4f), r.range(0.10f, 0.16f));  // black
+        case 1: return hsv(r.range(0.06f, 0.08f), r.range(0.45f, 0.6f), r.range(0.20f, 0.30f)); // dark brown
+        case 2: return hsv(r.range(0.07f, 0.09f), r.range(0.45f, 0.6f), r.range(0.35f, 0.50f)); // brown
+        case 3: return hsv(r.range(0.03f, 0.05f), r.range(0.6f, 0.75f), r.range(0.38f, 0.52f)); // auburn
+        case 4: return hsv(r.range(0.02f, 0.05f), r.range(0.65f, 0.8f), r.range(0.55f, 0.72f)); // red
+        case 5: return hsv(r.range(0.10f, 0.12f), r.range(0.40f, 0.55f), r.range(0.72f, 0.88f)); // blonde
+        case 6: return hsv(r.range(0.11f, 0.13f), r.range(0.15f, 0.25f), r.range(0.86f, 0.95f)); // platinum
+        case 7: return hsv(r.range(0.55f, 0.65f), r.range(0.02f, 0.06f), r.range(0.84f, 0.94f)); // white / silver
+        case 8: return hsv(r.range(0.97f, 1.0f), r.range(0.6f, 0.75f), r.range(0.30f, 0.42f));  // deep crimson
+        default: return hsv(r.range(0.62f, 0.68f), r.range(0.25f, 0.4f), r.range(0.12f, 0.2f)); // blue-black
     }
 }
 
-void makePalette(Rng& r, Genome& g, bool fantasy) {
-    Palette& p = g.palette;
-    p.skin = pickSkin(r, fantasy);
-    p.hair = pickHair(r);
-    // Subtle gradient towards the tips (sometimes a dyed tip).
-    p.hairTip = r.chance(0.2f) ? pickHair(r) : p.hair * 0.85f + Vec3{0.05f, 0.03f, 0.08f};
-    float ih = r.uniform();
-    p.iris = hsv(ih, r.range(0.6f, 0.9f), r.range(0.55f, 0.85f));
-    p.iris2 = hsv(ih + r.range(-0.06f, 0.06f), r.range(0.3f, 0.6f), 1.0f);
-
-    // Cloth: colour-scheme based palettes so outfits always look designed.
-    int scheme = r.weighted({3, 4, 1.5f, 0.3f});
-    float h = r.uniform();
-    float s = r.range(0.22f, 0.55f);
-    if (scheme == 0) {  // complementary
-        p.cloth[0] = hsv(h, s, r.range(0.3f, 0.6f));
-        p.cloth[1] = hsv(h, s * 0.15f, r.range(0.85f, 0.97f));
-        p.cloth[2] = hsv(h + 0.5f, r.range(0.35f, 0.6f), r.range(0.55f, 0.8f));
-    } else if (scheme == 1) {  // analogous
-        p.cloth[0] = hsv(h, s, r.range(0.25f, 0.5f));
-        p.cloth[1] = hsv(h + 0.08f, s * 0.8f, r.range(0.6f, 0.85f));
-        p.cloth[2] = hsv(h - 0.1f, r.range(0.35f, 0.6f), r.range(0.6f, 0.85f));
-    } else if (scheme == 2) {  // triad
-        p.cloth[0] = hsv(h, s, r.range(0.35f, 0.65f));
-        p.cloth[1] = hsv(h + 0.333f, s * 0.6f, r.range(0.7f, 0.9f));
-        p.cloth[2] = hsv(h + 0.666f, r.range(0.35f, 0.6f), r.range(0.55f, 0.8f));
-    } else {  // chess: black & white with one accent (Hyper Chess homage)
-        bool dark = r.chance(0.5f);
-        p.cloth[0] = dark ? Vec3{0.12f, 0.12f, 0.14f} : Vec3{0.94f, 0.94f, 0.96f};
-        p.cloth[1] = dark ? Vec3{0.94f, 0.94f, 0.96f} : Vec3{0.12f, 0.12f, 0.14f};
-        p.cloth[2] = hsv(h, 0.8f, 0.9f);
-        g.outfit.pattern = r.chance(0.6f) ? Pattern::Checker : Pattern::Plain;
+Vec3 pickIris(Rng& r, bool fantasy) {
+    if (fantasy && r.chance(0.6f)) {
+        switch (r.rangeInt(0, 2)) {
+            case 0: return hsv(r.range(0.98f, 1.02f), 0.75f, 0.75f);  // red
+            case 1: return hsv(r.range(0.74f, 0.80f), 0.55f, 0.70f);  // violet
+            default: return hsv(r.range(0.11f, 0.13f), 0.80f, 0.85f); // gold
+        }
     }
-    p.leather = hsv(r.range(0.04f, 0.09f), r.range(0.4f, 0.6f), r.range(0.18f, 0.4f));
-    p.metal = r.chance(0.5f) ? hsv(r.range(0.1f, 0.13f), r.range(0.45f, 0.6f), r.range(0.8f, 0.95f))  // gold
-                             : hsv(r.range(0.55f, 0.65f), r.range(0.05f, 0.15f), r.range(0.6f, 0.85f));  // steel
-    p.horn = fantasy && r.chance(0.5f) ? hsv(r.uniform(), 0.4f, 0.25f) : Vec3{0.92f, 0.88f, 0.78f};
-    // Lips: natural (skin-derived) or a painted colour.
-    p.lips = r.chance(0.6f) ? lerp(p.skin * Vec3{0.92f, 0.62f, 0.62f}, Vec3{0.7f, 0.3f, 0.32f}, 0.35f)
-                            : hsv(r.range(-0.04f, 0.02f), r.range(0.45f, 0.7f), r.range(0.35f, 0.65f));
-    p.eyeShadow = r.chance(0.5f) ? lerp(p.skin * 0.5f, Vec3{0.25f, 0.15f, 0.2f}, 0.5f) : hsv(r.uniform(), 0.35f, 0.4f);
+    switch (r.weighted({4, 1.5f, 0.6f, 1, 2, 1})) {
+        case 0: return hsv(r.range(0.06f, 0.08f), r.range(0.6f, 0.75f), r.range(0.25f, 0.40f));  // brown
+        case 1: return hsv(r.range(0.10f, 0.14f), r.range(0.5f, 0.65f), r.range(0.40f, 0.55f));  // hazel
+        case 2: return hsv(r.range(0.09f, 0.11f), r.range(0.75f, 0.9f), r.range(0.55f, 0.70f));  // amber
+        case 3: return hsv(r.range(0.28f, 0.38f), r.range(0.40f, 0.6f), r.range(0.40f, 0.55f));  // green
+        case 4: return hsv(r.range(0.55f, 0.60f), r.range(0.45f, 0.65f), r.range(0.55f, 0.75f)); // blue
+        default: return hsv(r.range(0.55f, 0.60f), r.range(0.08f, 0.18f), r.range(0.50f, 0.65f)); // grey
+    }
 }
 
-template <class E>
-E pickEnum(Rng& r, std::initializer_list<float> w) {
-    return static_cast<E>(r.weighted(w));
+AgeGroup groupOf(float age) {
+    return age < 23 ? AgeGroup::Young : age < 40 ? AgeGroup::Adult : age < 60 ? AgeGroup::Mature : AgeGroup::Elder;
 }
 
 }  // namespace
 
-std::string_view toString(Archetype a) { return a < Archetype::Count ? kSpecs[size_t(a)].name : "?"; }
-
-std::string_view toString(HairStyle a) {
-    static constexpr std::string_view n[] = {"short", "bob", "long", "ponytail", "braid", "hime", "sideswept", "buzz"};
-    return a < HairStyle::Count ? n[size_t(a)] : "?";
-}
-
+std::string_view toString(Sex s) { return s == Sex::Female ? "female" : "male"; }
+std::string_view toString(AgeGroup a) { return a < AgeGroup::Count ? kAgeNames[size_t(a)] : "?"; }
+std::string_view toString(Persona p) { return p < Persona::Count ? kPersonaNames[size_t(p)] : "?"; }
+std::string_view toString(Archetype a) { return a < Archetype::Count ? kArchNames[size_t(a)] : "?"; }
+std::string_view toString(HairStyle h) { return h < HairStyle::Count ? kHairNames[size_t(h)] : "?"; }
+std::string_view toString(FacialHair f) { return f < FacialHair::Count ? kBeardNames[size_t(f)] : "?"; }
 std::optional<Archetype> archetypeFromString(std::string_view s) {
-    for (size_t i = 0; i < size_t(Archetype::Count); ++i)
-        if (kSpecs[i].name == s) return Archetype(i);
-    return std::nullopt;
+    int i = indexOf(kArchNames, s);
+    return i < 0 ? std::nullopt : std::optional<Archetype>(Archetype(i));
 }
-
-void stripToBase(Genome& g) {
-    Outfit& o = g.outfit;
-    o = Outfit{};
-    o.top = g.femininity > 0.5f || g.body.bust > 0.2f ? TopStyle::Bandeau : TopStyle::None;
-    o.bottom = BottomStyle::Briefs;
-    o.gloves = GloveStyle::None;
-    o.boots = BootStyle::Shoe;
-    o.belt = false;
-    o.pattern = Pattern::Plain;
-    g.palette.cloth[0] = g.palette.cloth[1] = Vec3{0.22f, 0.22f, 0.25f};
+std::optional<Persona> personaFromString(std::string_view s) {
+    int i = indexOf(kPersonaNames, s);
+    return i < 0 ? std::nullopt : std::optional<Persona>(Persona(i));
+}
+std::optional<AgeGroup> ageFromString(std::string_view s) {
+    int i = indexOf(kAgeNames, s);
+    return i < 0 ? std::nullopt : std::optional<AgeGroup>(AgeGroup(i));
 }
 
 Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     Genome g;
     g.seed = seed;
     Rng root(seed);
-    Rng ra = root.fork(1);
-    g.archetype = opt.archetype ? *opt.archetype : Archetype(ra.weighted({4, 3, 3, 1.5f, 2, 0, 2, 1}));  // chibi only on request
-    const ArchetypeSpec& sp = kSpecs[size_t(g.archetype)];
+    const Archetype arch = opt.archetype.value_or(Archetype::Natural);
+    g.archetype = arch;
 
-    // ---- body ----
-    Rng rb = root.fork(2);
+    // ---- identity: sex, age, persona ----
+    Rng ri = root.fork(1);
+    bool fem = ri.chance(0.5f);
+    if (arch == Archetype::Bombshell || arch == Archetype::Amazon) fem = true;
+    if (arch == Archetype::Dorito || arch == Archetype::Brute) fem = false;
+    if (opt.sex) fem = *opt.sex == Sex::Female;
+    g.sex = fem ? Sex::Female : Sex::Male;
+    g.femininity = fem ? ri.range(0.82f, 0.97f) : ri.range(0.03f, 0.18f);
+
+    Rng ra = root.fork(2);
+    AgeGroup ag = opt.age ? *opt.age : AgeGroup(ra.weighted({0.26f, 0.40f, 0.22f, 0.12f}));
+    if (arch == Archetype::Chibi) ag = AgeGroup::Young;
+    static constexpr float kAgeLo[] = {16, 23, 40, 60}, kAgeHi[] = {22.9f, 39.9f, 59.9f, 82};
+    g.age = ra.range(kAgeLo[size_t(ag)], kAgeHi[size_t(ag)]);
+    g.ageGroup = groupOf(g.age);
+    const bool young = ag == AgeGroup::Young, mature = ag == AgeGroup::Mature, elder = ag == AgeGroup::Elder;
+
+    Rng rp = root.fork(3);
+    const Persona per = opt.persona ? *opt.persona
+                                    : Persona(rp.weighted({fem ? 1.2f : 1.6f, 1.0f, fem ? 1.2f : 0.4f, fem ? 1.1f : 0.7f,
+                                                           1.0f, 1.0f, 1.0f, 0.8f}));
+    g.persona = per;
+    const size_t P = size_t(per);
+
+    // ---- body: ordinary population, three independent axes ----
+    Rng rb = root.fork(4);
+    float frame = z(rb), fat = z(rb), mus = z(rb), tz = z(rb);
+    fat += young ? -0.2f : mature ? 0.35f : elder ? 0.45f : 0.0f;
+    mus += elder ? -0.6f : 0.0f;
+    switch (per) {
+        case Persona::Heroic: mus += 0.7f; fat -= 0.2f; break;
+        case Persona::Rogue: mus += 0.3f; fat -= 0.3f; break;
+        case Persona::Cute: mus -= 0.5f; break;
+        case Persona::Sexy: mus += 0.2f; fat -= 0.1f; break;
+        case Persona::Stern: mus += 0.2f; break;
+        case Persona::Gentle: fat += 0.2f; break;
+        default: break;
+    }
+    fat = clamp(fat, -2.0f, 2.6f);
+    mus = clamp(mus, -2.2f, 2.5f);
+
     BodyShape& b = g.body;
-    float e = opt.exaggeration;
-    b.height = pick(rb, sp.height);
-    b.headsTall = pick(rb, sp.heads);
-    b.legRatio = pick(rb, sp.legs);
-    b.neckLength = pick(rb, sp.neckLen);
-    b.neckThick = pick(rb, sp.neckThick);
-    b.shoulderWidth = exaggerate(pick(rb, sp.shoulder), 0.95f, e);
-    b.chestWidth = exaggerate(pick(rb, sp.chest), 0.72f, e);
-    b.waistWidth = std::max(0.34f, exaggerate(pick(rb, sp.waist), 0.58f, e));
-    b.hipWidth = exaggerate(pick(rb, sp.hip), 0.80f, e);
-    b.chestDepth = pick(rb, sp.depth);
-    b.bust = std::max(0.0f, pick(rb, sp.bust) * (1.0f + 0.6f * e));
-    b.butt = std::max(0.0f, pick(rb, sp.butt) * (1.0f + 0.5f * e));
-    b.belly = pick(rb, sp.belly);
-    b.muscle = pick(rb, sp.muscle);
-    b.thigh = exaggerate(pick(rb, sp.thigh), 0.36f, e * 0.7f);
-    b.calf = exaggerate(pick(rb, sp.calf), 0.21f, e * 0.7f);
-    b.arm = exaggerate(pick(rb, sp.arm), 0.15f, e * 0.8f);
-    b.handSize = exaggerate(pick(rb, sp.hand), 1.0f, e * 0.6f);
-    b.footSize = pick(rb, sp.foot);
-    b.armLength = rb.range(0.96f, 1.04f);
-    b.headWidth = rb.range(0.97f, 1.05f) * (sp.femininity > 0.5f ? 1.0f : 1.06f);
-    b.posture = rb.range(0.3f, 0.8f) * (0.5f + 0.6f * sp.femininity);
+    const float ageH = young ? 0.99f : elder ? 0.975f : 1.0f;
+    b.height = (fem ? 1.65f + 0.065f * tz : 1.78f + 0.07f * tz) * ageH;
+    b.headsTall = (fem ? 7.3f : 7.5f) + 0.12f * tz - (young ? 0.15f : 0.0f);
+    b.legRatio = clamp(0.515f + 0.008f * z(rb) + (fem ? 0.005f : 0.0f), 0.49f, 0.54f);
+    b.neckLength = clamp((fem ? 0.29f : 0.25f) + 0.025f * z(rb) - 0.02f * std::max(0.0f, mus), 0.12f, 0.38f);
+    b.neckThick = (fem ? 0.14f : 0.18f) + 0.010f * frame + 0.015f * std::max(0.0f, mus) + 0.008f * fat;
+    if (fem) {
+        b.shoulderWidth = 0.82f + 0.035f * frame + 0.025f * mus;
+        b.chestWidth = 0.62f + 0.025f * frame + 0.025f * fat;
+        b.waistWidth = 0.53f + 0.055f * fat - 0.01f * mus;
+        b.hipWidth = 0.79f + 0.035f * frame + 0.045f * fat;
+        b.chestDepth = 0.39f + 0.02f * fat;
+        b.bust = clamp(0.55f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.2f);
+        b.butt = clamp(0.55f + 0.15f * z(rb) + 0.10f * fat, 0.2f, 1.2f);
+        b.muscle = saturate(0.22f + 0.13f * mus);
+        b.thigh = 0.31f + 0.022f * fat + 0.010f * mus;
+        b.calf = 0.175f + 0.010f * fat + 0.006f * mus;
+        b.arm = 0.115f + 0.007f * fat + 0.006f * mus;
+        b.handSize = 0.94f + 0.02f * frame;
+        b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
+    } else {
+        b.shoulderWidth = 1.06f + 0.045f * frame + 0.05f * mus;
+        b.chestWidth = 0.84f + 0.03f * frame + 0.035f * mus + 0.02f * fat;
+        b.waistWidth = 0.58f + 0.07f * fat - 0.015f * mus;
+        b.hipWidth = 0.71f + 0.025f * frame + 0.03f * fat;
+        b.chestDepth = 0.45f + 0.02f * mus + 0.02f * fat;
+        b.bust = std::max(0.0f, 0.12f * (fat - 1.0f));  // only heavier men get chest softness
+        b.butt = clamp(0.30f + 0.08f * z(rb) + 0.05f * mus, 0.1f, 0.6f);
+        b.muscle = saturate(0.50f + 0.17f * mus);
+        b.thigh = 0.31f + 0.015f * fat + 0.020f * mus;
+        b.calf = 0.19f + 0.008f * fat + 0.012f * mus;
+        b.arm = 0.135f + 0.008f * fat + 0.014f * mus;
+        b.handSize = 1.0f + 0.03f * frame;
+        b.posture = 0.45f + 0.05f * z(rb);
+    }
+    b.belly = std::max(0.0f, 0.18f * (fat - 0.6f)) + (elder ? 0.05f : 0.0f);
+    b.footSize = b.handSize;
+    b.headWidth = 1.0f + 0.025f * z(rb) + (fem ? 0.0f : 0.03f);
+    b.armLength = 1.0f + 0.015f * z(rb);
+    b.sag = elder ? rb.range(0.6f, 0.9f) : mature ? rb.range(0.2f, 0.4f) : rb.range(0.0f, 0.1f);
+    b.hunch = elder ? rb.range(0.4f, 0.8f) : mature ? rb.range(0.0f, 0.15f) : 0.0f;
+    if (per == Persona::Sexy && fem) {
+        b.bust += 0.2f;
+        b.butt += 0.2f;
+        b.waistWidth -= 0.03f;
+        b.hipWidth += 0.03f;
+    }
+    if (per == Persona::Cute) {
+        b.headsTall -= 0.25f;
+        b.height *= 0.97f;
+    }
+    if (per == Persona::Noble) {
+        b.posture += 0.1f;
+        b.headsTall += 0.1f;
+    }
 
-    // ---- beast / anatomy extensions ----
-    Rng rx = root.fork(3);
-    bool fantasy = rx.chance(sp.fantasyChance);
-    bool monster = g.archetype == Archetype::Monster;
-    b.armPairs = monster ? (rx.chance(0.6f) ? 2 : 1) : (fantasy && rx.chance(0.08f) ? 2 : 1);
-    b.tail = monster ? rx.chance(0.7f) : (fantasy && rx.chance(0.35f));
-    b.tailLength = rx.range(0.7f, 1.3f);
-    b.horns = (monster ? rx.chance(0.75f) : (fantasy && rx.chance(0.3f))) ? 2 : 0;
-    b.hornSize = rx.range(0.7f, 1.6f) * (monster ? 1.3f : 1.0f);
-    b.ears = fantasy ? pickEnum<EarStyle>(rx, {1.5f, 3, sp.femininity > 0.5f ? 0.4f : 0.0f}) : EarStyle::Human;
+    // ---- stylised presets (opt-in) ----
+    switch (arch) {
+        case Archetype::Bombshell:
+            b.bust = rb.range(0.95f, 1.2f); b.butt = rb.range(0.9f, 1.15f);
+            b.waistWidth = rb.range(0.52f, 0.56f); b.hipWidth = rb.range(0.86f, 0.94f);
+            b.headsTall = rb.range(7.0f, 7.4f); b.thigh = rb.range(0.36f, 0.40f);
+            break;
+        case Archetype::Dorito:
+            b.shoulderWidth = rb.range(1.12f, 1.25f); b.chestWidth = rb.range(0.88f, 0.96f);
+            b.waistWidth = rb.range(0.60f, 0.66f); b.hipWidth = rb.range(0.68f, 0.74f);
+            b.muscle = rb.range(0.75f, 0.95f); b.arm = rb.range(0.17f, 0.19f); b.belly = 0;
+            b.headsTall = rb.range(7.4f, 7.9f); b.height = rb.range(1.82f, 1.95f);
+            break;
+        case Archetype::Brute:
+            b.height = rb.range(2.0f, 2.3f); b.headsTall = rb.range(7.6f, 8.2f); b.legRatio = rb.range(0.44f, 0.47f);
+            b.shoulderWidth = rb.range(1.4f, 1.65f); b.chestWidth = rb.range(1.1f, 1.3f);
+            b.waistWidth = rb.range(0.8f, 0.92f); b.hipWidth = rb.range(0.8f, 0.9f); b.chestDepth = rb.range(0.58f, 0.66f);
+            b.muscle = rb.range(0.9f, 1.0f); b.thigh = rb.range(0.42f, 0.47f); b.calf = rb.range(0.26f, 0.30f);
+            b.arm = rb.range(0.23f, 0.27f); b.neckThick = rb.range(0.27f, 0.32f); b.neckLength = rb.range(0.12f, 0.2f);
+            b.handSize = b.footSize = rb.range(1.15f, 1.3f); b.belly = rb.range(0.0f, 0.25f);
+            break;
+        case Archetype::Amazon:
+            b.height = rb.range(1.84f, 2.0f); b.headsTall = rb.range(7.2f, 7.7f); b.muscle = rb.range(0.6f, 0.85f);
+            b.shoulderWidth = rb.range(0.98f, 1.08f); b.chestWidth = rb.range(0.74f, 0.8f); b.waistWidth = rb.range(0.55f, 0.6f);
+            b.hipWidth = rb.range(0.88f, 0.95f); b.bust = rb.range(0.6f, 0.9f); b.butt = rb.range(0.75f, 1.0f);
+            b.thigh = rb.range(0.38f, 0.42f); b.calf = rb.range(0.21f, 0.24f); b.arm = rb.range(0.15f, 0.17f);
+            break;
+        case Archetype::Slender:
+            b.height *= 1.04f; b.headsTall = rb.range(7.3f, 7.7f); b.waistWidth -= 0.04f; b.hipWidth -= 0.05f;
+            b.thigh = rb.range(0.28f, 0.31f); b.calf = rb.range(0.16f, 0.18f); b.arm = rb.range(0.11f, 0.125f);
+            b.muscle = rb.range(0.05f, 0.2f); b.bust = std::min(b.bust, 0.4f); b.legRatio = 0.52f;
+            break;
+        case Archetype::Chibi:
+            b.height = rb.range(0.95f, 1.2f); b.headsTall = rb.range(3.0f, 3.7f); b.legRatio = rb.range(0.33f, 0.37f);
+            b.neckLength = 0.08f; b.neckThick = 0.12f; b.shoulderWidth = 0.6f; b.chestWidth = 0.5f; b.waistWidth = 0.47f;
+            b.hipWidth = 0.55f; b.chestDepth = 0.32f; b.bust = 0.1f; b.butt = 0.25f; b.muscle = 0.05f;
+            b.thigh = 0.22f; b.calf = 0.14f; b.arm = 0.1f; b.sag = b.hunch = 0;
+            break;
+        case Archetype::Monster:
+            b.height = rb.range(1.95f, 2.4f); b.headsTall = rb.range(7.0f, 8.0f); b.legRatio = rb.range(0.42f, 0.48f);
+            b.shoulderWidth = rb.range(1.3f, 1.7f); b.chestWidth = rb.range(1.0f, 1.3f); b.waistWidth = rb.range(0.7f, 0.95f);
+            b.hipWidth = rb.range(0.75f, 0.95f); b.chestDepth = rb.range(0.52f, 0.68f); b.muscle = rb.range(0.7f, 1.0f);
+            b.thigh = rb.range(0.4f, 0.5f); b.calf = rb.range(0.24f, 0.32f); b.arm = rb.range(0.2f, 0.27f);
+            b.neckThick = rb.range(0.24f, 0.34f); b.neckLength = rb.range(0.1f, 0.22f);
+            b.handSize = b.footSize = rb.range(1.15f, 1.35f);
+            break;
+        default: break;
+    }
+    const float e = opt.exaggeration;
+    auto ex = [e](float v, float canon) { return canon + (v - canon) * (1.0f + 1.4f * e); };
+    b.shoulderWidth = ex(b.shoulderWidth, 0.92f);
+    b.waistWidth = std::max(0.34f, ex(b.waistWidth, 0.59f));
+    b.hipWidth = ex(b.hipWidth, 0.76f);
+    b.bust *= 1.0f + 0.5f * e;
+    b.butt *= 1.0f + 0.4f * e;
 
-    // ---- face ----
-    Rng rf = root.fork(4);
-    float fem = std::clamp(sp.femininity + rf.range(-0.15f, 0.15f), 0.0f, 1.0f);
-    g.femininity = fem;
+    // ---- fantasy extensions ----
+    Rng rx = root.fork(5);
+    const bool monster = arch == Archetype::Monster;
+    const bool fantasy = monster || rx.chance(per == Persona::Villainous ? 0.12f : 0.05f);
+    b.armPairs = monster && rx.chance(0.5f) ? 2 : 1;
+    b.tail = monster ? rx.chance(0.6f) : (fantasy && rx.chance(0.2f));
+    b.tailLength = rx.range(0.7f, 1.2f);
+    b.horns = (monster ? rx.chance(0.7f) : (fantasy && rx.chance(0.35f))) ? 2 : 0;
+    b.hornSize = rx.range(0.7f, 1.3f) * (monster ? 1.3f : 1.0f);
+    b.ears = (fantasy ? rx.chance(0.6f) : rx.chance(0.10f)) ? EarStyle::Elf : EarStyle::Human;
+
+    // ---- face: persona + age + sex ----
+    Rng rf = root.fork(6);
     FaceStyle& f = g.face;
-    f.eyeSize = lerp(0.8f, 1.12f, fem) * rf.range(0.92f, 1.08f) * (g.archetype == Archetype::Chibi ? 1.15f : 1.0f);
-    f.eyeSpacing = rf.range(0.94f, 1.06f);
-    f.eyeTilt = rf.range(-0.12f, 0.18f) + (1.0f - fem) * 0.06f;
-    f.eyeRound = saturate(lerp(0.25f, 0.75f, fem) + rf.range(-0.15f, 0.15f));
-    f.lashWeight = saturate(lerp(0.25f, 0.95f, fem) + rf.range(-0.1f, 0.1f));
-    f.browThick = saturate(lerp(0.85f, 0.4f, fem) + rf.range(-0.1f, 0.1f));
-    f.mouthWidth = rf.range(0.85f, 1.15f) * (fem < 0.5f ? 1.15f : 1.0f);
-    f.pupil = fantasy ? pickEnum<PupilStyle>(rf, {2, 3, 0.5f, 0}) : PupilStyle::Round;
-    f.fang = rf.chance(fantasy ? 0.35f : 0.04f);
-    f.eyeShape = rf.weighted({3, fem > 0.5f ? 1.5f : 0.4f, 2, fem > 0.5f ? 2.0f : 1.0f, 1.5f});
-    f.maturity = saturate(rf.range(0.45f, 0.95f) - (g.archetype == Archetype::Chibi ? 0.6f : 0.0f));
-    f.lipFullness = saturate(lerp(0.15f, 0.7f, fem) + rf.range(-0.15f, 0.25f));
-    f.noseSize = rf.range(0.85f, 1.2f) * (fem < 0.5f ? 1.15f : 1.0f);
-    f.browShape = rf.rangeInt(0, 2);
-    f.eyeShadow = fem > 0.5f ? rf.range(0.1f, 0.8f) : rf.range(0.0f, 0.15f);
-    f.freckles = rf.chance(0.12f);
-    f.scar = fem < 0.5f && rf.chance(0.25f);
-    f.jaw = saturate(rf.range(0.0f, 0.6f) + (1 - fem) * 0.5f) * 2 - 1;
-    f.chin = rf.range(-0.8f, 0.8f);
-    f.cheek = rf.range(-0.8f, 0.8f);
-    f.blush = rf.chance(fem * 0.15f);
+    f.eyeShape = rf.weighted(std::span<const float>(kEyeShapeW[P]));
+    f.eyeSize = 1.0f + 0.06f * z(rf) + (per == Persona::Cute ? 0.12f : 0.0f) - (per == Persona::Villainous ? 0.08f : 0.0f) +
+                (young ? 0.06f : 0.0f) - (elder ? 0.06f : 0.0f) - (fem ? 0.0f : 0.05f);
+    f.eyeSpacing = 1.0f + 0.04f * z(rf);
+    f.eyeTilt = 0.05f * z(rf) + (per == Persona::Villainous ? 0.06f : 0.0f) - (per == Persona::Gentle ? 0.05f : 0.0f);
+    f.restLid = clamp(kRestLid[P] + (elder ? 0.08f : 0.0f) + 0.03f * z(rf), 0.0f, 0.32f);
+    f.lashWeight = saturate(fem ? 0.55f + 0.15f * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) : 0.25f + 0.1f * z(rf));
+    f.pupil = fantasy && per == Persona::Villainous && rf.chance(0.5f) ? PupilStyle::Slit : PupilStyle::Round;
+    f.browShape = rf.weighted(std::span<const float>(kBrowShapeW[P]));
+    f.browThick = saturate((fem ? 0.40f : 0.65f) + 0.12f * z(rf) + (elder && !fem ? 0.1f : 0.0f));
+    f.browTilt = kBrowTilt[P] + 0.05f * z(rf);
+    f.browHeight = per == Persona::Noble ? 0.005f : per == Persona::Stern ? -0.006f : per == Persona::Cute ? 0.006f : 0.0f;
+    f.mouthWidth = 1.0f + 0.06f * z(rf) + (fem ? 0.0f : 0.05f);
+    f.lipFullness = saturate((fem ? 0.55f : 0.30f) + (fem ? 0.15f : 0.10f) * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) -
+                             (elder ? 0.15f : 0.0f));
+    f.mouthRest = kMouthRest[P];
+    f.mouthAsym = kMouthAsym[P] * (rf.chance(0.5f) ? 1.0f : -1.0f);
+    f.noseSize = (fem ? 0.92f : 1.10f) + 0.08f * z(rf) - (per == Persona::Cute ? 0.1f : 0.0f) + (elder ? 0.06f : 0.0f);
+    f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
+                            (per == Persona::Cute ? 0.25f : 0.0f));
+    f.jaw = clamp(fem ? -0.35f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
+                      : 0.45f + 0.25f * z(rf) + (per == Persona::Heroic ? 0.3f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
+                  -1.0f, 1.0f);
+    f.chin = clamp(0.2f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
+                       (per == Persona::Cute ? 0.3f : 0.0f),
+                   -1.0f, 1.0f);
+    f.cheek = clamp(0.25f * z(rf) + (per == Persona::Villainous ? 0.45f : 0.0f) + (per == Persona::Noble ? 0.25f : 0.0f) +
+                        (per == Persona::Sexy ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.2f : 0.0f),
+                    -1.0f, 1.0f);
+    f.browRidge = saturate(fem ? 0.2f + 0.1f * z(rf) : 0.7f + 0.15f * z(rf)) + (per == Persona::Villainous ? 0.15f : 0.0f);
+    f.roundness = saturate((young ? 0.35f : 0.0f) + (per == Persona::Cute ? 0.4f : 0.0f) + 0.15f * fat);
+    f.ageLines = saturate((g.age - 36.0f) / 36.0f);
+    f.freckles = rf.chance(young ? 0.18f : 0.10f);
+    f.scar = rf.chance(per == Persona::Rogue ? 0.45f : per == Persona::Heroic ? 0.2f : fem ? 0.04f : 0.1f);
+    f.fang = fantasy && per == Persona::Villainous && rf.chance(0.3f);
+    f.blush = per == Persona::Cute && rf.chance(0.3f);
 
     // ---- hair ----
-    Rng rh = root.fork(5);
-    g.hair = HairStyle(rh.weighted(std::span<const float>(sp.hairWeights)));
-    g.hairVolume = rh.range(0.85f, 1.2f);
-    g.hairLength = rh.range(0.8f, 1.25f);
-
-    // ---- outfit ----
-    Rng ro = root.fork(6);
-    Outfit& o = g.outfit;
-    o.pattern = pickEnum<Pattern>(ro, {6, 1.2f, 0.8f});
-    if (fem > 0.5f) {
-        o.top = pickEnum<TopStyle>(ro, {0, 2, 2, 2, 3, 2, 1.5f});
-        o.bottom = pickEnum<BottomStyle>(ro, {2, 3, 1, 3, 0.6f});
-        o.boots = pickEnum<BootStyle>(ro, {1, 2, 3, 2.5f});
-        o.gloves = pickEnum<GloveStyle>(ro, {3, 1.5f, 1.5f, 1.5f});
+    Rng rh = root.fork(7);
+    std::array<float, size_t(HairStyle::Count)> w{};
+    using H = HairStyle;
+    auto W = [&](H s) -> float& { return w[size_t(s)]; };
+    if (fem) {
+        W(H::Buzz) = 0.1f; W(H::ShortCrop) = 0.2f; W(H::SidePart) = 0.3f; W(H::SlickedBack) = 0.2f; W(H::Messy) = 0.5f;
+        W(H::Undercut) = 0.4f; W(H::Pixie) = 1.2f; W(H::Bob) = 2.0f; W(H::Shoulder) = 2.5f; W(H::LongStraight) = 3.0f;
+        W(H::LongWavy) = 2.5f; W(H::Ponytail) = 2.0f; W(H::HighPonytail) = 1.2f; W(H::Braid) = 1.5f; W(H::Bun) = 1.2f;
+        W(H::HalfUp) = 1.5f;
+        if (elder) { W(H::Bun) += 2; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f; W(H::LongWavy) *= 0.5f; }
     } else {
-        o.top = pickEnum<TopStyle>(ro, {g.archetype == Archetype::Brute || monster ? 4.0f : 1.0f, 2, 2, 2, 0, 0, 2.5f});
-        o.bottom = pickEnum<BottomStyle>(ro, {5, 2, 0, 0, monster ? 3.0f : 0.8f});
-        o.boots = pickEnum<BootStyle>(ro, {1, 3, 3, 0});
-        o.gloves = pickEnum<GloveStyle>(ro, {2, 2, 2.5f, 0.5f});
+        W(H::Bald) = elder ? 2.3f : mature ? 0.6f : 0.15f; W(H::Buzz) = 1.2f; W(H::ShortCrop) = 3.0f; W(H::SidePart) = 2.5f;
+        W(H::SlickedBack) = 1.5f; W(H::Messy) = 2.5f; W(H::Undercut) = 1.5f; W(H::Shoulder) = 1.0f; W(H::LongStraight) = 0.6f;
+        W(H::LongWavy) = 0.5f; W(H::Ponytail) = 0.8f; W(H::Braid) = 0.3f; W(H::HalfUp) = 0.3f; W(H::ManBun) = 0.8f;
+        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; }
     }
-    o.shoulderPads = ro.weighted({5, 1.5f, g.archetype == Archetype::Brute || g.archetype == Archetype::Dorito ? 4.0f : 1.5f});
-    o.padSize = ro.range(0.8f, 1.3f) * (1.0f + 0.4f * e);
-    o.belt = ro.chance(0.6f);
-    o.tabard = o.bottom != BottomStyle::Skirt && o.bottom != BottomStyle::Loincloth &&
-               ro.chance(o.top == TopStyle::Armor ? 0.75f : 0.3f);
-    if (o.tabard) o.belt = true;
-    o.puffySleeves = (o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve) && ro.chance(fem > 0.5f ? 0.55f : 0.15f);
-    o.corset = fem > 0.5f && (o.top == TopStyle::Tank || o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve) && ro.chance(0.5f);
-    o.bandolier = o.top != TopStyle::Bandeau && ro.chance(fem > 0.5f ? 0.15f : 0.45f);
-    o.pouches = ro.chance(0.5f) ? ro.rangeInt(1, 3) : 0;
-    o.kneePads = (o.top == TopStyle::Armor || o.boots == BootStyle::Knee) && ro.chance(0.5f);
-    o.bracers = o.gloves != GloveStyle::Gauntlet && o.gloves != GloveStyle::Long && ro.chance(0.45f);
-    o.thighStraps = (o.bottom == BottomStyle::Shorts || o.bottom == BottomStyle::Skirt || o.bottom == BottomStyle::Briefs) &&
-                    o.boots != BootStyle::Thigh && ro.chance(0.45f);
+    switch (per) {
+        case Persona::Rogue: W(H::Messy) += 2; W(H::Undercut) += 1; break;
+        case Persona::Noble: (fem ? W(H::LongStraight) : W(H::SlickedBack)) += 1.5f; W(H::Bun) += fem ? 1.0f : 0.0f; break;
+        case Persona::Cute: W(H::Bob) += fem ? 1.0f : 0.0f; W(H::HighPonytail) += fem ? 1.0f : 0.0f; W(H::Pixie) += fem ? 1.0f : 0.0f; break;
+        case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Undercut) += 1; break;
+        case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::SidePart) += 1; W(H::Ponytail) += 1; break;
+        case Persona::Sexy: W(H::LongWavy) += fem ? 1.5f : 0.3f; W(H::HalfUp) += 1; break;
+        default: break;
+    }
+    if (arch == Archetype::Brute || arch == Archetype::Monster) { W(H::Bald) += 1.5f; W(H::Buzz) += 1; }
+    g.hair = HairStyle(rh.weighted(std::span<const float>(w)));
+    const bool shortHair = g.hair <= HairStyle::Undercut;
+    g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.2f}));
+    if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz) g.fringe = Fringe::None;
+    g.hairVolume = clamp(1.0f + 0.1f * z(rh), 0.8f, 1.25f);
+    g.hairLength = clamp(1.0f + 0.12f * z(rh), 0.75f, 1.3f);
+    g.hairWave = g.hair == HairStyle::LongWavy ? rh.range(0.6f, 1.0f) : rh.range(0.0f, 0.2f);
+    g.partSide = rh.chance(0.5f) ? 1.0f : -1.0f;
+    if (!fem && g.age >= 19)
+        g.facialHair = FacialHair(rh.weighted({young ? 10.0f : 4.0f, 0.6f, 1.0f,
+                                               1.5f + (per == Persona::Heroic || per == Persona::Rogue ? 1.0f : 0.0f),
+                                               1.0f + (elder ? 1.5f : 0.0f) + (per == Persona::Stern ? 1.0f : 0.0f)}));
 
-    // Palette last: the "chess" scheme may override the pattern.
-    Rng rp = root.fork(7);
-    makePalette(rp, g, fantasy);
+    // ---- palette ----
+    Rng rc = root.fork(8);
+    Palette& pal = g.palette;
+    pal.skin = pickSkin(rc, fantasy);
+    pal.hair = pickHair(rc, per);
+    const float gray = std::pow(saturate((g.age - 42.0f) / 30.0f), 1.2f) * rc.range(0.6f, 1.0f);
+    pal.hair = lerp(pal.hair, Vec3{1, 1, 1} * rc.range(0.62f, 0.86f), gray);
+    pal.hairTip = pal.hair * 0.88f;
+    pal.brow = luminance(pal.hair) > 0.55f ? lerp(pal.hair * 0.6f, Vec3{0.30f, 0.24f, 0.20f}, 0.5f) : pal.hair * 0.8f;
+    pal.iris = pickIris(rc, fantasy);
+    pal.lips = lerp(pal.skin * Vec3{0.90f, 0.62f, 0.60f}, Vec3{0.60f, 0.25f, 0.28f},
+                    (fem ? 0.35f : 0.15f) + (per == Persona::Sexy && fem ? 0.25f : 0.0f));
+    static constexpr Vec3 kUnder[] = {{0.86f, 0.83f, 0.76f}, {0.55f, 0.55f, 0.56f}, {0.20f, 0.20f, 0.22f}, {0.48f, 0.38f, 0.28f}};
+    pal.underwear = kUnder[rc.rangeInt(0, 3)];
+    pal.horn = fantasy && rc.chance(0.5f) ? hsv(rc.uniform(), 0.3f, 0.22f) : Vec3{0.88f, 0.84f, 0.74f};
     return g;
 }
 

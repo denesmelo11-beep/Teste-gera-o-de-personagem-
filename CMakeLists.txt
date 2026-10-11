@@ -13,6 +13,8 @@ add_library(chargen
   src/builder.cpp
   src/generator.cpp
   src/hair.cpp
+  src/head.cpp
+  src/physics.cpp
   src/face.cpp
   src/animation.cpp
   src/image.cpp
@@ -34,3 +36,23 @@ enable_testing()
 add_executable(chargen_tests tests/tests.cpp)
 target_link_libraries(chargen_tests PRIVATE chargen)
 add_test(NAME chargen_tests COMMAND chargen_tests)
+
+# ---- optional raylib viewer ----
+option(CHARGEN_VIEWER "Build the raylib/OpenGL viewer" OFF)
+set(RAYLIB_SOURCE_DIR "" CACHE PATH "Path to a raylib source tree (optional)")
+if(CHARGEN_VIEWER)
+  find_package(raylib 5.0 QUIET)
+  if(NOT raylib_FOUND)
+    if(RAYLIB_SOURCE_DIR)
+      set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+      add_subdirectory(${RAYLIB_SOURCE_DIR} ${CMAKE_BINARY_DIR}/raylib EXCLUDE_FROM_ALL)
+    else()
+      include(FetchContent)
+      set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+      FetchContent_Declare(raylib URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz)
+      FetchContent_MakeAvailable(raylib)
+    endif()
+  endif()
+  add_executable(chargen_viewer apps/viewer.cpp)
+  target_link_libraries(chargen_viewer PRIVATE chargen raylib)
+endif()

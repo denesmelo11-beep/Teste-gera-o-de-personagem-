@@ -125,98 +125,6 @@ struct Author {
     }
 };
 
-// Damped spring driven by the parent bone's acceleration (bust, hair, tail).
-struct Spring {
-    Vec3 x{}, v{};
-    void step(Vec3 accel, float dt, float freq, float damping, float limit) {
-        float w = kTau * freq;
-        Vec3 a = accel - x * (w * w) - v * (2 * damping * w);
-        v += a * dt;
-        x += v * dt;
-        float l = length(x);
-        if (l > limit) {
-            x = x * (limit / l);
-            v = v * 0.5f;
-        }
-    }
-};
-
-Vec3 invRotate(const Mat4& m, Vec3 v) {  // transpose of the rotation part
-    Vec3 cx{m.m[0], m.m[1], m.m[2]}, cy{m.m[4], m.m[5], m.m[6]}, cz{m.m[8], m.m[9], m.m[10]};
-    return {dot(cx, v), dot(cy, v), dot(cz, v)};
-}
-
-// Adds secondary motion to an authored clip by simulating springs over a few
-// loops (so looping clips stay seamless enough) and writing the last loop.
-void addSecondary(const Character& c, Clip& clip) {
-    const RigInfo& r = c.rig;
-    const Skeleton& sk = c.skeleton;
-    const size_t n = clip.frames.size();
-    if (n < 2) return;
-    const float dt = 1.0f / clip.fps, h = c.height / c.genome.body.headsTall;
-    std::vector<std::vector<Mat4>> globals(n);
-    std::vector<Mat4> skin;
-    for (size_t f = 0; f < n; ++f) poseMatrices(sk, clip.frames[f], globals[f], skin);
-
-    auto worldAccel = [&](int bone, size_t f, Vec3 localPoint) {
-        auto P = [&](size_t k) { return globals[k][size_t(bone)].point(localPoint); };
-        size_t a = clip.loop ? (f + n - 1) % n : (f ? f - 1 : 0), b = clip.loop ? (f + 1) % n : std::min(f + 1, n - 1);
-        return (P(b) - P(f) * 2.0f + P(a)) / (dt * dt);
-    };
-
-    const int loops = clip.loop ? 3 : 1;
-    // Bust: translation of the bust bones in chest space.
-    if (r.bustL >= 0) {
-        const float soft = 1.0f + 0.5f * std::min(c.genome.body.bust, 1.5f);
-        for (int bone : {r.bustL, r.bustR}) {
-            Spring s;
-            Vec3 lp = sk.bones[size_t(bone)].restLocal;
-            for (int L = 0; L < loops; ++L)
-                for (size_t f = 0; f < n; ++f) {
-                    Vec3 acc = invRotate(globals[f][size_t(r.chest)], -worldAccel(r.chest, f, lp));
-                    acc.y -= 0.0f;
-                    s.step(acc, dt, 2.6f / std::sqrt(soft), 0.22f, 0.07f * h * soft);
-                    if (L == loops - 1) clip.frames[f].trans[size_t(bone)] += s.x * 0.8f;
-                }
-        }
-    }
-    // Hair chains: spring on the tip, converted to a rotation spread down the chain.
-    for (const auto& chain : r.hairChains) {
-        if (chain.empty()) continue;
-        Spring s;
-        int root = chain[0];
-        Vec3 tipLocal = sk.bones[size_t(chain.back())].restWorld - sk.bones[size_t(root)].restWorld;
-        float len = std::max(length(tipLocal), 1e-3f);
-        int parent = sk.bones[size_t(root)].parent;
-        for (int L = 0; L < loops; ++L)
-            for (size_t f = 0; f < n; ++f) {
-                Vec3 acc = invRotate(globals[f][size_t(parent)], -worldAccel(parent, f, sk.bones[size_t(root)].restLocal));
-                acc += invRotate(globals[f][size_t(parent)], Vec3{0, -9.8f, 0}) * 0.05f;
-                s.step(acc, dt, 1.6f, 0.3f, 0.6f * len);
-                if (L == loops - 1) {
-                    Quat q = fromTo(normalize(tipLocal), normalize(tipLocal + s.x));
-                    for (size_t k = 0; k < chain.size(); ++k) {
-                        float share = float(k + 1) / float(chain.size() * (chain.size() + 1) / 2);
-                        clip.frames[f].rot[size_t(chain[k])] = nlerp(Quat{}, q, share * 1.6f) * clip.frames[f].rot[size_t(chain[k])];
-                    }
-                }
-            }
-    }
-    // Tail: travelling wave whose amplitude follows the clip's energy.
-    if (!r.tail.empty()) {
-        float energy = clip.name == "run" ? 1.6f : (clip.name == "walk" ? 1.0f : 0.6f);
-        for (size_t f = 0; f < n; ++f) {
-            float t = float(f) / float(n);
-            float cycles = clip.name == "idle" ? 1.0f : 2.0f;
-            for (size_t k = 0; k < r.tail.size(); ++k) {
-                float ph = kTau * (t * cycles) - 0.7f * float(k);
-                Quat q = Quat::euler(0.06f * energy * std::cos(ph * 0.5f), 0.22f * energy * std::sin(ph), 0);
-                clip.frames[f].rot[size_t(r.tail[k])] = q * clip.frames[f].rot[size_t(r.tail[k])];
-            }
-        }
-    }
-}
-
 Clip author(const Character& c, std::string name, int frames, float fps, bool loop,
             const std::function<void(Author&, float)>& fn) {
     Clip clip;
@@ -230,7 +138,6 @@ Clip author(const Character& c, std::string name, int frames, float fps, bool lo
         fn(a, t);
         clip.frames.push_back(a.p);
     }
-    addSecondary(c, clip);
     return clip;
 }
 
@@ -359,8 +266,34 @@ Clip makeAttackClip(const Character& c) {
     return clip;
 }
 
+// Combat dodge: crouch, side leap with a torso twist, land, recover.
+Clip makeDodgeClip(const Character& c) {
+    Clip clip = author(c, "dodge", 30, 30, false, [&](Author& a, float t) {
+        float crouch = track({{0.0f, 0.0f}, {0.15f, 1.0f}, {0.25f, 0.2f}, {0.5f, 0.1f}, {0.62f, 1.0f}, {1.0f, 0.0f}}, t);
+        float side = track({{0.0f, 0.0f}, {0.15f, -0.1f}, {0.55f, 1.0f}, {1.0f, 1.0f}}, t);
+        float air = track({{0.15f, 0.0f}, {0.35f, 1.0f}, {0.55f, 0.0f}}, t);
+        float twist = track({{0.0f, 0.0f}, {0.2f, -0.3f}, {0.45f, 0.7f}, {0.7f, 0.3f}, {1.0f, 0.0f}}, t);
+        a.move(a.r.hips, {1.1f * a.h * side, -0.22f * a.h * crouch + 0.35f * a.h * air, 0});
+        a.euler(a.r.hips, 0.15f * crouch, twist * 0.5f, -0.25f * air);
+        a.euler(a.r.spine, 0.2f * crouch, twist * 0.3f, 0.15f * air);
+        a.euler(a.r.chest, 0.1f * crouch, twist * 0.3f, 0.1f * air);
+        a.euler(a.r.head, -0.15f * crouch, -twist * 0.5f, 0);
+        for (size_t i = 0; i < a.r.legs.size(); ++i) {
+            float k = i == 0 ? 1.0f : -1.0f;
+            a.leg(i, -0.6f * crouch - 0.3f * air, 1.1f * crouch + 0.7f * air, -0.3f * crouch, 0.15f * air * k);
+        }
+        for (size_t i = 0; i < a.r.arms.size(); ++i) {
+            float k = (i % 2 == 0) ? 1.0f : -1.0f;
+            a.arm(i, 0.35f - 0.5f * air, -0.4f * crouch + 0.3f * k * air, 0.6f + 0.6f * crouch, 0.3f * air);
+        }
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Neutral}}, {0.3f, {EyeExpr::Angry, MouthExpr::Open}},
+                     {0.7f, {EyeExpr::Neutral, MouthExpr::Neutral}}};
+    return clip;
+}
+
 std::vector<Clip> makeDefaultClips(const Character& c) {
-    return {makeIdleClip(c), makeWalkClip(c), makeRunClip(c), makeAttackClip(c)};
+    return {makeIdleClip(c), makeWalkClip(c), makeRunClip(c), makeAttackClip(c), makeDodgeClip(c)};
 }
 
 }  // namespace cg

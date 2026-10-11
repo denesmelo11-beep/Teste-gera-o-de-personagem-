@@ -35,6 +35,7 @@ Clip makeIdleClip(const Character& c);
 Clip makeWalkClip(const Character& c);
 Clip makeRunClip(const Character& c);
 Clip makeAttackClip(const Character& c);
+Clip makeDodgeClip(const Character& c);
 std::vector<Clip> makeDefaultClips(const Character& c);
 
 }  // namespace cg

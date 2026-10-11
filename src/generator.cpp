@@ -1,7 +1,8 @@
-// Body generation. The body is "sculpted" from overlapping low-poly primitives:
-// lofts of superellipse rings along bones (torso, limbs, neck, head) plus
-// ellipsoids (bust, glutes, deltoids, pads). Each loft carries skin weights
-// derived from its parameter along the bone chain, so joints bend smoothly.
+// Body generation. The body is sculpted from lofts of superellipse rings along
+// the bones (torso, limbs, neck), welded into one smooth low-poly mesh. Every
+// loft carries skin weights derived from its parameter along the bone chain.
+// Bodies are base meshes: only a modesty layer (underwear), equipment is
+// layered on top by the game.
 #include <algorithm>
 
 #include "generator_impl.hpp"
@@ -28,15 +29,15 @@ namespace detail {
 
 LodSpec lodSpec(int lod) {
     switch (lod) {
-        case 0: return {24, 20, 10, 8, 12, 7, 4, 6, 20, 6, false};
-        case 1: return {16, 16, 8, 6, 10, 5, 4, 4, 16, 4, true};
-        default: return {12, 12, 6, 4, 8, 4, 3, 3, 12, 3, true};
+        case 0: return {24, 24, 12, 10, 8, 8, 24, 7, false};
+        case 1: return {16, 16, 8, 8, 6, 5, 16, 5, true};
+        default: return {12, 12, 6, 6, 4, 4, 12, 4, true};
     }
 }
 
 namespace {
 
-// Piecewise-linear weights along a chain: keys {t, bone}.
+// Piecewise weights along a chain: keys {t, bone}.
 SkinW chainWeights(std::initializer_list<std::pair<float, int>> keys, float t) {
     const auto* k = keys.begin();
     size_t n = keys.size();
@@ -49,38 +50,22 @@ SkinW chainWeights(std::initializer_list<std::pair<float, int>> keys, float t) {
     return one(k[n - 1].second);
 }
 
-// Cuff / hem: a ring inserted exactly at a colour boundary, optionally flared
-// outwards to give clothing a visible lip.
-struct Boundary {
-    float t;
-    float flare;
-    int coverSide;  // +1: covered region is t > b, -1: t < b
-};
-
-struct RingSample {
-    float t;
-    float flare;
-};
-
-std::vector<RingSample> mergeRings(std::vector<float> base, const std::vector<Boundary>& bounds, bool sparse) {
+// Ring inserted exactly at a colour boundary so edges stay crisp.
+std::vector<float> mergeRings(std::vector<float> base, const std::vector<float>& bounds, bool sparse) {
     if (sparse) {
         std::vector<float> keep;
         for (size_t i = 0; i < base.size(); ++i)
             if (i % 2 == 0 || i + 1 == base.size()) keep.push_back(base[i]);
         base = keep;
     }
-    std::vector<RingSample> out;
+    std::vector<float> out;
     for (float t : base) {
         bool near = false;
-        for (const Boundary& b : bounds)
-            if (std::fabs(t - b.t) < 0.02f || std::fabs(t - (b.t + b.coverSide * 0.018f)) < 0.012f) near = true;
-        if (!near) out.push_back({t, 1.0f});
+        for (float b : bounds) near |= std::fabs(t - b) < 0.015f;
+        if (!near) out.push_back(t);
     }
-    for (const Boundary& b : bounds) {
-        out.push_back({b.t, b.flare});
-        if (b.flare > 1.0f) out.push_back({b.t + b.coverSide * 0.018f, b.flare});
-    }
-    std::sort(out.begin(), out.end(), [](const RingSample& a, const RingSample& b) { return a.t < b.t; });
+    out.insert(out.end(), bounds.begin(), bounds.end());
+    std::sort(out.begin(), out.end());
     return out;
 }
 
@@ -93,37 +78,23 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
     const BodyShape& b = g.body;
     const float h = m.h, S = b.shoulderWidth * h, C = b.chestWidth * h, W = b.waistWidth * h, P = b.hipWidth * h;
     const float D = b.chestDepth * h, post = b.posture, lat = b.muscle * b.muscle * 0.17f * h, nR = b.neckThick * h;
-    cHw_ = Curve{{-0.06f, 0.62f * P}, {0.0f, 0.88f * P},  {0.07f, 0.98f * P}, {0.13f, P},
+    const float hunch = b.hunch * h;
+    cHw_ = Curve{{-0.06f, 0.92f * P}, {0.0f, 1.01f * P},  {0.06f, 1.02f * P}, {0.13f, P},
                  {0.23f, lerp(P, W, 0.38f)}, {0.32f, lerp(P, W, 0.75f)}, {0.42f, W}, {0.55f, lerp(W, C, 0.6f)}, {0.66f, 0.95f * C},
-                 {0.76f, C + 0.4f * lat}, {0.86f, lerp(C, 0.88f * S, 0.5f) + lat}, {0.94f, std::max(0.78f * S, 0.9f * C)},
-                 {1.0f, (0.52f - 0.08f * b.muscle) * S + 0.05f * b.muscle * h}, {1.07f, nR * 1.15f + 0.04f * b.muscle * h}};
-    cDf_ = Curve{{-0.06f, 0.40f * D}, {0.0f, 0.70f * D}, {0.10f, 0.80f * D}, {0.20f, 0.82f * D}, {0.30f, 0.76f * D},
-                 {0.42f, 0.72f * D},  {0.55f, 0.80f * D}, {0.66f, 0.88f * D}, {0.76f, 0.95f * D}, {0.86f, 0.92f * D},
-                 {0.94f, 0.75f * D},  {1.0f, 0.55f * D + 0.03f * b.muscle * h},  {1.07f, nR * 1.1f + 0.03f * b.muscle * h}};
-    cDb_ = Curve{{-0.06f, 0.35f * D}, {0.0f, 0.70f * D}, {0.10f, 0.82f * D}, {0.20f, 0.80f * D}, {0.30f, 0.68f * D},
-                 {0.42f, 0.62f * D},  {0.55f, 0.70f * D}, {0.66f, 0.80f * D}, {0.76f, 0.86f * D}, {0.86f, 0.88f * D},
-                 {0.94f, 0.80f * D},  {1.0f, 0.62f * D + 0.06f * b.muscle * h},  {1.07f, nR * 1.1f + 0.05f * b.muscle * h}};
+                 {0.76f, C + 0.4f * lat}, {0.85f, lerp(C, 0.9f * S, 0.55f) + lat}, {0.905f, std::max(0.92f * S, 0.95f * C)},
+                 {0.945f, 0.88f * S}, {0.975f, 0.76f * S}, {1.0f, (0.58f - 0.06f * b.muscle) * S + 0.05f * b.muscle * h}, {1.05f, nR * 1.55f + 0.05f * b.muscle * h}, {1.10f, nR * 1.05f}};
+    cDf_ = Curve{{-0.06f, 0.74f * D}, {0.0f, 0.86f * D}, {0.10f, 0.86f * D}, {0.20f, 0.84f * D}, {0.30f, 0.76f * D},
+                 {0.42f, 0.72f * D},  {0.55f, 0.80f * D}, {0.66f, 0.88f * D}, {0.76f, 0.95f * D}, {0.86f, 0.92f * D - 0.02f * hunch},
+                 {0.905f, 0.82f * D - 0.03f * hunch}, {0.945f, 0.74f * D}, {0.975f, 0.64f * D}, {1.0f, 0.55f * D + 0.03f * b.muscle * h}, {1.05f, nR * 1.25f}, {1.10f, nR * 0.95f}};
+    // Age rounds the upper back (kyphosis).
+    cDb_ = Curve{{-0.06f, 0.70f * D}, {0.0f, 0.80f * D}, {0.10f, 0.82f * D}, {0.20f, 0.80f * D}, {0.30f, 0.68f * D},
+                 {0.42f, 0.62f * D},  {0.55f, 0.70f * D}, {0.66f, 0.80f * D}, {0.76f, 0.86f * D + 0.03f * hunch},
+                 {0.86f, 0.88f * D + 0.08f * hunch}, {0.905f, 0.86f * D + 0.08f * hunch}, {0.945f, 0.80f * D + 0.06f * hunch}, {0.975f, 0.70f * D + 0.05f * hunch},
+                 {1.0f, 0.62f * D + 0.06f * b.muscle * h + 0.04f * hunch}, {1.05f, nR * 1.35f + 0.04f * b.muscle * h}, {1.10f, nR * 1.0f}};
     cZc_ = Curve{{-0.06f, -0.01f * h * post}, {0.10f, -0.035f * h * post}, {0.20f, -0.035f * h * post},
-                 {0.42f, 0.0f}, {0.66f, 0.02f * h * post}, {0.80f, 0.025f * h * post}, {1.0f, -0.01f * h},
-                 {1.07f, -0.02f * h}};
-    // Anime head, normalised to head height (s = 0 chin, 1 crown).
-    hW_ = Curve{{0, 0.10f},     {0.06f, 0.18f}, {0.15f, 0.27f}, {0.28f, 0.355f}, {0.42f, 0.39f},
-                {0.58f, 0.40f}, {0.74f, 0.39f}, {0.88f, 0.33f}, {0.96f, 0.22f}, {1.0f, 0.04f}};
-    hZc_ = Curve{{0, 0.22f},       {0.06f, 0.17f},  {0.15f, 0.10f},  {0.28f, 0.02f}, {0.42f, -0.02f},
-                 {0.58f, -0.04f}, {0.74f, -0.05f}, {0.88f, -0.06f}, {1.0f, -0.06f}};
-    hDf_ = Curve{{0, 0.05f},     {0.06f, 0.13f}, {0.15f, 0.24f}, {0.28f, 0.36f}, {0.42f, 0.42f},
-                 {0.58f, 0.43f}, {0.74f, 0.41f}, {0.88f, 0.33f}, {0.96f, 0.22f}, {1.0f, 0.04f}};
-    hDb_ = Curve{{0, 0.05f},     {0.06f, 0.10f}, {0.15f, 0.18f}, {0.28f, 0.30f}, {0.42f, 0.40f},
-                 {0.58f, 0.44f}, {0.74f, 0.45f}, {0.88f, 0.38f}, {0.96f, 0.26f}, {1.0f, 0.04f}};
-    hNf_ = Curve{{0, 2.2f}, {0.1f, 2.0f}, {0.28f, 2.1f}, {0.42f, 2.4f}, {0.6f, 2.5f}, {0.9f, 2.2f}, {1.0f, 2.0f}};
-    hNb_ = Curve{{0, 2.0f}, {0.4f, 2.2f}, {1.0f, 2.1f}};
-
-    const Palette& p = g.palette;
-    topColor = p.cloth[0];
-    bottomColor = p.cloth[1];
-    accent = p.cloth[2];
-    bootColor = g.outfit.boots == BootStyle::Thigh ? p.cloth[0] * 0.55f : p.leather;
-    gloveColor = g.outfit.gloves == GloveStyle::Long ? p.cloth[0] : p.leather * 0.9f;
+                 {0.42f, 0.0f}, {0.66f, 0.02f * h * post}, {0.80f, 0.025f * h * post}, {1.0f, -0.01f * h + 0.06f * hunch},
+                 {1.10f, -0.02f * h + 0.10f * hunch}};
+    initHead();
 }
 
 void Builder::computeMarks() {
@@ -131,7 +102,7 @@ void Builder::computeMarks() {
     m.H = b.height;
     m.h = m.H / b.headsTall;
     const float h = m.h, mu = b.muscle;
-    m.chinY = m.H - h;
+    m.chinY = m.H - h - 0.04f * b.hunch * h;
     m.shoulderY = m.chinY - b.neckLength * h;
     m.crotchY = m.H * b.legRatio;
     if (m.shoulderY - m.crotchY < 0.9f * h) m.crotchY = m.shoulderY - 0.9f * h;
@@ -139,13 +110,13 @@ void Builder::computeMarks() {
     m.hipJointY = m.crotchY + 0.11f * m.torsoLen + 0.06f * h;
     m.waistY = m.crotchY + 0.42f * m.torsoLen;
     m.chestY = m.crotchY + 0.62f * m.torsoLen;
-    m.ankleY = 0.26f * h * b.footSize;
+    m.ankleY = 0.24f * h * b.footSize;
     m.kneeY = m.ankleY + (m.hipJointY - m.ankleY) * 0.48f;
 
     const float P = b.hipWidth * h, thighR = b.thigh * h, calfR = b.calf * h * (1 + 0.2f * mu);
     const float kneeR = std::max(0.55f * thighR, 0.85f * calfR), ankleR = 0.52f * calfR;
-    m.footLen = 0.95f * h * b.footSize;
-    m.footHalfW = std::max(0.25f * m.footLen, ankleR * 1.55f);
+    m.footLen = 0.92f * h * b.footSize;
+    m.footHalfW = std::max(0.21f * m.footLen, ankleR * 1.25f);
     for (int s = 0; s < 2; ++s) {
         float sd = s == 0 ? 1.0f : -1.0f;
         m.hipJoint[s] = {sd * 0.50f * P, m.hipJointY, -0.01f * h};
@@ -166,8 +137,8 @@ void Builder::computeMarks() {
             float angle, fwd;
             if (pair == 0) {
                 a.shoulder = {a.side * std::max(S - 0.55f * del, 0.5f * S), m.shoulderY - 0.05f * h - 0.9f * del - 0.10f * mu * h,
-                              -0.02f * h};
-                a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h};
+                              -0.02f * h + 0.05f * b.hunch * h};
+                a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h + 0.03f * b.hunch * h};
                 angle = 46.0f;
                 fwd = 0.0f;
             } else {
@@ -186,8 +157,8 @@ void Builder::computeMarks() {
             m.arms.push_back(a);
         }
 
-    m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h};
-    m.headOrigin = {0, m.chinY, 0.05f * h};
+    m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h + 0.06f * b.hunch * h};
+    m.headOrigin = {0, m.chinY, 0.05f * h + 0.12f * b.hunch * h};
     m.headPivot = m.headOrigin + Vec3{0, 0.14f * h, -0.10f * h};
 }
 
@@ -200,163 +171,115 @@ Part& Builder::newPart(bool flat, SubmeshKind kind) {
     return p;
 }
 
+// ---------------- torso surface ----------------
 SuperRing Builder::torsoRing(float t) const {
     float belly = g.body.belly * 0.30f * m.h * bump((t - 0.34f) / 0.26f);
     return {cHw_(t), cZc_(t), cDf_(t) + belly, cDb_(t), 2.2f, 2.5f};
 }
 
-SuperRing Builder::headRing(float s) const {
-    const float h = m.h;
-    const FaceStyle& f = g.face;
-    // Individual structure: jaw width, chin length/prominence, cheekbones.
-    float wMul = 1.0f + f.jaw * 0.13f * bump((s - 0.17f) / 0.17f) + f.jaw * 0.25f * bump(s / 0.10f) +
-                 f.cheek * 0.06f * bump((s - 0.36f) / 0.12f);
-    float chinFwd = f.chin * 0.035f * bump(s / 0.14f);
-    float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
-    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul, (hZc_(s) + chinFwd) * h,
-            std::max(hDf_(s) + chinDrop * 0.5f, 0.01f) * h, std::max(hDb_(s), 0.01f) * h, hNf_(s), hNb_(s)};
+// Angular warp: more samples on the front/back (bust, abs, glutes), fewer on the flat sides.
+float Builder::warpTheta(float phi) const { return phi + 0.32f * 0.5f * std::sin(2.0f * phi); }
+
+// Bust lobe intensity in [0,1]: an elliptic cap, round underneath (crease),
+// blending softly into the upper chest. Age lowers it and flattens the top.
+float Builder::bustField(float t, float th) const {
+    const float B = g.body.bust, sag = g.body.sag;
+    if (B < 0.03f || std::sin(th) <= 0) return 0;
+    SuperRing sr = torsoRing(t);
+    float u = std::fabs(sr.point(th).x) / sr.w;
+    const float tb = 0.735f - 0.035f * std::min(B, 1.4f) - 0.05f * sag;
+    const float ru = 0.36f + 0.10f * std::min(B, 1.4f);
+    const float rt = t < tb ? 0.075f + 0.035f * std::min(B, 1.4f) : 0.17f + 0.08f * sag;
+    float du = (u - 0.47f - 0.03f * sag) / ru, dt = (t - tb) / rt;
+    float e = 1.0f - du * du - dt * dt;
+    if (e <= 0) return 0;
+    return t < tb ? std::pow(e, 0.7f) : std::pow(e, 1.1f + 0.8f * sag);
 }
 
-Vec3 Builder::headCenter() const { return m.headOrigin + Vec3{0, 0.55f * m.h, -0.03f * m.h}; }
-
-Vec3 Builder::headSurface(float theta, float s, float offset) const {
-    SuperRing r = headRing(s);
-    Vec2 p = r.point(theta);
-    Vec3 q = m.headOrigin + Vec3{p.x, s * m.h, p.y};
-    return q + normalize(q - headCenter()) * offset;
+float Builder::gluteDepth(float t) const {
+    const float sag = g.body.sag;
+    return (std::min(g.body.butt, 1.6f) * 0.26f + 0.03f) * (1.0f - 0.25f * sag) * m.h * bump((t - 0.06f + 0.03f * sag) / 0.20f);
 }
 
-Vec3 Builder::collide(Vec3 p, float margin) const {
-    const float h = m.h;
-    for (int iter = 0; iter < 3; ++iter) {
-        // Head: superellipse rings, with a sphere for the crown.
-        Vec3 l = p - m.headOrigin;
-        float s = l.y / h;
-        if (s > 0.0f && s < 0.82f) {
-            SuperRing r = headRing(s);
-            float f = r.field(l.x, l.z);
-            float rr = 0.5f * (r.w + 0.5f * (r.dF + r.dB));
-            float target = 1.0f + margin / rr;
-            if (f < target) {
-                float k = target / std::max(f, 1e-4f);
-                p.x = m.headOrigin.x + l.x * k;
-                p.z = m.headOrigin.z + r.zc + (l.z - r.zc) * k;
-            }
-        } else if (s >= 0.82f && s < 1.2f) {
-            Vec3 dc = p - headCenter();
-            float R = 0.455f * h + margin, d = length(dc);
-            if (d < R) p = headCenter() + normalize(dc) * R;
+Vec3 Builder::torsoPoint(float t, float th) const {
+    const float h = m.h, mu = g.body.muscle, B = g.body.bust;
+    SuperRing sr = torsoRing(t);
+    Vec2 q = sr.point(th);
+    const float sn = std::sin(th), u = std::fabs(q.x) / std::max(sr.w, 1e-4f);
+    if (sn > 0) {
+        float front = std::pow(sn, 0.6f);
+        float bf = bustField(t, th);
+        if (bf > 0) {
+            float depth = (0.06f + 0.31f * std::min(B, 1.5f)) * h;
+            q.y += depth * bf * front;
+            q.x += std::copysign(depth * 0.18f * bf, q.x);
         }
-        // Neck cylinder.
-        if (p.y > m.neckBase.y - 0.1f * h && p.y < m.chinY + 0.2f * h) {
-            Vec2 d{p.x, p.z - m.neckBase.z};
-            float R = g.body.neckThick * h * 1.1f + margin, dl = length(d);
-            if (dl < R) {
-                Vec2 n = normalize(d);
-                if (dl < 1e-5f) n = {0, -1};
-                p.x = n.x * R;
-                p.z = m.neckBase.z + n.y * R;
-            }
+        float pecK = mu * std::sqrt(mu) * 0.11f * h * (1.0f - saturate(B * 1.5f));
+        if (pecK > 0) {
+            const float tp = 0.79f;
+            float du = (u - 0.43f) / 0.50f, dt = (t - tp) / (t < tp ? 0.08f : 0.17f);
+            float e = 1.0f - du * du - dt * dt;
+            if (e > 0) q.y += pecK * (t < tp ? std::pow(e, 0.6f) : e) * front;
         }
-        // Torso rings.
-        float t = torsoT(p.y);
-        if (t > -0.05f && t < 1.03f) {
-            // Find the sculpted surface point in the direction of p (a few fixed-point steps).
-            float zc = cZc_(t);
-            Vec2 d{p.x, p.z - zc};
-            float ang = std::atan2(d.y, d.x), th = ang;
-            Vec3 sp;
-            for (int k = 0; k < 3; ++k) {
-                sp = torsoPoint(t, th);
-                float a2 = std::atan2(sp.z - zc, sp.x);
-                th += std::remainder(ang - a2, kTau);
-            }
-            float rs = length(Vec2{sp.x, sp.z - zc}) + margin, rp = length(d);
-            if (rp < rs) {
-                Vec2 n = rp > 1e-5f ? d / rp : Vec2{0, -1};
-                p.x = n.x * rs;
-                p.z = zc + n.y * rs;
-            }
+        float absK = 0.028f * h * mu * (1.0f - std::min(1.0f, 2.0f * g.body.belly));
+        if (absK > 0 && t > 0.38f && t < 0.68f && u < 0.42f) {
+            float rows = 0.5f + 0.5f * std::cos(kTau * (t - 0.425f) / 0.08f);
+            float fade = bump((t - 0.53f) / 0.16f) * bump(u / 0.42f);
+            q.y += absK * (rows - 0.6f) * fade * front;
+            q.y -= absK * 0.8f * bump(u / 0.08f) * fade;
         }
-        for (const Collider& c : colliders) {
-            Vec3 d = p - c.c;
-            Vec3 q{d.x / c.r.x, d.y / c.r.y, d.z / c.r.z};
-            float f = length(q), rmin = std::min({c.r.x, c.r.y, c.r.z});
-            float target = 1.0f + margin / rmin;
-            if (f < target && f > 1e-5f) p = c.c + d * (target / f);
-        }
+        // Navel.
+        q.y -= 0.012f * h * bump(u / 0.05f) * bump((t - 0.40f) / 0.025f);
+    } else {
+        float back = std::pow(-sn, 0.7f);
+        float lobe = 0.62f + 0.38f * bump((u - 0.42f) / 0.58f);
+        q.y -= gluteDepth(t) * lobe * back;
+        q.y += (0.012f + mu * 0.04f) * h * bump(u / 0.10f) * bump((t - 0.66f) / 0.34f);  // spine groove
+        q.y -= mu * 0.045f * h * bump((u - 0.45f) / 0.28f) * bump((t - 0.84f) / 0.10f) * back;
+        q.y -= mu * 0.03f * h * bump((u - 0.18f) / 0.12f) * bump((t - 0.50f) / 0.14f) * back;
     }
-    return p;
+    return {q.x, m.crotchY + t * m.torsoLen, q.y};
 }
 
-// ---------------- paint ----------------
-Mat Builder::clothAt(Vec3 base, float t, float theta) const {
-    const Palette& p = g.palette;
-    switch (g.outfit.pattern) {
-        case Pattern::Stripes:
-            if (int(std::floor(t * 9.0f)) % 2) base = lerp(base, accent, 0.75f);
-            break;
-        case Pattern::Checker: {
-            int a = int(std::floor(t * 5.0f)) + int(std::floor(theta / kTau * 6.0f));
-            base = (a & 1) ? p.cloth[0] : p.cloth[1];
-            break;
-        }
-        default: break;
+Vec3 Builder::insideTorso(Vec3 p, float k) const {
+    float t = torsoT(p.y);
+    if (t < -0.06f || t > 1.05f) return p;
+    float zc = cZc_(t);
+    Vec2 d{p.x, p.z - zc};
+    float ang = std::atan2(d.y, d.x), th = ang;
+    Vec3 sp;
+    for (int i = 0; i < 3; ++i) {
+        sp = torsoPoint(t, th);
+        th += std::remainder(ang - std::atan2(sp.z - zc, sp.x), kTau);
     }
-    return {base, MaterialClass::Cloth};
+    float rs = length(Vec2{sp.x, sp.z - zc}) * k, rp = length(d);
+    if (rp <= rs || rp < 1e-6f) return p;
+    return {d.x / rp * rs, p.y, zc + d.y / rp * rs};
 }
 
-Mat Builder::topPaint(float t, float th) const {
-    const Outfit& o = g.outfit;
+// Modesty layer only: simple briefs and a chest band.
+Mat Builder::underwearAt(float t, float th) const {
+    if (!g.underwear) return skin();
     const float s = std::sin(th), c = std::cos(th);
-    switch (o.bottom) {
-        case BottomStyle::Pants:
-        case BottomStyle::Shorts:
-        case BottomStyle::Skirt:
-            if (t < 0.40f) return {bottomColor, MaterialClass::Cloth};
-            break;
-        case BottomStyle::Briefs:
-            if (g.femininity < 0.5f ? t < 0.13f : t < (s > 0 ? 0.07f + 0.06f * c * c : 0.11f + 0.04f * c * c))
-                return {bottomColor, MaterialClass::Cloth};
-            break;
-        case BottomStyle::Loincloth:
-            if (t < 0.10f + 0.06f * c * c) return {g.palette.leather, MaterialClass::Leather};
-            break;
-        default: break;
-    }
-    const float front = std::max(0.0f, s);
-    if (o.corset && t >= 0.40f && t < 0.64f) {
-        // Leather corset with darker front lacing panel.
-        if (s > 0.92f) return {g.palette.leather * 0.55f, MaterialClass::Leather};
-        if (t < 0.43f || t > 0.61f) return {g.palette.leather * 0.7f, MaterialClass::Leather};
-        return {lerp(g.palette.leather, accent, 0.25f), MaterialClass::Leather};
-    }
-    if ((o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve || o.top == TopStyle::Tank) && t >= 0.40f && t < 0.43f)
-        return {accent, MaterialClass::Cloth};  // hem trim
-    switch (o.top) {
-        case TopStyle::Tank:
-            if (t >= 0.40f && t < 0.95f - 0.08f * front) {
-                const float ac = std::fabs(c);  // straps sit between the neckline and the arm hole
-                if (t < 0.86f || (g.femininity < 0.5f ? ac < 0.85f : (ac > 0.22f && ac < 0.62f))) return clothAt(topColor, t, th);
-            }
-            break;
-        case TopStyle::Tee:
-        case TopStyle::LongSleeve:
-            if (t >= 0.40f && t < 0.995f - 0.04f * front) return clothAt(topColor, t, th);
-            break;
-        case TopStyle::Crop:
-            if (t >= 0.62f && t < 0.95f - 0.07f * front) return clothAt(topColor, t, th);
-            break;
-        case TopStyle::Bandeau:
-            if (t >= 0.66f && t < 0.82f) return clothAt(topColor, t, th);
-            break;
-        case TopStyle::Armor:
-            if (t >= 0.40f && t < 0.46f) return {g.palette.leather, MaterialClass::Leather};
-            if (t >= 0.46f && t < 0.98f) return {g.palette.metal, MaterialClass::Metal};
-            break;
-        default: break;
+    const Mat uw{g.palette.underwear, MaterialClass::Cloth};
+    const bool fem = g.femininity > 0.5f;
+    (void)s;
+    (void)c;
+    if (t < (fem ? 0.10f : 0.12f)) return uw;
+    if (fem && g.body.bust > 0.05f) {
+        const float B = std::min(g.body.bust, 1.4f);
+        const float tb = 0.735f - 0.035f * B - 0.05f * g.body.sag;
+        if (t > tb - 0.085f - 0.035f * B && t < tb + 0.06f) return uw;
     }
     return skin();
+}
+
+Mat Builder::paintTorsoAt(Vec3 p) const {
+    float t = torsoT(p.y);
+    float zc = cZc_(clamp(t, -0.06f, 1.07f));
+    float th = std::atan2(p.z - zc, p.x);
+    if (th < 0) th += kTau;
+    return underwearAt(t, th);
 }
 
 // ---------------- skeleton ----------------
@@ -394,7 +317,7 @@ void Builder::buildSkeleton() {
     }
     if (g.body.bust > 0.05f) {
         const float bust = std::min(g.body.bust, 1.5f);
-        const float tb = 0.735f - 0.035f * bust, depth = (0.06f + 0.31f * bust) * h;
+        const float tb = 0.735f - 0.035f * bust - 0.05f * g.body.sag, depth = (0.06f + 0.31f * bust) * h;
         for (int s = 0; s < 2; ++s) {
             float th = s == 0 ? 1.12f : kPi - 1.12f;  // lobe centre (u ~ 0.47)
             Vec3 c = torsoPoint(tb, th) - Vec3{0, 0, 0.5f * depth};
@@ -402,45 +325,38 @@ void Builder::buildSkeleton() {
             (s == 0 ? r.bustL : r.bustR) = id;
         }
     }
+    // Equipment sockets: palms, between the shoulder blades, left hip.
+    const ArmMarks& aR = m.arms[1];
+    const ArmMarks& aL = m.arms[0];
+    auto palm = [&](const ArmMarks& a) {
+        float Lh = length(a.handTip - a.wrist);
+        Vec3 u = cross(a.dir, orthoFront(a.dir));
+        return a.wrist + a.dir * (0.45f * Lh) + u * a.side * (0.12f * Lh);
+    };
+    r.socketHandR = sk.add("socket.hand.R", r.arms[1].end, palm(aR));
+    r.socketHandL = sk.add("socket.hand.L", r.arms[0].end, palm(aL));
+    r.socketBack = sk.add("socket.back", r.chest, torsoPoint(0.80f, -kPi / 2) - Vec3{0, 0, 0.04f * h});
+    r.socketHip = sk.add("socket.hip", r.hips, torsoPoint(0.20f, 0.0f) + Vec3{0.04f * h, 0, 0});
 }
 
 // ---------------- torso ----------------
 void Builder::buildTorso() {
     const RigInfo& r = ch.rig;
     const float h = m.h, S = g.body.shoulderWidth * h;
-    std::vector<Boundary> bounds{{0.40f, 1.0f, -1}};
-    if (g.outfit.corset) {
-        bounds.push_back({0.64f, 1.02f, -1});
-        bounds.push_back({0.43f, 1.02f, 1});
+    std::vector<float> bounds;
+    if (g.underwear && g.femininity > 0.5f && g.body.bust > 0.05f) {
+        const float B = std::min(g.body.bust, 1.4f), tb = 0.735f - 0.035f * B - 0.05f * g.body.sag;
+        bounds = {tb - 0.085f - 0.035f * B, tb + 0.06f};
     }
-    switch (g.outfit.top) {
-        case TopStyle::Crop: bounds.push_back({0.62f, 1.03f, 1}); break;
-        case TopStyle::Tee:
-        case TopStyle::LongSleeve:
-        case TopStyle::Tank:
-            if (!g.outfit.corset) bounds.push_back({0.43f, 1.025f, 1});
-            break;
-        case TopStyle::Bandeau: bounds.push_back({0.66f, 1.0f, 1}); bounds.push_back({0.82f, 1.0f, -1}); break;
-        case TopStyle::Armor: bounds.push_back({0.46f, 1.0f, 1}); break;
-        default: break;
-    }
+    if (g.underwear) bounds.push_back(g.femininity > 0.5f ? 0.10f : 0.12f);
     std::vector<float> base{-0.06f, 0.0f, 0.05f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.36f, 0.42f, 0.48f, 0.54f,
-                            0.59f, 0.63f, 0.67f, 0.71f, 0.75f, 0.79f, 0.83f, 0.87f, 0.91f, 0.95f, 0.98f, 1.01f, 1.04f};
+                            0.59f, 0.63f, 0.67f, 0.71f, 0.75f, 0.79f, 0.83f, 0.87f, 0.91f, 0.95f, 0.98f, 1.01f, 1.04f, 1.07f};
     auto rings = mergeRings(base, bounds, lod.sparseRings);
     const int N = lod.torsoSeg;
     Loft L;
-    for (const RingSample& rs : rings) {
-        float t = rs.t;
+    for (float t : rings) {
         std::vector<Vec3> ring(static_cast<size_t>(N));
-        for (int j = 0; j < N; ++j) {
-            Vec3 p = torsoPoint(t, warpTheta(kTau * j / N));
-            if (rs.flare != 1.0f) {
-                float zc = cZc_(clamp(t, -0.06f, 1.07f));
-                p.x *= rs.flare;
-                p.z = zc + (p.z - zc) * rs.flare;
-            }
-            ring[size_t(j)] = p;
-        }
+        for (int j = 0; j < N; ++j) ring[size_t(j)] = torsoPoint(t, warpTheta(kTau * j / N));
         L.rings.push_back(ring);
         L.t.push_back(t);
     }
@@ -448,8 +364,8 @@ void Builder::buildTorso() {
     L.startPole = {0, m.crotchY - 0.05f * m.torsoLen, cZc_(-0.06f)};
     L.tStart = -0.09f;
     L.poleEnd = true;
-    L.endPole = {0, m.shoulderY + 0.07f * m.torsoLen, cZc_(1.07f)};
-    L.tEnd = 1.07f;
+    L.endPole = {0, m.shoulderY + 0.12f * m.torsoLen, cZc_(1.10f)};
+    L.tEnd = 1.12f;
 
     auto wf = [&, S](float t, float th, Vec3 p) {
         SkinW w = chainWeights({{0.12f, r.hips}, {0.40f, r.spine}, {0.66f, r.chest}, {1.0f, r.chest}, {1.10f, r.neck}}, t);
@@ -469,107 +385,20 @@ void Builder::buildTorso() {
     };
     Part& tp = newPart();
     bodyGroup_ = tp.id;
-    emitLoft(tp, L, wf, [&](float t, float th) { return topPaint(t, th); });
-}
-
-// Angular warp: more samples on the front/back (bust, abs, glutes), fewer on the flat sides.
-float Builder::warpTheta(float phi) const { return phi + 0.32f * 0.5f * std::sin(2.0f * phi); }
-
-// Bust lobe intensity in [0,1] at torso parameter (t, theta): an elliptic cap
-// that is round underneath (crease) and blends softly into the upper chest.
-float Builder::bustField(float t, float th) const {
-    const float B = g.body.bust;
-    if (B < 0.03f || std::sin(th) <= 0) return 0;
-    SuperRing sr = torsoRing(t);
-    float u = std::fabs(sr.point(th).x) / sr.w;
-    const float tb = 0.735f - 0.035f * std::min(B, 1.4f);
-    const float ru = 0.36f + 0.10f * std::min(B, 1.4f);
-    const float rt = t < tb ? 0.075f + 0.035f * std::min(B, 1.4f) : 0.17f;
-    float du = (u - 0.47f) / ru, dt = (t - tb) / rt;
-    float e = 1.0f - du * du - dt * dt;
-    if (e <= 0) return 0;
-    return t < tb ? std::pow(e, 0.7f) : std::pow(e, 1.1f);
-}
-
-Vec3 Builder::torsoPoint(float t, float th) const {
-    const float h = m.h, mu = g.body.muscle, B = g.body.bust;
-    SuperRing sr = torsoRing(t);
-    Vec2 q = sr.point(th);
-    const float sn = std::sin(th), u = std::fabs(q.x) / std::max(sr.w, 1e-4f);
-    if (sn > 0) {
-        float front = std::pow(sn, 0.6f);
-        // Bust: forward volume plus a little lateral spread.
-        float bf = bustField(t, th);
-        if (bf > 0) {
-            float depth = (0.06f + 0.31f * std::min(B, 1.5f)) * h;
-            q.y += depth * bf * front;
-            q.x += std::copysign(depth * 0.18f * bf, q.x);
-        }
-        // Pectorals: plate with a defined lower edge.
-        float pecK = mu * mu * 0.12f * h * (1.0f - saturate(B * 1.5f));
-        if (pecK > 0) {
-            const float tp = 0.79f;
-            float du = (u - 0.43f) / 0.50f, dt = (t - tp) / (t < tp ? 0.08f : 0.17f);
-            float e = 1.0f - du * du - dt * dt;
-            if (e > 0) q.y += pecK * (t < tp ? std::pow(e, 0.6f) : e) * front;
-        }
-        // Abdominals: three rows of plates and the central groove.
-        float absK = 0.034f * h * std::pow(mu, 1.5f) * (1.0f - g.body.belly);
-        if (absK > 0 && t > 0.38f && t < 0.68f && u < 0.42f) {
-            float rows = 0.5f + 0.5f * std::cos(kTau * (t - 0.425f) / 0.08f);
-            float fade = bump((t - 0.53f) / 0.16f) * bump(u / 0.42f);
-            q.y += absK * (rows - 0.6f) * fade * front;
-            q.y -= absK * 0.8f * bump(u / 0.08f) * fade;
-        }
-    } else {
-        float back = std::pow(-sn, 0.7f);
-        float lobe = 0.62f + 0.38f * bump((u - 0.42f) / 0.58f);
-        q.y -= gluteDepth(t) * lobe * back;
-        // Spine groove, shoulder blades and the erectors of the lower back.
-        q.y += mu * 0.05f * h * bump(u / 0.10f) * bump((t - 0.66f) / 0.34f);
-        q.y -= mu * 0.045f * h * bump((u - 0.45f) / 0.28f) * bump((t - 0.84f) / 0.10f) * back;
-        q.y -= mu * 0.03f * h * bump((u - 0.18f) / 0.12f) * bump((t - 0.50f) / 0.14f) * back;
-    }
-    return {q.x, m.crotchY + t * m.torsoLen, q.y};
-}
-
-Vec3 Builder::insideTorso(Vec3 p, float k) const {
-    float t = torsoT(p.y);
-    if (t < -0.06f || t > 1.05f) return p;
-    float zc = cZc_(t);
-    Vec2 d{p.x, p.z - zc};
-    float ang = std::atan2(d.y, d.x), th = ang;
-    Vec3 sp;
-    for (int i = 0; i < 3; ++i) {
-        sp = torsoPoint(t, th);
-        th += std::remainder(ang - std::atan2(sp.z - zc, sp.x), kTau);
-    }
-    float rs = length(Vec2{sp.x, sp.z - zc}) * k, rp = length(d);
-    if (rp <= rs || rp < 1e-6f) return p;
-    return {d.x / rp * rs, p.y, zc + d.y / rp * rs};
-}
-
-float Builder::gluteDepth(float t) const {
-    return (std::min(g.body.butt, 1.6f) * 0.26f + 0.03f) * m.h * bump((t - 0.06f) / 0.20f);
-}
-
-Mat Builder::paintTorsoAt(Vec3 p) const {
-    float t = torsoT(p.y);
-    float zc = cZc_(clamp(t, -0.06f, 1.07f));
-    float th = std::atan2(p.z - zc, p.x);
-    if (th < 0) th += kTau;
-    return topPaint(t, th);
+    emitLoft(tp, L, wf, [&](float t, float th) { return underwearAt(t, warpTheta(th)); });
 }
 
 void Builder::buildNeck() {
     const RigInfo& r = ch.rig;
     const float h = m.h, nR = g.body.neckThick * h;
-    Vec3 a{0, m.shoulderY - 0.15f * h, -0.02f * h}, b = m.headOrigin + Vec3{0, 0.24f * h, -0.12f * h};
+    Vec3 a{0, m.shoulderY - 0.15f * h, -0.02f * h + 0.04f * g.body.hunch * h}, b = m.headOrigin + Vec3{0, 0.24f * h, -0.12f * h};
     Vec3 d = normalize(b - a), v = orthoFront(d), u = cross(d, v);
     Loft L;
     for (float t : {0.0f, 0.3f, 0.6f, 0.85f, 1.0f}) {
         float rr = nR * (1.35f - 0.35f * smoothstep(0.0f, 0.45f, t));
-        L.rings.push_back(makeRing(lerp(a, b, t), u, v, SuperRing{rr, 0, rr * 0.95f, rr * 0.95f}, lod.limbSeg));
+        // Throat a touch flatter than the nape; a hint of the Adam's apple on men.
+        float adam = (1.0f - g.femininity) * 0.10f * rr * bump((t - 0.62f) / 0.15f);
+        L.rings.push_back(makeRing(lerp(a, b, t), u, v, SuperRing{rr, 0, rr * 0.92f + adam, rr * 0.98f}, lod.limbSeg));
         L.t.push_back(t);
     }
     emitLoft(newPart(), L, [&](float t, float, Vec3) {
@@ -577,135 +406,38 @@ void Builder::buildNeck() {
     }, [&](float, float) { return skin(); });
 }
 
-void Builder::buildHead() {
-    const int head = ch.rig.head;
-    const float h = m.h;
-    Loft L;
-    const float ss[] = {0.0f, 0.05f, 0.11f, 0.18f, 0.25f, 0.32f, 0.39f, 0.46f, 0.53f, 0.60f, 0.68f, 0.76f, 0.84f, 0.91f, 0.96f};
-    int i = 0;
-    for (float s : ss) {
-        if (lod.sparseRings && (i++ % 2) && s < 0.9f) continue;
-        L.rings.push_back(makeRing(m.headOrigin + Vec3{0, s * h, 0}, {1, 0, 0}, {0, 0, 1}, headRing(s), lod.headSeg));
-        L.t.push_back(s);
-    }
-    L.poleStart = true;
-    L.startPole = m.headOrigin + Vec3{0, -0.01f * h, hZc_(0) * h};
-    L.tStart = 0;
-    L.poleEnd = true;
-    L.endPole = m.headOrigin + Vec3{0, h, hZc_(1.0f) * h};
-    L.tEnd = 1;
-    Part& hp = newPart();
-    hp.smoothAlways = true;  // faces read as painted planes, never as facet noise
-    headPartId_ = hp.id;
-    // Anime trick: bend the normals of the face towards +Z so the cel shadow
-    // never slices across the 2D face; the cranium keeps its real normals.
-    const Vec3 o = m.headOrigin;
-    hp.normalFn = [=](Vec3 p, Vec3 n) {
-        float s = (p.y - o.y) / h;
-        float front = smoothstep(-0.05f * h, 0.25f * h, p.z - o.z) * bump((s - 0.4f) / 0.55f);
-        return normalize(lerp(n, normalize(Vec3{n.x * 0.35f, n.y * 0.5f + 0.15f, 1.0f}), 0.85f * front));
-    };
-    emitLoft(hp, L, [=](float, float, Vec3) { return one(head); }, [&](float, float) { return skin(); });
-}
-
-// The 2D face lives on two decal patches that hug the front of the head.
-// Their UVs point at the Neutral cells; expressions are UV offsets.
-void Builder::buildFaceDecals() {
-    const int head = ch.rig.head;
-    const float h = m.h, eps = 0.004f * h;
-    auto patch = [&](SubmeshKind kind, float x0, float x1, float s0, float s1, int nx, int ny, int cellX, int cellY,
-                     int cellW, int cellH) {
-        Part& p = newPart(false, kind);
-        for (int j = 0; j <= ny; ++j)
-            for (int i = 0; i <= nx; ++i) {
-                float fu = float(i) / nx, fv = float(j) / ny;
-                float xf = lerp(x0, x1, fu), s = lerp(s0, s1, fv);
-                SuperRing r = headRing(s);
-                float x = xf * h * g.body.headWidth;
-                float z = r.frontZ(std::min(std::fabs(x), r.w * 0.995f)) + eps;
-                p.pos.push_back(m.headOrigin + Vec3{x, s * h, z});
-                p.w.push_back(one(head));
-                // Half-texel inset keeps bilinear filtering inside the cell.
-                float u = (cellX + 0.5f + fu * (cellW - 1)) / FaceLayout::kAtlasW;
-                float v = (cellY + 0.5f + (1 - fv) * (cellH - 1)) / FaceLayout::kAtlasH;
-                p.uv.push_back({u, v});
-            }
-        Mat white{{1, 1, 1}, MaterialClass::Skin};
-        for (int j = 0; j < ny; ++j)
-            for (int i = 0; i < nx; ++i) {
-                uint32_t a = uint32_t(j * (nx + 1) + i), b = a + 1, c = a + uint32_t(nx + 1) + 1, d = a + uint32_t(nx + 1);
-                p.tris.push_back({a, b, c, white});
-                p.tris.push_back({a, c, d, white});
-            }
-        return parts.size() - 1;
-    };
-    auto ec = FaceLayout::eyeCell(EyeExpr::Neutral);
-    auto mc = FaceLayout::mouthCell(MouthExpr::Neutral);
-    int nx = lod.headSeg / 2, ny = std::max(3, lod.headSeg / 4);
-    size_t eyes = patch(SubmeshKind::FaceEyes, FaceLayout::kEyeX0, FaceLayout::kEyeX1, FaceLayout::kEyeS0,
-                       FaceLayout::kEyeS1, nx, ny, ec[0], ec[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH);
-    size_t mouth = patch(SubmeshKind::FaceMouth, FaceLayout::kMouthX0, FaceLayout::kMouthX1, FaceLayout::kMouthS0,
-                        FaceLayout::kMouthS1, std::max(3, nx / 2), 3, mc[0], mc[1], FaceLayout::kMouthCellW,
-                        FaceLayout::kMouthCellH);
-    // Decals share the head's outline id so they never get ink lines.
-    parts[eyes].id = parts[mouth].id = headPartId_;
-}
-
 // ---------------- arms ----------------
 void Builder::buildArms() {
-    const Outfit& o = g.outfit;
     const float mu = g.body.muscle;
     for (size_t k = 0; k < m.arms.size(); ++k) {
         const ArmMarks& a = m.arms[k];
         const LimbRig& rig = ch.rig.arms[k];
         const float upperLen = length(a.elbow - a.shoulder), foreLen = length(a.wrist - a.elbow);
         const float Ltot = upperLen + foreLen, te = upperLen / Ltot;
-        const Vec3 d = a.dir, v = orthoFront(d), u = cross(d, v);
+        const Vec3 d = a.dir;
         const float r = a.radius;
         // Shoulder cap (deltoid) is part of the arm loft: it rounds up into the trapezius.
-        Curve rc{{-0.20f, 0.55f}, {-0.13f, 0.95f + 0.25f * mu}, {-0.06f, 1.10f + 0.35f * mu}, {0.02f, 1.08f + 0.30f * mu},
+        Curve rc{{-0.20f, 0.50f}, {-0.13f, 0.78f + 0.20f * mu}, {-0.06f, 0.98f + 0.30f * mu}, {0.02f, 1.05f + 0.30f * mu},
                  {0.10f, 0.97f + 0.15f * mu}, {0.18f, 0.95f + 0.20f * mu}, {0.26f, 1.0f + 0.28f * mu}, {0.40f, 0.90f},
                  {te - 0.04f, 0.78f}, {te, 0.74f}, {te + 0.12f, 0.92f + 0.22f * mu}, {0.80f, 0.70f},
                  {1.0f, 0.56f}, {1.05f, 0.55f}};
-        std::vector<Boundary> bounds;
-        float sleeveEnd = -1, gloveStart = 2;
-        if (o.top == TopStyle::Tee) sleeveEnd = 0.32f;
-        if (o.top == TopStyle::LongSleeve) sleeveEnd = 0.95f;
-        if (o.top == TopStyle::Armor) sleeveEnd = 0.22f;
-        if (o.gloves == GloveStyle::Short) gloveStart = 0.88f;
-        if (o.gloves == GloveStyle::Gauntlet) gloveStart = 0.58f;
-        if (o.gloves == GloveStyle::Long) gloveStart = 0.45f;
-        const bool puffy = o.puffySleeves && sleeveEnd > 0;
-        if (puffy && o.top == TopStyle::Tee) sleeveEnd = 0.42f;
-        if (sleeveEnd > 0 && sleeveEnd < gloveStart) bounds.push_back({sleeveEnd, puffy ? 0.92f : 1.08f, -1});
-        float bracerStart = 2;
-        if (o.bracers && gloveStart > 0.6f) {
-            bracerStart = te + 0.14f;
-            bounds.push_back({bracerStart, 1.14f, 1});
-        }
-        if (gloveStart < 1.5f) bounds.push_back({gloveStart, o.gloves == GloveStyle::Gauntlet ? 1.16f : 1.05f, 1});
-        std::vector<float> base{-0.20f, -0.13f, -0.06f, 0.02f, 0.10f, 0.18f, 0.26f, 0.34f, 0.42f,
-                                te - 0.06f, te, te + 0.06f, te + 0.15f, 0.78f, 0.9f, 1.0f, 1.05f};
-        auto rings = mergeRings(base, bounds, lod.sparseRings);
+        std::vector<float> ts{-0.20f, -0.13f, -0.06f, 0.02f, 0.10f, 0.18f, 0.26f, 0.34f, 0.42f,
+                              te - 0.06f, te, te + 0.06f, te + 0.15f, 0.78f, 0.9f, 1.0f, 1.05f};
+        if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         Loft L;
-        for (const RingSample& rs : rings) {
-            float t = rs.t;
-            float rr = r * rc(t) * rs.flare;
-            if (o.gloves == GloveStyle::Gauntlet && t > gloveStart) rr *= 1.12f;
-            if (puffy && t < sleeveEnd) rr *= 1.0f + 0.55f * bump((t - sleeveEnd * 0.55f) / (sleeveEnd * 0.6f));
-            if (t > bracerStart && t < gloveStart) rr *= 1.12f;
+        const Vec3 dirIn = normalize(Vec3{-a.side, 0.12f, 0});
+        for (float t : ts) {
+            float rr = r * rc(t);
             float flat = t > te ? 0.86f : 1.0f;
-            // Biceps in front, triceps behind, deltoid mass pushed to the outside.
             float bic = 0.20f * rr * mu * bump((t - 0.27f) / 0.15f), tri = 0.18f * rr * mu * bump((t - 0.20f) / 0.18f);
             SuperRing sr{rr, 0.0f, rr * flat + bic, rr * flat + tri, 2.0f, 2.0f};
-            // Above the joint the loft bends and runs towards the neck, so the
-            // shoulder cap sits on the trapezius instead of rising above it.
-            const Vec3 dirIn = normalize(Vec3{-a.side, 0.12f, 0});
-            float k = smoothstep(0.06f, -0.10f, t);
-            Vec3 dd = normalize(lerp(d, -dirIn, k));
+            // Above the joint the loft bends towards the neck so the shoulder cap
+            // sits on the trapezius instead of rising above it.
+            float kk = smoothstep(0.06f, -0.10f, t);
+            Vec3 dd = normalize(lerp(d, -dirIn, kk));
             Vec3 vv = orthoFront(dd), uu = cross(dd, vv);
             Vec3 c = t >= 0 ? a.shoulder + d * (t * Ltot) : a.shoulder + dirIn * (-t * Ltot * 0.85f);
-            c += Vec3{a.side, 0, 0} * (0.10f * rr * (0.5f + mu) * bump((t + 0.02f) / 0.12f));
+            c += Vec3{a.side, 0.04f * rr, 0} * (0.16f * rr * (0.6f + mu) * bump((t - 0.0f) / 0.13f));
             auto ring = makeRing(c, uu, vv, sr, lod.limbSeg);
             if (t < -0.08f && a.pair == 0)
                 for (Vec3& p : ring) p = lerp(p, insideTorso(p, 0.99f), smoothstep(-0.08f, -0.16f, t));
@@ -713,92 +445,64 @@ void Builder::buildArms() {
             L.t.push_back(t);
         }
         L.poleStart = true;
-        L.startPole = a.shoulder + normalize(Vec3{-a.side, 0.12f, 0}) * (0.24f * Ltot * 0.85f);
+        L.startPole = a.shoulder + dirIn * (0.24f * Ltot * 0.85f);
         L.tStart = -0.26f;
-        auto paint = [&, te, sleeveEnd, gloveStart, bracerStart](float t, float) -> Mat {
-            if (t > bracerStart && t < gloveStart && t < 0.97f) {
-                int band = int((t - bracerStart) / 0.06f);
-                return {band % 2 ? g.palette.leather * 0.75f : g.palette.leather, MaterialClass::Leather};
-            }
-            if (t > gloveStart) {
-                if (o.gloves == GloveStyle::Gauntlet)
-                    return t < gloveStart + 0.018f ? Mat{accent, MaterialClass::Cloth} : Mat{g.palette.metal, MaterialClass::Metal};
-                return {gloveColor, o.gloves == GloveStyle::Long ? MaterialClass::Cloth : MaterialClass::Leather};
-            }
-            if (t < sleeveEnd) {
-                if (o.top == TopStyle::Armor) return {g.palette.leather, MaterialClass::Leather};
-                if (t > sleeveEnd - 0.018f) return {accent, MaterialClass::Cloth};
-                return clothAt(topColor, t, 0);
-            }
-            (void)te;
-            return skin();
-        };
         int clav = rig.root, up = rig.upper, lo = rig.lower, hand = rig.end;
         Part& ap = newPart();
         armGroup_ = ap.id;
         emitLoft(ap, L, [=](float t, float, Vec3) {
             return chainWeights({{-0.18f, clav}, {0.0f, up}, {te - 0.07f, up}, {te + 0.07f, lo}, {0.94f, lo}, {1.04f, hand}}, t);
-        }, paint);
-
-        (void)clav;
-        colliders.push_back({a.shoulder - u * a.side * (0.1f * r), {a.deltoid, a.deltoid, a.deltoid}});
+        }, [&](float, float) { return skin(); });
         buildHand(a, rig);
     }
 }
 
 void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
-    const Outfit& o = g.outfit;
     const float Lh = length(a.handTip - a.wrist);
     const Vec3 d = a.dir, v = orthoFront(d), u = cross(d, v);
     const Vec3 palm = u * a.side;  // towards the body in the A-pose
-    const float hw = std::max(0.27f * Lh, a.radius * 0.80f) * (1 + 0.15f * g.body.muscle);
-    const float th = std::max(0.15f * Lh, a.radius * 0.60f);
-    Mat mat = skin();
-    if (o.gloves == GloveStyle::Short) mat = {gloveColor, MaterialClass::Leather};
-    if (o.gloves == GloveStyle::Long) mat = {gloveColor, MaterialClass::Cloth};
-    if (o.gloves == GloveStyle::Gauntlet) mat = {g.palette.metal, MaterialClass::Metal};
+    const float hw = std::max(0.25f * Lh, a.radius * 0.78f) * (1 + 0.12f * g.body.muscle);
+    const float th = std::max(0.13f * Lh, a.radius * 0.55f);
     const int hand = rig.end;
     struct K {
         float t, w, th, curl;
     };
-    // Chunky mitten: wide palm, knuckle block, blunt curled fingers.
-    const K keys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.48f, 1.0f, 1.0f, 0.05f},
-                      {0.70f, 0.96f, 0.92f, 0.28f}, {0.86f, 0.86f, 0.78f, 0.55f}};
+    // Palm, knuckle line, then the fingers as one softly curled block.
+    const K keys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.46f, 1.0f, 1.0f, 0.04f},
+                      {0.56f, 0.97f, 0.88f, 0.10f}, {0.74f, 0.92f, 0.80f, 0.30f}, {0.88f, 0.84f, 0.68f, 0.55f}};
     Loft L;
     for (const K& k : keys) {
         Vec3 c = a.wrist + d * (k.t * Lh) + palm * (k.curl * th);
-        // Ring axes: u carries the thickness (palm normal), v the width.
-        L.rings.push_back(makeRing(c, u, v, SuperRing{th * k.th, 0, hw * k.w, hw * k.w, 3.0f, 3.0f}, lod.handSeg));
+        L.rings.push_back(makeRing(c, u, v, SuperRing{th * k.th, 0, hw * k.w, hw * k.w, 2.6f, 2.6f}, lod.handSeg));
         L.t.push_back(k.t);
     }
     L.poleEnd = true;
-    L.endPole = a.wrist + d * (0.93f * Lh) + palm * (0.75f * th);
+    L.endPole = a.wrist + d * (0.95f * Lh) + palm * (0.80f * th);
     L.tEnd = 1;
     Part& hp = newPart();
     hp.id = armGroup_;
-    emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [=](float, float) { return mat; });
+    emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
 
     // Thumb.
     Vec3 tb = a.wrist + d * (0.2f * Lh) + v * (0.65f * hw) + palm * (0.3f * th);
     Vec3 td = normalize(d * 0.55f + v * 0.45f + palm * 0.55f);
     Vec3 tv = orthoFront(td), tu = cross(td, tv);
-    float tl = 0.40f * Lh, tr = 0.36f * hw;
+    float tl = 0.42f * Lh, tr = 0.34f * hw;
     Loft T;
     for (float t : {0.0f, 0.5f, 0.85f}) {
-        float rr = tr * (1.0f - 0.25f * t);
-        T.rings.push_back(makeRing(tb + td * (t * tl), tu, tv, SuperRing{rr, 0, rr, rr}, 5));
+        float rr = tr * (1.0f - 0.22f * t);
+        T.rings.push_back(makeRing(tb + td * (t * tl), tu, tv, SuperRing{rr, 0, rr, rr}, 6));
         T.t.push_back(t);
     }
     T.poleEnd = true;
     T.endPole = tb + td * tl;
     Part& tp = newPart();
     tp.id = armGroup_;
-    emitLoft(tp, T, [=](float, float, Vec3) { return one(hand); }, [=](float, float) { return mat; });
+    emitLoft(tp, T, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
 }
 
 // ---------------- legs & feet ----------------
 void Builder::buildLegs() {
-    const Outfit& o = g.outfit;
     const float h = m.h, mu = g.body.muscle;
     const float T = g.body.thigh * h, Cf = g.body.calf * h * (1 + 0.2f * mu);
     const float K = std::max(0.55f * T, 0.85f * Cf), A = 0.52f * Cf;
@@ -812,102 +516,67 @@ void Builder::buildLegs() {
         Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {0.14f, lerp(Ttop, T, 0.6f)}, {0.28f, 0.92f * T},
                  {tk - 0.12f, lerp(T, K, 0.7f)}, {tk, K}, {tk + 0.06f, 0.95f * Cf}, {tk + 0.17f, Cf},
                  {tk + 0.32f * (1 - tk), 0.92f * Cf}, {0.86f, lerp(Cf, A, 0.7f)}, {0.95f, A}, {1.06f, A}};
-        float bootStart = 2, pantsEnd = -1;
-        if (o.boots == BootStyle::Ankle) bootStart = 0.84f;
-        if (o.boots == BootStyle::Knee) bootStart = tk - 0.03f;
-        if (o.boots == BootStyle::Thigh) bootStart = 0.24f;
-        if (o.bottom == BottomStyle::Pants) pantsEnd = 0.97f;
-        if (o.bottom == BottomStyle::Shorts) pantsEnd = 0.30f;
-        std::vector<Boundary> bounds;
-        if (pantsEnd > 0 && pantsEnd < bootStart) bounds.push_back({pantsEnd, 1.06f, -1});
-        if (bootStart < 1.5f) bounds.push_back({bootStart, o.boots == BootStyle::Thigh ? 1.06f : 1.28f, 1});
-        const bool bootStraps = o.boots == BootStyle::Knee && bootStart < 0.8f;
-        if (bootStraps)
-            for (float b : {0.72f, 0.75f, 0.86f, 0.89f}) bounds.push_back({b, 1.035f, 1});
-        if (o.thighStraps && pantsEnd < 0.26f)
-            for (float b : {0.26f, 0.29f, 0.33f, 0.36f}) bounds.push_back({b, 1.0f, 1});
-        std::vector<float> base{-0.16f, -0.08f, 0.0f, 0.08f, 0.16f, 0.24f, 0.32f, 0.40f, tk - 0.06f, tk, tk + 0.06f,
-                                tk + 0.14f, tk + 0.24f, 0.84f, 0.92f, 1.0f, 1.06f};
-        auto rings = mergeRings(base, bounds, lod.sparseRings);
+        std::vector<float> ts{-0.16f, -0.08f, 0.0f, 0.08f, 0.16f, 0.24f, 0.32f, 0.40f, tk - 0.06f, tk, tk + 0.06f,
+                              tk + 0.14f, tk + 0.24f, 0.84f, 0.92f, 1.0f, 1.06f};
+        if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         Loft L;
-        for (const RingSample& rs : rings) {
-            float t = rs.t;
+        for (float t : ts) {
             Vec3 dd = normalize(lerp(d1, d2, smoothstep(tk - 0.06f, tk + 0.06f, t)));
             Vec3 v = orthoFront(dd), u = cross(dd, v);
-            float rr = rc(t) * rs.flare;
-            if (o.thighStraps && t > 0.24f && t < 0.38f && t > pantsEnd) rr *= 1.04f;
-            if (o.boots == BootStyle::Knee && ((t > 0.72f && t < 0.75f) || (t > 0.86f && t < 0.89f))) rr *= 1.035f;
-            if (t > bootStart && o.boots != BootStyle::Thigh) rr = std::max(rr * 1.16f, A * 1.55f);  // sturdy boot shaft
+            float rr = rc(t);
             float calf = bump((t - (tk + 0.17f)) / 0.22f);
+            float quad = 0.10f * rr * mu * bump((t - 0.30f) / 0.20f);  // quadriceps
             float gl = std::min(g.body.butt, 1.6f) * 0.05f * h * bump((t + 0.10f) / 0.14f);
             float topFlat = 1.0f - 0.22f * smoothstep(0.18f, -0.02f, t);  // upper thigh: wide, not deep
-            SuperRing sr{rr, -0.10f * Cf * calf, rr * 0.96f * topFlat, rr * (1.0f + 0.12f * calf) * topFlat + gl, 2.0f, 2.0f};
+            float kneeCap = 0.08f * rr * bump((t - tk) / 0.05f);
+            SuperRing sr{rr, -0.10f * Cf * calf, rr * 0.96f * topFlat + quad + kneeCap,
+                         rr * (1.0f + (0.12f + 0.12f * mu) * calf) * topFlat + gl, 2.0f, 2.0f};
             auto ring = makeRing(path(t), u, v, sr, lod.limbSeg);
             // Above the crotch the thigh lives inside the pelvis: no ledge where they meet.
-            const float blendLo = m.crotchY - 0.14f * h, blendTop = m.crotchY + 0.06f * h;
+            const float blendLo = m.crotchY - 0.26f * h, blendTop = m.crotchY - 0.03f * h;
             for (Vec3& p : ring)
-                if (p.y > blendLo) {
-                    Vec3 q = insideTorso(p, 0.985f);
-                    p = lerp(p, q, smoothstep(blendLo, blendTop, p.y));
-                }
+                if (p.y > blendLo) p = lerp(p, insideTorso(p, 0.93f), smoothstep(blendLo, blendTop, p.y));
             L.rings.push_back(ring);
             L.t.push_back(t);
         }
         L.poleStart = true;
         L.startPole = Hj + Vec3{0, 0.20f * Lt, 0};
         L.tStart = -0.20f;
-        auto paint = [&, bootStart, pantsEnd](float t, float) -> Mat {
-            if (t > bootStart) {
-                if (o.boots != BootStyle::Thigh && t < bootStart + 0.018f) return {lerp(bootColor, Vec3{0.85f, 0.8f, 0.72f}, 0.55f), MaterialClass::Leather};  // folded cuff
-                if (o.boots == BootStyle::Knee && ((t > 0.72f && t < 0.75f) || (t > 0.86f && t < 0.89f)))
-                    return {lerp(bootColor, g.palette.metal, 0.35f) * 0.8f, MaterialClass::Leather};
-                return {bootColor, o.boots == BootStyle::Thigh ? MaterialClass::Cloth : MaterialClass::Leather};
-            }
-            if (t < 0.02f && o.bottom == BottomStyle::Skirt) return {bottomColor, MaterialClass::Cloth};
-            if (o.thighStraps && t > pantsEnd && ((t > 0.26f && t < 0.29f) || (t > 0.33f && t < 0.36f)))
-                return {g.palette.leather * 0.8f, MaterialClass::Leather};
-            if (t < pantsEnd) {
-                if (o.bottom == BottomStyle::Shorts && t > pantsEnd - 0.018f) return {accent, MaterialClass::Cloth};
-                return {bottomColor, MaterialClass::Cloth};
-            }
-            return skin();
-        };
         int hips = ch.rig.hips, th = rig.upper, sh = rig.lower, ft = rig.end;
         Part& lp = newPart();
         lp.id = bodyGroup_;
-        // Faces tucked into the pelvis take the torso's clothing so seams stay clean.
-        lp.paintAt = [&, Hj, d1, Lt](Vec3 c) {
-            if (c.y > m.crotchY - 0.03f * h) return paintTorsoAt(c);
-            return paint(clamp(dot(c - Hj, d1) / Lt, -0.2f, 1.1f), 0.0f);
-        };
+        // Faces tucked into the pelvis take the torso's paint so seams stay clean.
+        lp.paintAt = [&](Vec3 c) { return c.y > m.crotchY - 0.06f * h ? paintTorsoAt(c) : skin(); };
         emitLoft(lp, L, [=](float t, float, Vec3) {
             return chainWeights({{-0.10f, hips}, {0.08f, th}, {tk - 0.07f, th}, {tk + 0.07f, sh}, {0.95f, sh}, {1.05f, ft}}, t);
-        }, paint);
+        }, [&](float, float) { return skin(); });
         lp.paintAt = nullptr;
     }
 }
 
+// Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
     const float A = m.ankleY, Lf = m.footLen, Wf = m.footHalfW;
-    const bool barefoot = g.archetype == Archetype::Monster && g.outfit.bottom == BottomStyle::Loincloth;
-    Mat upper = barefoot ? skin() : Mat{bootColor, MaterialClass::Leather};
-    if (g.outfit.boots == BootStyle::Shoe && !barefoot) upper = {g.palette.leather, MaterialClass::Leather};
-    Mat sole = barefoot ? Mat{g.palette.skin * 0.85f, MaterialClass::Skin} : Mat{{0.16f, 0.13f, 0.12f}, MaterialClass::Dark};
-    Curve cw{{0, 0.75f}, {0.08f, 0.9f}, {0.3f, 0.95f}, {0.55f, 1.0f}, {0.75f, 1.05f}, {0.92f, 1.0f}, {1.0f, 0.9f}};
-    Curve ch_{{0, 0.75f}, {0.08f, 1.05f}, {0.3f, 1.45f}, {0.5f, 1.05f}, {0.75f, 0.70f}, {0.92f, 0.60f}, {1.0f, 0.5f}};
+    Curve cw{{0, 0.62f}, {0.10f, 0.76f}, {0.35f, 0.78f}, {0.60f, 0.95f}, {0.80f, 1.05f}, {0.93f, 0.98f}, {1.0f, 0.82f}};
+    Curve chh{{0, 0.60f}, {0.08f, 0.90f}, {0.30f, 1.10f}, {0.50f, 0.80f}, {0.72f, 0.46f}, {0.88f, 0.34f}, {1.0f, 0.28f}};
     for (int s = 0; s < 2; ++s) {
         const LimbRig& rig = ch.rig.legs[size_t(s)];
         const float sd = s == 0 ? 1.0f : -1.0f;
         const Vec3 an = m.ankle[s];
-        const float heelZ = an.z - 0.22f * Lf;
-        const Quat turn = Quat::axisAngle({0, 1, 0}, sd * 0.14f);
+        const float heelZ = an.z - 0.20f * Lf;
+        const Quat turn = Quat::axisAngle({0, 1, 0}, sd * 0.12f);
         auto place = [&](Vec3 p) { return Vec3{an.x, 0, an.z} + rotate(turn, p - Vec3{an.x, 0, an.z}); };
         Loft L;
-        for (float t : {0.0f, 0.06f, 0.15f, 0.3f, 0.45f, 0.6f, 0.72f, 0.84f, 0.94f}) {
-            float top = ch_(t) * A, bot = 0.10f * A;
-            SuperRing sr{cw(t) * Wf, bot, top - bot, bot * 0.9f, 2.2f, 6.0f};
-            auto ring = makeRing({an.x, 0.004f, heelZ + t * Lf}, {-1, 0, 0}, {0, 1, 0}, sr, lod.limbSeg);
-            for (Vec3& p : ring) p = place(p);
+        for (float t : {0.0f, 0.06f, 0.15f, 0.3f, 0.45f, 0.6f, 0.72f, 0.82f, 0.91f, 0.97f}) {
+            float top = chh(t) * A, bot = 0.07f * A;
+            // Arch: the inner side of the sole lifts between heel and ball.
+            SuperRing sr{cw(t) * Wf, bot, top - bot, bot * 0.9f, 2.2f, 5.0f};
+            auto ring = makeRing({an.x, 0.003f, heelZ + t * Lf}, {-1, 0, 0}, {0, 1, 0}, sr, lod.limbSeg);
+            for (Vec3& p : ring) {
+                float inner = saturate((p.x - an.x) * -sd / Wf);  // 1 on the inner edge
+                p.y += 0.25f * A * inner * bump((t - 0.45f) / 0.25f) * saturate(1.0f - p.y / (0.4f * A));
+                p = place(p);
+            }
             L.rings.push_back(ring);
             L.t.push_back(t);
         }
@@ -915,283 +584,11 @@ void Builder::buildFeet() {
         L.startPole = place({an.x, 0.3f * A, heelZ - 0.03f * Lf});
         L.tStart = -0.03f;
         L.poleEnd = true;
-        L.endPole = place({an.x, 0.28f * A, heelZ + 0.985f * Lf});
+        L.endPole = place({an.x, 0.18f * A, heelZ + 1.0f * Lf});
         L.tEnd = 1;
         int foot = rig.end, toe = rig.tip;
-        emitLoft(newPart(), L, [=](float t, float, Vec3) { return blend(foot, toe, smoothstep(0.6f, 0.78f, t)); },
-                 [=](float, float th) { return std::sin(th) < -0.6f ? sole : upper; });
-    }
-}
-
-// ---------------- clothing extras ----------------
-void Builder::buildBelt() {
-    const Outfit& o = g.outfit;
-    if (!o.belt || o.bottom == BottomStyle::Briefs) return;
-    const RigInfo& r = ch.rig;
-    const float h = m.h, t0 = 0.38f, t1 = 0.43f;
-    const float out = 1.0f + 0.03f, pad = 0.012f * h;
-    Loft L;
-    auto ring = [&](float t, float k, float extra) {
-        SuperRing sr = torsoRing(t);
-        sr.w = sr.w * k + extra;
-        sr.dF = sr.dF * k + extra;
-        sr.dB = sr.dB * k + extra;
-        auto rr = makeRing({0, m.crotchY + t * m.torsoLen, 0}, {1, 0, 0}, {0, 0, 1}, sr, lod.torsoSeg);
-        L.rings.push_back(rr);
-        L.t.push_back(t);
-    };
-    ring(t0, 1.0f, 0);
-    ring(t0, out, pad);
-    ring(t1, out, pad);
-    ring(t1, 1.0f, 0);
-    Mat leather{g.palette.leather * 0.8f, MaterialClass::Leather}, buckle{g.palette.metal, MaterialClass::Metal};
-    emitLoft(newPart(), L, [&](float t, float, Vec3) {
-        return chainWeights({{0.12f, r.hips}, {0.40f, r.spine}}, t);
-    }, [=](float, float th) { return std::fabs(th - kPi / 2) < 0.35f ? buckle : leather; });
-}
-
-void Builder::buildSkirt() {
-    if (g.outfit.bottom != BottomStyle::Skirt) return;
-    const RigInfo& r = ch.rig;
-    const float h = m.h;
-    const float yTop = m.crotchY + 0.40f * m.torsoLen;
-    const float yBot = lerp(m.kneeY, m.crotchY, 0.40f);
-    const float legSpan = std::fabs(m.hipJoint[0].x) + std::max(g.body.thigh * h, 0.50f * g.body.hipWidth * h);
-    const int N = lod.torsoSeg;
-    Loft L;
-    const float ts[] = {0.0f, 0.12f, 0.25f, 0.45f, 0.72f, 1.0f};
-    const float thighR = std::max(g.body.thigh * h, 0.50f * g.body.hipWidth * h) * 1.32f;
-    SuperRing last;
-    for (float t : ts) {
-        float y = lerp(yTop, yBot, t);
-        float tt = std::max(torsoT(y), -0.06f);
-        SuperRing tr = torsoRing(tt);
-        float flare = 1.0f + 0.25f * t * t;
-        float drape = smoothstep(0.0f, 0.6f, t);  // below the hips the skirt hangs, it does not follow the body
-        SuperRing sr;
-        sr.zc = tr.zc;
-        // Thighs start above the crotch: cover them by height, not by skirt parameter.
-        float legCover = smoothstep(m.hipJointY + 0.25f * h, m.hipJointY, y);
-        sr.w = std::max({tr.w * 1.07f, lerp(tr.w * 1.07f, legSpan * 1.15f, drape), legSpan * 1.12f * legCover}) * flare;
-        sr.dF = std::max(tr.dF * 1.08f, thighR * std::max(drape, legCover)) * flare;
-        sr.dB = std::max((tr.dB + gluteDepth(std::max(tt, 0.07f) * drape + tt * (1 - drape))) * 1.08f, thighR * std::max(drape, legCover)) * flare;
-        if (t > 0.3f) {  // keep the drape monotonic: never narrower than the ring above
-            sr.w = std::max(sr.w, last.w);
-            sr.dF = std::max(sr.dF, last.dF);
-            sr.dB = std::max(sr.dB, last.dB);
-        }
-        last = sr;
-        L.rings.push_back(makeRing({0, y, 0}, {1, 0, 0}, {0, 0, 1}, sr, N));
-        L.t.push_back(t);
-    }
-    // Reverse ring order so the loft runs downward but faces still point out:
-    // a downward loft needs u = cross(-Y, v), i.e. mirrored rings.
-    for (auto& ring : L.rings) std::reverse(ring.begin() + 1, ring.end());
-    const Vec3 base = bottomColor;
-    const Vec3 acc = accent;
-    int hips = r.hips, tl = r.legs[0].upper, tr = r.legs[1].upper;
-    emitLoft(newPart(), L, [=](float t, float, Vec3 p) {
-        float legW = 0.55f * t;
-        float side = clamp(p.x / std::max(legSpan, 1e-3f), -1.0f, 1.0f);
-        float wl = legW * saturate(0.5f + side * 0.8f), wr = legW * saturate(0.5f - side * 0.8f);
-        SkinW w;
-        w.add(hips, 1 - wl - wr);
-        w.add(tl, wl);
-        w.add(tr, wr);
-        w.normalize();
-        return w;
-    }, [=](float t, float th) -> Mat {
-        if (t > 0.84f) return {acc, MaterialClass::Cloth};
-        int pleat = int(std::floor(th / kTau * N));
-        return {(pleat & 1) ? base * 0.86f : base, MaterialClass::Cloth};
-    });
-}
-
-// Hanging cloth panels in front of / behind the hips: loincloth or tabard.
-void Builder::buildPanels(float yTop, float yBot, float wTop, float wBot, Mat main, Mat trim, bool vTip, bool back) {
-    const RigInfo& r = ch.rig;
-    const float h = m.h;
-    const float Ttop = std::max(g.body.thigh * h, 0.50f * g.body.hipWidth * h);
-    for (int side = 0; side < (back ? 2 : 1); ++side) {  // 0 front, 1 back
-        const float sz = side == 0 ? 1.0f : -1.0f;
-        const float yb = side == 1 ? yBot - 0.15f * h : yBot;  // back panel a bit longer
-        Loft L;
-        for (float t : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
-            float y = lerp(yTop, yb, t);
-            float tt = torsoT(std::max(y, m.crotchY - 0.04f * m.torsoLen));
-            SuperRing tr = torsoRing(tt);
-            float z = side == 0 ? tr.frontZ(0) : tr.backZ(0) - gluteDepth(std::max(tt, 0.07f));
-            // Below the hips the panel hangs clear of the thighs.
-            float legF = Ttop * (1.0f - 0.35f * saturate((m.hipJointY - y) / (m.hipJointY - m.kneeY))) * 1.1f;
-            if (y < m.hipJointY + 0.1f * h) z = side == 0 ? std::max(z, m.hipJoint[0].z + legF) : std::min(z, m.hipJoint[0].z - legF - gluteDepth(0.07f) * 0.5f);
-            z += sz * (0.025f * h + 0.05f * h * t);
-            SuperRing sr{lerp(wTop, wBot, t), 0, 0.014f * h, 0.014f * h, 8.0f, 8.0f};
-            Vec3 d{0, -1, 0}, v{0, 0, 1};
-            L.rings.push_back(makeRing({0, y, z}, cross(d, v), v, sr, 8));
-            L.t.push_back(t);
-        }
-        if (vTip) {
-            L.poleEnd = true;
-            L.endPole = L.rings.back()[2] * 0.0f + Vec3{0, yb - 0.16f * h, (L.rings.back()[2].z + L.rings.back()[6].z) * 0.5f};
-            L.tEnd = 1.15f;
-        }
-        int hips = r.hips, tl = r.legs[0].upper, tr2 = r.legs[1].upper;
-        emitLoft(newPart(), L, [=](float t, float, Vec3) {
-            SkinW w;
-            float k = saturate(t);
-            w.add(hips, 1 - 0.5f * k);
-            w.add(tl, 0.25f * k);
-            w.add(tr2, 0.25f * k);
-            w.normalize();
-            return w;
-        }, [=](float t, float th) {
-            float c = std::fabs(std::cos(th));
-            return (c > 0.8f || t > 0.82f) ? trim : main;
-        });
-    }
-}
-
-void Builder::buildLoincloth() {
-    const Outfit& o = g.outfit;
-    const float h = m.h;
-    if (o.bottom == BottomStyle::Loincloth) {
-        Mat cloth{lerp(g.palette.leather, accent, 0.35f), MaterialClass::Cloth};
-        buildPanels(m.crotchY + 0.38f * m.torsoLen, lerp(m.kneeY, m.crotchY, 0.25f), std::max(0.3f * g.body.hipWidth * h, 0.12f * h),
-                    std::max(0.26f * g.body.hipWidth * h, 0.1f * h), cloth, cloth, false, true);
-    }
-    if (o.tabard) {
-        Vec3 c = o.top == TopStyle::Armor ? g.palette.cloth[2] * 0.75f : lerp(g.palette.cloth[0], g.palette.cloth[2], 0.5f);
-        Mat main{c, MaterialClass::Cloth}, trim{lerp(c, Vec3{0.95f, 0.9f, 0.8f}, 0.6f), MaterialClass::Cloth};
-        float yTop = m.crotchY + 0.40f * m.torsoLen;
-        float yBot = lerp(m.kneeY, m.ankleY, 0.15f);
-        buildPanels(yTop, yBot, std::max(0.32f * g.body.waistWidth * h * 2.0f * 0.5f, 0.14f * h), 0.24f * h * (1 + g.body.hipWidth),
-                    main, trim, true, true);
-    }
-}
-
-// Bandolier, belt pouches and knee pads: small parts that sell the costume.
-void Builder::buildAccessories() {
-    const Outfit& o = g.outfit;
-    const RigInfo& r = ch.rig;
-    const float h = m.h;
-    Mat strap{g.palette.leather * 0.85f, MaterialClass::Leather}, metal{g.palette.metal, MaterialClass::Metal};
-    auto surfaceAt = [&](float t, float th, float off) {
-        SuperRing tr = torsoRing(t);
-        Vec2 q = tr.point(th);
-        if (std::sin(th) < 0) q.y -= gluteDepth(t) * std::pow(-std::sin(th), 0.7f) * 0.8f;
-        Vec3 p{q.x, m.crotchY + t * m.torsoLen, q.y};
-        Vec3 n = normalize(Vec3{p.x, 0, p.z - tr.zc});
-        return p + n * off;
-    };
-    auto box = [&](Vec3 c, Vec3 n, float w, float hh, float d, SkinW wt, Mat mat) {
-        Vec3 dn{0, -1, 0};
-        Vec3 v = normalize(n - dn * dot(n, dn));
-        Loft L;
-        for (float t : {0.0f, 1.0f}) {
-            L.rings.push_back(makeRing(c + Vec3{0, hh * (0.5f - t), 0} + v * (d * 0.5f), cross(dn, v), v,
-                                       SuperRing{w * 0.5f, 0, d * 0.5f, d * 0.5f, 6, 6}, 8));
-            L.t.push_back(t);
-        }
-        L.poleStart = L.poleEnd = true;
-        L.startPole = c + Vec3{0, hh * 0.5f, 0} + v * (d * 0.5f);
-        L.endPole = c - Vec3{0, hh * 0.5f, 0} + v * (d * 0.5f);
-        emitLoft(newPart(), L, [=](float, float, Vec3) { return wt; }, [=](float, float) { return mat; });
-    };
-    if (o.bandolier && !r.arms.empty()) {
-        // From the left shoulder across the chest to the right hip (and around the back).
-        for (int side = 0; side < 2; ++side) {
-            std::vector<Vec3> pts;
-            const int n = 8;
-            for (int i = 0; i <= n; ++i) {
-                float f = float(i) / n;
-                float t = lerp(1.0f, 0.42f, f);
-                float frontTh = lerp(0.35f, kPi * 0.62f + 0.4f * f, f);  // slants across the front
-                float th = side == 0 ? lerp(0.25f, kPi - 0.15f, f) : -lerp(0.25f, kPi - 0.15f, f);
-                (void)frontTh;
-                pts.push_back(surfaceAt(t, th, 0.018f * h + (t > 0.66f ? g.body.bust * 0.0f : 0.0f)));
-            }
-            if (side == 0 && r.bustL >= 0)  // ride over the bust
-                for (Vec3& p : pts) p = collide(p, 0.02f * h);
-            Loft L;
-            for (size_t i = 0; i < pts.size(); ++i) {
-                Vec3 tan = normalize(pts[std::min(i + 1, pts.size() - 1)] - pts[i ? i - 1 : 0]);
-                Vec3 out = normalize(Vec3{pts[i].x, 0, pts[i].z});
-                Vec3 v = normalize(out - tan * dot(out, tan), {0, 0, 1});
-                L.rings.push_back(makeRing(pts[i], cross(tan, v), v, SuperRing{0.06f * h, 0, 0.012f * h, 0.012f * h, 6, 6}, 4));
-                L.t.push_back(float(i) / (pts.size() - 1));
-            }
-            int chest = r.chest, spine = r.spine, hips = r.hips;
-            emitLoft(newPart(), L, [=](float t, float, Vec3) {
-                return chainWeights({{0.0f, chest}, {0.6f, spine}, {1.0f, hips}}, t);
-            }, [=](float, float) { return strap; });
-            if (side == 0) box(pts[pts.size() / 2], normalize(Vec3{pts[pts.size() / 2].x, 0, pts[pts.size() / 2].z}), 0.10f * h, 0.10f * h, 0.03f * h, blend(chest, spine, 0.5f), metal);
-        }
-    }
-    if (o.pouches > 0 && (o.belt || o.tabard)) {
-        const float ths[] = {0.15f, kPi - 0.15f, -kPi / 2 + 0.6f};
-        for (int i = 0; i < std::min(o.pouches, 3); ++i) {
-            Vec3 p = surfaceAt(0.38f, ths[i], 0.01f * h);
-            Vec3 n = normalize(Vec3{p.x, 0, p.z});
-            box(p, n, 0.16f * h, 0.17f * h, 0.07f * h, blend(r.hips, r.spine, 0.3f), Mat{g.palette.leather, MaterialClass::Leather});
-        }
-    }
-    if (o.kneePads)
-        for (int s = 0; s < 2; ++s) {
-            const LimbRig& l = r.legs[size_t(s)];
-            float kr = std::max(0.55f * g.body.thigh, 0.85f * g.body.calf) * h;
-            Ellipsoid e;
-            e.center = m.knee[s] + Vec3{0, 0.02f * h, kr * 0.75f};
-            e.axis = {0, 1, 0};
-            e.up = {0, 0, 1};
-            e.rAxis = kr * 1.25f;
-            e.rU = kr * 1.05f;
-            e.rV = kr * 0.65f;
-            e.lat = 5;
-            e.lon = 8;
-            int th = l.upper, sh = l.lower;
-            emitEllipsoid(newPart(), e, [=](float, float, Vec3) { return blend(th, sh, 0.6f); }, [=](float, float) { return metal; });
-        }
-}
-
-void Builder::buildShoulderPads() {
-    const Outfit& o = g.outfit;
-    if (o.shoulderPads == 0) return;
-    Rng rr = Rng(g.seed).fork(77);
-    const bool spikes = rr.chance(g.archetype == Archetype::Brute || g.archetype == Archetype::Monster ? 0.7f : 0.25f);
-    for (int s = 0; s < std::min(2, o.shoulderPads); ++s) {
-        const ArmMarks& a = m.arms[size_t(s)];
-        const LimbRig& rig = ch.rig.arms[size_t(s)];
-        const float del = a.deltoid, ps = o.padSize;
-        Ellipsoid e;
-        e.center = a.shoulder + Vec3{a.side * 0.15f * del, 0.45f * del, 0};
-        e.axis = normalize(Vec3{a.side * 0.35f, 1.0f, 0});
-        e.up = {0, 0, 1};
-        e.rAxis = 0.75f * del * ps;
-        e.rU = 1.35f * del * ps;
-        e.rV = 1.25f * del * ps;
-        e.lat = lod.ellLat;
-        e.lon = lod.ellLon;
-        Mat metal{g.palette.metal, MaterialClass::Metal}, rim{accent, MaterialClass::Cloth};
-        int up = rig.upper, clav = rig.root;
-        emitEllipsoid(newPart(), e, [=](float, float, Vec3) { return blend(up, clav, 0.45f); },
-                      [=](float t, float) { return (t > 0.36f && t < 0.5f) ? rim : metal; });
-        colliders.push_back({e.center, {e.rU, e.rAxis, e.rV}});
-        if (!spikes) continue;
-        for (int k = 0; k < 2; ++k) {
-            Vec3 base = e.center + e.axis * (0.6f * e.rAxis) + Vec3{a.side * (0.25f + 0.35f * k) * e.rU, 0, (k ? -0.2f : 0.25f) * e.rV};
-            Vec3 dir = normalize(e.axis + Vec3{a.side * 0.5f * k, 0, 0});
-            float len = del * ps * (1.1f - 0.3f * k), rad = 0.28f * del * ps;
-            Vec3 v = orthoFront(dir), u = cross(dir, v);
-            Loft L;
-            L.rings.push_back(makeRing(base, u, v, SuperRing{rad, 0, rad, rad}, 6));
-            L.t.push_back(0);
-            L.poleEnd = true;
-            L.endPole = base + dir * len;
-            L.tEnd = 1;
-            Mat sm{g.palette.horn, MaterialClass::Horn};
-            emitLoft(newPart(true), L, [=](float, float, Vec3) { return blend(up, clav, 0.45f); },
-                     [=](float, float) { return sm; });
-        }
+        emitLoft(newPart(), L, [=](float t, float, Vec3) { return blend(foot, toe, smoothstep(0.62f, 0.80f, t)); },
+                 [&](float, float) { return skin(); });
     }
 }
 
@@ -1201,11 +598,9 @@ void Builder::buildTail() {
     RigInfo& r = ch.rig;
     const float h = m.h;
     const float y0 = m.crotchY + 0.22f * m.torsoLen;
-    const float z0 = torsoRing(torsoT(y0)).backZ(0) + 0.02f * h;
+    const float z0 = torsoRing(torsoT(y0)).backZ(0) - gluteDepth(0.22f) + 0.02f * h;
     const float len = g.body.tailLength * m.hipJointY * 0.95f;
-    const bool fluffy = g.palette.skin.y > g.palette.skin.x * 0.9f ? false : true;  // reptile on green/blue skins
-    const float r0 = (fluffy ? 0.13f : 0.11f) * h * (1 + 0.3f * g.body.muscle);
-    // Curve: down & back, then sweeping up at the tip.
+    const float r0 = 0.11f * h * (1 + 0.3f * g.body.muscle);
     constexpr int kPts = 9;
     std::vector<Vec3> pts;
     Vec3 p{0, y0, z0};
@@ -1213,7 +608,7 @@ void Builder::buildTail() {
     for (int i = 0; i < kPts; ++i) {
         pts.push_back(p);
         float u = float(i) / (kPts - 1);
-        p += normalize(Vec3{0, lerp(-0.7f, 0.6f, u), -1.0f}) * step;
+        p += normalize(Vec3{0, lerp(-0.8f, 0.3f, u), -1.0f}) * step;
     }
     const int nb = 4;
     int parent = r.hips;
@@ -1227,30 +622,83 @@ void Builder::buildTail() {
         Vec3 d = normalize(i + 1 < kPts ? pts[size_t(i + 1)] - pts[size_t(i)] : pts[size_t(i)] - pts[size_t(i - 1)]);
         Vec3 v = normalize(cross(d, {1, 0, 0}), {0, 1, 0});
         Vec3 uu = cross(d, v);
-        float rad = r0 * (fluffy ? (0.7f + 0.6f * std::sin(kPi * std::min(1.0f, u * 1.15f))) : (1.0f - 0.8f * u));
+        float rad = r0 * (1.0f - 0.8f * u);
         L.rings.push_back(makeRing(pts[size_t(i)], uu, v, SuperRing{rad, 0, rad, rad}, lod.limbSeg));
         L.t.push_back(u);
     }
     L.poleStart = true;
     L.startPole = pts[0] + Vec3{0, 0, 0.05f * h};
-    L.tStart = 0;
     L.poleEnd = true;
     L.endPole = pts.back() + normalize(pts.back() - pts[pts.size() - 2]) * (0.6f * r0);
     L.tEnd = 1;
     std::vector<int> bones = r.tail;
     int hips = r.hips;
-    Vec3 tip = g.palette.hairTip, base = fluffy ? g.palette.hair : g.palette.skin;
+    Vec3 base = g.palette.skin;
     emitLoft(newPart(), L, [=](float t, float, Vec3) {
         float f = t * nb;
         int i0 = std::clamp(int(f), 0, nb - 1);
-        float fr = f - i0;
         if (i0 == nb - 1) return one(bones[size_t(i0)]);
         if (t < 0.05f) return blend(hips, bones[0], t / 0.05f);
-        return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.3f, 1.0f, fr));
-    }, [=](float t, float) -> Mat {
-        if (fluffy) return {t > 0.8f ? tip : base, MaterialClass::Hair};
-        return {base * (1.0f - 0.15f * t), MaterialClass::Skin};
-    });
+        return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.3f, 1.0f, f - i0));
+    }, [=](float t, float) { return Mat{base * (1.0f - 0.15f * t), MaterialClass::Skin}; });
+    SpringChain sc;
+    sc.name = "tail";
+    sc.bones = bones;
+    sc.tail = pts.back() - sk.bones[size_t(bones.back())].restWorld;
+    sc.stiffness = 0.9f;
+    sc.drag = 0.35f;
+    sc.gravity = 0.2f;
+    sc.hitRadius = r0 * 0.6f;
+    ch.physics.chains.push_back(sc);
+}
+
+// Capsules/spheres the hair and tails collide with; also exported for engines.
+void Builder::buildColliders() {
+    const RigInfo& r = ch.rig;
+    const Skeleton& sk = ch.skeleton;
+    const float h = m.h;
+    auto add = [&](int bone, Vec3 a, Vec3 b, float rad) {
+        Vec3 o = sk.bones[size_t(bone)].restWorld;
+        ch.physics.colliders.push_back({bone, a - o, b - o, rad});
+    };
+    Vec3 hc = headCenter();
+    add(r.head, hc, hc + Vec3{0, 0.08f * h, -0.04f * h}, 0.44f * h * g.body.headWidth);
+    add(r.head, m.headOrigin + Vec3{0, 0.22f * h, 0.10f * h}, m.headOrigin + Vec3{0, 0.30f * h, 0.12f * h}, 0.27f * h);
+    add(r.neck, m.neckBase, m.headPivot, g.body.neckThick * h * 1.05f);
+    auto band = [&](int bone, float t, float extraBack) {
+        SuperRing tr = torsoRing(t);
+        float rad = 0.5f * (tr.dF + tr.dB) + extraBack * 0.5f;
+        float zc = tr.zc + 0.5f * (tr.dF - tr.dB - extraBack);
+        float y = m.crotchY + t * m.torsoLen;
+        float half = std::max(0.0f, tr.w - rad);
+        add(bone, {-half, y, zc}, {half, y, zc}, rad);
+    };
+    band(r.chest, 0.88f, 0.0f);
+    band(r.chest, 0.74f, 0.0f);
+    band(r.spine, 0.48f, 0.0f);
+    band(r.hips, 0.12f, gluteDepth(0.06f));
+    if (r.bustL >= 0) {
+        float depth = (0.06f + 0.31f * std::min(g.body.bust, 1.5f)) * h;
+        const float B = std::min(g.body.bust, 1.5f), sag = g.body.sag;
+        for (int b : {r.bustL, r.bustR}) {
+            Vec3 c = sk.bones[size_t(b)].restWorld;
+            add(b, c + Vec3{0, 0, 0.25f * depth}, c + Vec3{0, 0, 0.25f * depth}, 0.75f * depth + 0.03f * h);
+            // Bigger / older tissue: lower frequency, more travel, less damping.
+            JiggleBone jb;
+            jb.bone = b;
+            jb.frequency = 3.2f - 1.0f * B - 0.5f * sag;
+            jb.damping = 0.22f - 0.05f * B + 0.05f * sag;
+            jb.limit = Vec3{0.22f, 0.32f + 0.1f * sag, 0.24f} * depth + Vec3{0.006f, 0.008f, 0.006f};
+            jb.gravity = 0.04f + 0.04f * sag;
+            ch.physics.jiggles.push_back(jb);
+        }
+    }
+    for (size_t i = 0; i < std::min<size_t>(2, r.arms.size()); ++i) {
+        const ArmMarks& a = m.arms[i];
+        add(r.arms[i].upper, a.shoulder, a.elbow, a.radius * 1.05f);
+        add(r.arms[i].lower, a.elbow, a.wrist, a.radius * 0.85f);
+    }
+    for (int s = 0; s < 2; ++s) add(r.legs[size_t(s)].upper, m.hipJoint[s], m.knee[s], g.body.thigh * h * 0.95f);
 }
 
 Character Builder::build() {
@@ -1263,15 +711,12 @@ Character Builder::build() {
     buildArms();
     buildLegs();
     buildFeet();
-    buildBelt();
-    buildSkirt();
-    buildLoincloth();
-    buildShoulderPads();
-    buildAccessories();
     buildTail();
     buildEars();
     buildHorns();
+    buildColliders();
     buildHair();
+    buildFacialHair();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted);
     ch.faceAtlas = paintFaceAtlas(g);

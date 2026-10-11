@@ -10,6 +10,7 @@
 #include "chargen/character.hpp"
 #include "chargen/genome.hpp"
 #include "chargen/gltf.hpp"
+#include "chargen/physics.hpp"
 #include "chargen/render.hpp"
 
 using namespace cg;
@@ -48,13 +49,16 @@ GenomeOptions genomeOpts(const Args& a) {
         if (!o.archetype) std::fprintf(stderr, "arquetipo desconhecido: %s\n", a.get("archetype", "").c_str());
     }
     o.exaggeration = a.flt("exaggeration", 0.0f);
+    if (a.flag("sex")) o.sex = a.get("sex", "") == "male" ? Sex::Male : Sex::Female;
+    if (a.flag("age")) o.age = ageFromString(a.get("age", ""));
+    if (a.flag("persona")) o.persona = personaFromString(a.get("persona", ""));
     return o;
 }
 
 GenOptions genOpts(const Args& a) {
     GenOptions o;
     o.lod = int(a.num("lod", 0));
-    o.faceted = !a.flag("smooth");
+    o.faceted = a.flag("faceted");
     return o;
 }
 
@@ -69,9 +73,9 @@ void usage() {
         "  portraits --seed N --count K [--out portraits.png]      (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
-        "--base: so roupa intima (avaliar o corpo)\n"
-        "estilo: padrao low-poly facetado; --toon = cel shading com contorno; --smooth = normais suaves\n"
-        "arquetipos: heroine bombshell dorito brute slender chibi amazon monster");
+        "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
+        "estilo: padrao low-poly suave; --faceted = facetado; --toon = cel shading com contorno\n"
+        "presets: natural bombshell dorito brute amazon slender chibi monster");
 }
 
 RenderSettings style(const Args& a) {
@@ -85,7 +89,7 @@ RenderSettings style(const Args& a) {
 
 Character make(const Args& a, uint64_t seed) {
     Genome g = randomGenome(seed, genomeOpts(a));
-    if (a.flag("base")) stripToBase(g);
+    if (a.flag("nude")) g.underwear = false;
     return generateCharacter(g, genOpts(a));
 }
 
@@ -145,16 +149,29 @@ int cmdFaces(const Args& a) {
 int cmdAnim(const Args& a) {
     Character c = make(a, uint64_t(a.num("seed", 1)));
     std::string name = a.get("clip", "walk");
-    Clip clip = name == "idle" ? makeIdleClip(c) : name == "run" ? makeRunClip(c) : name == "attack" ? makeAttackClip(c) : makeWalkClip(c);
+    Clip clip = name == "idle" ? makeIdleClip(c) : name == "run" ? makeRunClip(c) : name == "attack" ? makeAttackClip(c)
+              : name == "dodge" ? makeDodgeClip(c) : makeWalkClip(c);
     int frames = int(a.num("frames", 8));
     const int cw = 240, chh = 400;
     Image strip(cw * frames, chh);
     std::vector<Mat4> global, skin;
     std::vector<Vec3> pos, nrm;
     float H = c.height;
+    SecondaryMotion sim(c);
+    float simT = 0;
+    {
+        Pose p0 = sampleClip(clip, 0);
+        sim.reset(p0, {}, Quat{});
+    }
     for (int f = 0; f < frames; ++f) {
         float t = clip.duration() * float(f) / float(clip.loop ? frames : std::max(1, frames - 1));
         Pose p = sampleClip(clip, t);
+        while (simT + 1.0f / 60.0f < t) {  // run the simulation up to this frame
+            simT += 1.0f / 60.0f;
+            Pose ps = sampleClip(clip, simT);
+            sim.step(ps, {}, Quat{}, 1.0f / 60.0f);
+        }
+        sim.step(p, {}, Quat{}, 0.0f);
         poseMatrices(c.skeleton, p, global, skin);
         skinMesh(c.mesh, skin, pos, nrm);
         ToonRenderer r(cw, chh, 2, style(a));
@@ -190,7 +207,7 @@ int cmdSheet(const Args& a) {
         r.drawFloor(20, 0.5f, {0.97f, 0.97f, 0.97f}, {0.97f, 0.97f, 0.97f}, {{0, 0, H * 0.17f}});
         r.drawCharacter(c, pos, nrm, Mat4::identity(), FaceState{}, 10);
         if (i == 0) {
-            std::string label = std::string(toString(c.genome.archetype)) + " #" + std::to_string(c.genome.seed);
+            std::string label = std::string(toString(c.genome.persona)) + " " + std::string(toString(c.genome.ageGroup)) + " #" + std::to_string(c.genome.seed);
             r.drawText(label, 10, 10, 2, {0.3f, 0.3f, 0.35f});
         }
         sheet.blit(r.finish(), i * cw, 0);
@@ -219,7 +236,7 @@ int cmdPortraits(const Args& a) {
         r.setCamera(target + Vec3{std::sin(yaw), 0.06f, std::cos(yaw)} * (hh * 4.6f), target, 0.45f);
         r.clearSky({0.30f, 0.29f, 0.31f}, {0.20f, 0.19f, 0.21f});
         r.drawCharacter(c, pos, nrm, Mat4::identity(), FaceState{}, 10);
-        r.drawText(std::string(toString(c.genome.archetype)) + " #" + std::to_string(c.genome.seed), 6, cell - 18, 1, {0.85f, 0.85f, 0.85f});
+        r.drawText(std::string(toString(c.genome.persona)) + " " + std::string(toString(c.genome.ageGroup)) + " #" + std::to_string(c.genome.seed), 6, cell - 18, 1, {0.85f, 0.85f, 0.85f});
         sheet.blit(r.finish(), (i % cols) * cell, (i / cols) * cell);
     }
     std::string out = a.get("out", "portraits.png");
