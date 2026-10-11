@@ -93,6 +93,14 @@ struct Outfit {
     float padSize = 1.0f;
     bool belt = true;
     Pattern pattern = Pattern::Plain;
+    bool tabard = false;        // front/back cloth panels with trim and V tips
+    bool puffySleeves = false;  // bouffant upper sleeves
+    bool bracers = false;       // leather forearm wraps
+    bool thighStraps = false;   // straps on bare thighs
+    bool corset = false;        // leather corset over the waist
+    bool bandolier = false;     // diagonal chest strap with buckle
+    int pouches = 0;            // belt pouches
+    bool kneePads = false;      // metal knee caps
 };
 
 struct Genome {

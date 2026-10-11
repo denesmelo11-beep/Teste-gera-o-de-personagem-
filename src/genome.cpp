@@ -254,6 +254,17 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     o.shoulderPads = ro.weighted({5, 1.5f, g.archetype == Archetype::Brute || g.archetype == Archetype::Dorito ? 4.0f : 1.5f});
     o.padSize = ro.range(0.8f, 1.3f) * (1.0f + 0.4f * e);
     o.belt = ro.chance(0.6f);
+    o.tabard = o.bottom != BottomStyle::Skirt && o.bottom != BottomStyle::Loincloth &&
+               ro.chance(o.top == TopStyle::Armor ? 0.75f : 0.3f);
+    if (o.tabard) o.belt = true;
+    o.puffySleeves = (o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve) && ro.chance(fem > 0.5f ? 0.55f : 0.15f);
+    o.corset = fem > 0.5f && (o.top == TopStyle::Tank || o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve) && ro.chance(0.5f);
+    o.bandolier = o.top != TopStyle::Bandeau && ro.chance(fem > 0.5f ? 0.15f : 0.45f);
+    o.pouches = ro.chance(0.5f) ? ro.rangeInt(1, 3) : 0;
+    o.kneePads = (o.top == TopStyle::Armor || o.boots == BootStyle::Knee) && ro.chance(0.5f);
+    o.bracers = o.gloves != GloveStyle::Gauntlet && o.gloves != GloveStyle::Long && ro.chance(0.45f);
+    o.thighStraps = (o.bottom == BottomStyle::Shorts || o.bottom == BottomStyle::Skirt || o.bottom == BottomStyle::Briefs) &&
+                    o.boots != BootStyle::Thigh && ro.chance(0.45f);
 
     // Palette last: the "chess" scheme may override the pattern.
     Rng rp = root.fork(7);

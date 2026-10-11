@@ -19,6 +19,8 @@ add_library(chargen
   src/render.cpp
   src/gltf.cpp)
 target_include_directories(chargen PUBLIC include)
+find_package(Threads REQUIRED)
+target_link_libraries(chargen PUBLIC Threads::Threads)
 if(MSVC)
   target_compile_options(chargen PRIVATE /W4)
 else()

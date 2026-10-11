@@ -2,6 +2,7 @@
 // distance shapes (anti-aliased) into cells of one atlas; the 3D decals pick
 // cells by UV offset at runtime, so eyes and mouth combine freely.
 #include <functional>
+#include <thread>
 
 #include "chargen/character.hpp"
 
@@ -140,7 +141,7 @@ EyeParams eyeParams(EyeExpr e) {
         case EyeExpr::Happy: p.special = 2; p.browY = 0.012f; p.blush = true; break;
         case EyeExpr::Angry: p.lidTiltIn = 0.55f; p.irisScale = 0.9f; p.pupilScale = 0.75f; p.browAngle = -0.45f; p.browY = -0.02f; p.browArch = 0.2f; break;
         case EyeExpr::Sad: p.lidTiltIn = -0.35f; p.browAngle = 0.4f; p.browY = 0.01f; p.tear = true; p.sparkle = true; break;
-        case EyeExpr::Surprised: p.open = 1.18f; p.irisScale = 0.72f; p.pupilScale = 0.5f; p.browY = 0.035f; p.browArch = 1.6f; break;
+        case EyeExpr::Surprised: p.open = 1.15f; p.irisScale = 0.72f; p.pupilScale = 0.5f; p.browY = 0.018f; p.browArch = 1.3f; break;
         case EyeExpr::Hurt: p.special = 3; p.browAngle = 0.35f; p.browY = -0.005f; break;
         case EyeExpr::Smug: p.lidFlat = 0.5f; p.browY = 0.01f; p.browAngle = -0.12f; break;
         default: break;
@@ -184,7 +185,8 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             Vec2 r = rot(l, tilt);
             return Vec2{c.x + r.x * side, c.y + r.y};
         };
-        Vec2 lo = c - Vec2{W * 1.6f, Hh * 2.2f}, hi = c + Vec2{W * 1.6f, Hh * 2.2f + 0.08f};
+        // Bounds of the eye opening (tilt included) - brows/lashes use their own stroke bounds.
+        Vec2 lo = c - Vec2{W * 1.25f, Hh * 1.5f}, hi = c + Vec2{W * 1.25f, Hh * 1.5f};
         auto strokeLocal = [&](const Stroke& sl, Vec4 col) {
             Stroke s = sl;
             for (Vec2& p : s.pts) p = toFace(p);
@@ -237,8 +239,11 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             // Iris (clipped by the opening): dark rim, vertical gradient.
             Vec2 ic{0.0f, -0.10f * Hh};
             Vec2 ir{0.60f * W * P.irisScale, 0.95f * Hh * P.irisScale};
+            const Vec2 icF = toFace(ic);
+            const float irMax = std::max(ir.x, ir.y) * 1.05f;
+            const Vec2 ilo = icF - Vec2{irMax, irMax}, ihi = icF + Vec2{irMax, irMax};
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir)); },
-                    Vec4(pal.iris * 0.35f, 1), lo, hi);
+                    Vec4(pal.iris * 0.35f, 1), ilo, ihi);
             Vec2 ir2 = ir * 0.86f;
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir2)); },
                     [&](Vec2 p) {
@@ -246,7 +251,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                         Vec3 col = t > 0.55f ? lerp(pal.iris, pal.iris * 0.45f, (t - 0.55f) / 0.45f)
                                              : lerp(pal.iris2, pal.iris, t / 0.55f);
                         return Vec4(col, 1);
-                    }, lo, hi);
+                    }, ilo, ihi);
             // Pupil.
             Vec2 pc = ic + Vec2{0, 0.05f * Hh};
             Vec4 pcol(pal.iris * 0.12f, 1);
@@ -268,14 +273,14 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                     break;
                 default: pupil = [=](Vec2 p) { return sdEllipse(toLocal(p), pc, Vec2{0.26f * W, 0.40f * Hh} * ps); }; break;
             }
-            cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, pcol, lo, hi);
+            cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, pcol, ilo, ihi);
             // Highlights.
             Vec2 h1 = ic + Vec2{-0.28f * ir.x, 0.38f * ir.y}, h2 = ic + Vec2{0.30f * ir.x, -0.45f * ir.y};
             float hs = P.sparkle ? 1.35f : 1.0f;
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), h1, Vec2{0.20f * W, 0.22f * Hh} * hs)); },
-                    Vec4(1, 1, 1, 0.95f), lo, hi);
+                    Vec4(1, 1, 1, 0.95f), ilo, ihi);
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), h2, Vec2{0.09f * W, 0.09f * Hh} * hs)); },
-                    Vec4(1, 1, 1, 0.85f), lo, hi);
+                    Vec4(1, 1, 1, 0.85f), ilo, ihi);
             // Upper lash line (+ wing flick for heavy lashes).
             Stroke up = curveStroke(
                 [&](float t) {
@@ -400,18 +405,27 @@ void paintMouth(CellPainter& cp, const Genome& g, MouthExpr e) {
 Image paintFaceAtlas(const Genome& g) {
     const int W = FaceLayout::kAtlasW, H = FaceLayout::kAtlasH;
     std::vector<Vec4> px(size_t(W) * H, Vec4{g.palette.skin, 0});  // skin rgb under alpha 0 avoids dark fringes
-    for (int i = 0; i < int(EyeExpr::Count); ++i) {
+    // Cells never overlap, so they are painted in parallel.
+    auto eyeJob = [&](int i) {
         auto c = FaceLayout::eyeCell(EyeExpr(i));
         CellPainter cp(px, W, c[0], c[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH, FaceLayout::kEyeX0,
                        FaceLayout::kEyeX1, FaceLayout::kEyeS0, FaceLayout::kEyeS1);
         paintEyes(cp, g, EyeExpr(i));
-    }
-    for (int i = 0; i < int(MouthExpr::Count); ++i) {
+    };
+    auto mouthJob = [&](int i) {
         auto c = FaceLayout::mouthCell(MouthExpr(i));
         CellPainter cp(px, W, c[0], c[1], FaceLayout::kMouthCellW, FaceLayout::kMouthCellH, FaceLayout::kMouthX0,
                        FaceLayout::kMouthX1, FaceLayout::kMouthS0, FaceLayout::kMouthS1);
         paintMouth(cp, g, MouthExpr(i));
-    }
+    };
+    const int jobs = int(EyeExpr::Count) + int(MouthExpr::Count);
+    const int nThreads = std::clamp(int(std::thread::hardware_concurrency()), 1, 8);
+    std::vector<std::thread> pool;
+    for (int t = 0; t < nThreads; ++t)
+        pool.emplace_back([&, t] {
+            for (int j = t; j < jobs; j += nThreads) j < int(EyeExpr::Count) ? eyeJob(j) : mouthJob(j - int(EyeExpr::Count));
+        });
+    for (auto& th : pool) th.join();
     Image img(W, H);
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) img.set(x, y, px[size_t(y) * W + x]);

@@ -73,7 +73,9 @@ private:
     void buildBelt();
     void buildSkirt();
     void buildLoincloth();
+    void buildPanels(float yTop, float yBot, float wTop, float wBot, Mat main, Mat trim, bool vTip, bool back);
     void buildShoulderPads();
+    void buildAccessories();
     void buildTail();
     // hair.cpp
     void buildHair();

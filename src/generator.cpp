@@ -312,6 +312,14 @@ Mat Builder::topPaint(float t, float th) const {
         default: break;
     }
     const float front = std::max(0.0f, s);
+    if (o.corset && t >= 0.40f && t < 0.64f) {
+        // Leather corset with darker front lacing panel.
+        if (s > 0.92f) return {g.palette.leather * 0.55f, MaterialClass::Leather};
+        if (t < 0.43f || t > 0.61f) return {g.palette.leather * 0.7f, MaterialClass::Leather};
+        return {lerp(g.palette.leather, accent, 0.25f), MaterialClass::Leather};
+    }
+    if ((o.top == TopStyle::Tee || o.top == TopStyle::LongSleeve || o.top == TopStyle::Tank) && t >= 0.40f && t < 0.43f)
+        return {accent, MaterialClass::Cloth};  // hem trim
     switch (o.top) {
         case TopStyle::Tank:
             if (t >= 0.40f && t < 0.95f - 0.08f * front && (t < 0.86f || std::fabs(c) < 0.55f)) return clothAt(topColor, t, th);
@@ -389,8 +397,17 @@ void Builder::buildTorso() {
     const RigInfo& r = ch.rig;
     const float h = m.h, S = g.body.shoulderWidth * h, C = g.body.chestWidth * h, mu = g.body.muscle;
     std::vector<Boundary> bounds{{0.40f, 1.0f, -1}};
+    if (g.outfit.corset) {
+        bounds.push_back({0.64f, 1.02f, -1});
+        bounds.push_back({0.43f, 1.02f, 1});
+    }
     switch (g.outfit.top) {
         case TopStyle::Crop: bounds.push_back({0.62f, 1.03f, 1}); break;
+        case TopStyle::Tee:
+        case TopStyle::LongSleeve:
+        case TopStyle::Tank:
+            if (!g.outfit.corset) bounds.push_back({0.43f, 1.025f, 1});
+            break;
         case TopStyle::Bandeau: bounds.push_back({0.66f, 1.0f, 1}); bounds.push_back({0.82f, 1.0f, -1}); break;
         case TopStyle::Armor: bounds.push_back({0.46f, 1.0f, 1}); break;
         default: break;
@@ -607,7 +624,14 @@ void Builder::buildArms() {
         if (o.gloves == GloveStyle::Short) gloveStart = 0.88f;
         if (o.gloves == GloveStyle::Gauntlet) gloveStart = 0.58f;
         if (o.gloves == GloveStyle::Long) gloveStart = 0.45f;
-        if (sleeveEnd > 0 && sleeveEnd < gloveStart) bounds.push_back({sleeveEnd, 1.08f, -1});
+        const bool puffy = o.puffySleeves && sleeveEnd > 0;
+        if (puffy && o.top == TopStyle::Tee) sleeveEnd = 0.42f;
+        if (sleeveEnd > 0 && sleeveEnd < gloveStart) bounds.push_back({sleeveEnd, puffy ? 0.92f : 1.08f, -1});
+        float bracerStart = 2;
+        if (o.bracers && gloveStart > 0.6f) {
+            bracerStart = te + 0.14f;
+            bounds.push_back({bracerStart, 1.14f, 1});
+        }
         if (gloveStart < 1.5f) bounds.push_back({gloveStart, o.gloves == GloveStyle::Gauntlet ? 1.16f : 1.05f, 1});
         std::vector<float> base{-0.12f, 0.0f, 0.1f, 0.2f, 0.3f, 0.4f, te - 0.06f, te, te + 0.06f, te + 0.15f, 0.78f, 0.9f, 1.0f, 1.05f};
         auto rings = mergeRings(base, bounds, lod.sparseRings);
@@ -616,6 +640,8 @@ void Builder::buildArms() {
             float t = rs.t;
             float rr = r * rc(t) * rs.flare;
             if (o.gloves == GloveStyle::Gauntlet && t > gloveStart) rr *= 1.12f;
+            if (puffy && t < sleeveEnd) rr *= 1.0f + 0.55f * bump((t - sleeveEnd * 0.55f) / (sleeveEnd * 0.6f));
+            if (t > bracerStart && t < gloveStart) rr *= 1.12f;
             float flat = t > te ? 0.86f : 1.0f;
             float bi = 0.08f * rr * mu * bump((t - 0.22f) / 0.2f);
             SuperRing sr{rr, bi, rr * flat, rr * flat, 2.0f, 2.0f};
@@ -625,7 +651,11 @@ void Builder::buildArms() {
         L.poleStart = true;
         L.startPole = a.shoulder - d * (0.16f * Ltot);
         L.tStart = -0.16f;
-        auto paint = [&, te, sleeveEnd, gloveStart](float t, float) -> Mat {
+        auto paint = [&, te, sleeveEnd, gloveStart, bracerStart](float t, float) -> Mat {
+            if (t > bracerStart && t < gloveStart && t < 0.97f) {
+                int band = int((t - bracerStart) / 0.06f);
+                return {band % 2 ? g.palette.leather * 0.75f : g.palette.leather, MaterialClass::Leather};
+            }
             if (t > gloveStart) {
                 if (o.gloves == GloveStyle::Gauntlet)
                     return t < gloveStart + 0.018f ? Mat{accent, MaterialClass::Cloth} : Mat{g.palette.metal, MaterialClass::Metal};
@@ -746,6 +776,11 @@ void Builder::buildLegs() {
         std::vector<Boundary> bounds;
         if (pantsEnd > 0 && pantsEnd < bootStart) bounds.push_back({pantsEnd, 1.06f, -1});
         if (bootStart < 1.5f) bounds.push_back({bootStart, o.boots == BootStyle::Thigh ? 1.06f : 1.28f, 1});
+        const bool bootStraps = o.boots == BootStyle::Knee && bootStart < 0.8f;
+        if (bootStraps)
+            for (float b : {0.72f, 0.75f, 0.86f, 0.89f}) bounds.push_back({b, 1.035f, 1});
+        if (o.thighStraps && pantsEnd < 0.26f)
+            for (float b : {0.26f, 0.29f, 0.33f, 0.36f}) bounds.push_back({b, 1.0f, 1});
         std::vector<float> base{-0.16f, -0.08f, 0.0f, 0.08f, 0.16f, 0.24f, 0.32f, 0.40f, tk - 0.06f, tk, tk + 0.06f,
                                 tk + 0.14f, tk + 0.24f, 0.84f, 0.92f, 1.0f, 1.06f};
         auto rings = mergeRings(base, bounds, lod.sparseRings);
@@ -755,6 +790,8 @@ void Builder::buildLegs() {
             Vec3 dd = normalize(lerp(d1, d2, smoothstep(tk - 0.06f, tk + 0.06f, t)));
             Vec3 v = orthoFront(dd), u = cross(dd, v);
             float rr = rc(t) * rs.flare;
+            if (o.thighStraps && t > 0.24f && t < 0.38f && t > pantsEnd) rr *= 1.04f;
+            if (o.boots == BootStyle::Knee && ((t > 0.72f && t < 0.75f) || (t > 0.86f && t < 0.89f))) rr *= 1.035f;
             if (t > bootStart && o.boots != BootStyle::Thigh) rr = std::max(rr * 1.16f, A * 1.55f);  // sturdy boot shaft
             float calf = bump((t - (tk + 0.17f)) / 0.22f);
             float gl = std::min(g.body.butt, 1.6f) * 0.05f * h * bump((t + 0.10f) / 0.14f);
@@ -768,9 +805,13 @@ void Builder::buildLegs() {
         auto paint = [&, bootStart, pantsEnd](float t, float) -> Mat {
             if (t > bootStart) {
                 if (o.boots != BootStyle::Thigh && t < bootStart + 0.018f) return {lerp(bootColor, Vec3{0.85f, 0.8f, 0.72f}, 0.55f), MaterialClass::Leather};  // folded cuff
+                if (o.boots == BootStyle::Knee && ((t > 0.72f && t < 0.75f) || (t > 0.86f && t < 0.89f)))
+                    return {lerp(bootColor, g.palette.metal, 0.35f) * 0.8f, MaterialClass::Leather};
                 return {bootColor, o.boots == BootStyle::Thigh ? MaterialClass::Cloth : MaterialClass::Leather};
             }
             if (t < 0.02f && o.bottom == BottomStyle::Skirt) return {bottomColor, MaterialClass::Cloth};
+            if (o.thighStraps && t > pantsEnd && ((t > 0.26f && t < 0.29f) || (t > 0.33f && t < 0.36f)))
+                return {g.palette.leather * 0.8f, MaterialClass::Leather};
             if (t < pantsEnd) {
                 if (o.bottom == BottomStyle::Shorts && t > pantsEnd - 0.018f) return {accent, MaterialClass::Cloth};
                 return {bottomColor, MaterialClass::Cloth};
@@ -906,37 +947,150 @@ void Builder::buildSkirt() {
     });
 }
 
-void Builder::buildLoincloth() {
-    if (g.outfit.bottom != BottomStyle::Loincloth) return;
+// Hanging cloth panels in front of / behind the hips: loincloth or tabard.
+void Builder::buildPanels(float yTop, float yBot, float wTop, float wBot, Mat main, Mat trim, bool vTip, bool back) {
     const RigInfo& r = ch.rig;
     const float h = m.h;
-    const float yTop = m.crotchY + 0.38f * m.torsoLen, yBot = lerp(m.kneeY, m.crotchY, 0.25f);
-    const float wHalf = std::max(0.3f * g.body.hipWidth * h, 0.12f * h);
-    Mat cloth{lerp(g.palette.leather, accent, 0.35f), MaterialClass::Cloth};
-    for (int side = 0; side < 2; ++side) {  // 0 front, 1 back
-        float sz = side == 0 ? 1.0f : -1.0f;
+    const float Ttop = std::max(g.body.thigh * h, 0.47f * g.body.hipWidth * h);
+    for (int side = 0; side < (back ? 2 : 1); ++side) {  // 0 front, 1 back
+        const float sz = side == 0 ? 1.0f : -1.0f;
+        const float yb = side == 1 ? yBot - 0.15f * h : yBot;  // back panel a bit longer
         Loft L;
-        for (float t : {0.0f, 0.5f, 1.0f}) {
-            float y = lerp(yTop, yBot, t);
-            float tt = torsoT(std::max(y, m.crotchY + 0.02f * m.torsoLen));
+        for (float t : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
+            float y = lerp(yTop, yb, t);
+            float tt = torsoT(std::max(y, m.crotchY - 0.04f * m.torsoLen));
             SuperRing tr = torsoRing(tt);
-            float z = (side == 0 ? tr.frontZ(0) : tr.backZ(0)) + sz * (0.03f * h + 0.08f * h * t);
-            if (side == 1) z -= gluteDepth(std::max(tt, 0.07f));
-            SuperRing sr{wHalf * (1.0f - 0.15f * t), 0, 0.012f * h, 0.012f * h, 8.0f, 8.0f};
+            float z = side == 0 ? tr.frontZ(0) : tr.backZ(0) - gluteDepth(std::max(tt, 0.07f));
+            // Below the hips the panel hangs clear of the thighs.
+            float legF = Ttop * (1.0f - 0.35f * saturate((m.hipJointY - y) / (m.hipJointY - m.kneeY))) * 1.1f;
+            if (y < m.hipJointY + 0.1f * h) z = side == 0 ? std::max(z, m.hipJoint[0].z + legF) : std::min(z, m.hipJoint[0].z - legF - gluteDepth(0.07f) * 0.5f);
+            z += sz * (0.025f * h + 0.05f * h * t);
+            SuperRing sr{lerp(wTop, wBot, t), 0, 0.014f * h, 0.014f * h, 8.0f, 8.0f};
             Vec3 d{0, -1, 0}, v{0, 0, 1};
             L.rings.push_back(makeRing({0, y, z}, cross(d, v), v, sr, 8));
             L.t.push_back(t);
         }
-        int hips = r.hips, tl = r.legs[0].upper, tr = r.legs[1].upper;
+        if (vTip) {
+            L.poleEnd = true;
+            L.endPole = L.rings.back()[2] * 0.0f + Vec3{0, yb - 0.16f * h, (L.rings.back()[2].z + L.rings.back()[6].z) * 0.5f};
+            L.tEnd = 1.15f;
+        }
+        int hips = r.hips, tl = r.legs[0].upper, tr2 = r.legs[1].upper;
         emitLoft(newPart(), L, [=](float t, float, Vec3) {
             SkinW w;
-            w.add(hips, 1 - 0.4f * t);
-            w.add(tl, 0.2f * t);
-            w.add(tr, 0.2f * t);
+            float k = saturate(t);
+            w.add(hips, 1 - 0.5f * k);
+            w.add(tl, 0.25f * k);
+            w.add(tr2, 0.25f * k);
             w.normalize();
             return w;
-        }, [=](float, float) { return cloth; });
+        }, [=](float t, float th) {
+            float c = std::fabs(std::cos(th));
+            return (c > 0.8f || t > 0.82f) ? trim : main;
+        });
     }
+}
+
+void Builder::buildLoincloth() {
+    const Outfit& o = g.outfit;
+    const float h = m.h;
+    if (o.bottom == BottomStyle::Loincloth) {
+        Mat cloth{lerp(g.palette.leather, accent, 0.35f), MaterialClass::Cloth};
+        buildPanels(m.crotchY + 0.38f * m.torsoLen, lerp(m.kneeY, m.crotchY, 0.25f), std::max(0.3f * g.body.hipWidth * h, 0.12f * h),
+                    std::max(0.26f * g.body.hipWidth * h, 0.1f * h), cloth, cloth, false, true);
+    }
+    if (o.tabard) {
+        Vec3 c = o.top == TopStyle::Armor ? g.palette.cloth[2] * 0.75f : lerp(g.palette.cloth[0], g.palette.cloth[2], 0.5f);
+        Mat main{c, MaterialClass::Cloth}, trim{lerp(c, Vec3{0.95f, 0.9f, 0.8f}, 0.6f), MaterialClass::Cloth};
+        float yTop = m.crotchY + 0.40f * m.torsoLen;
+        float yBot = lerp(m.kneeY, m.ankleY, 0.15f);
+        buildPanels(yTop, yBot, std::max(0.32f * g.body.waistWidth * h * 2.0f * 0.5f, 0.14f * h), 0.24f * h * (1 + g.body.hipWidth),
+                    main, trim, true, true);
+    }
+}
+
+// Bandolier, belt pouches and knee pads: small parts that sell the costume.
+void Builder::buildAccessories() {
+    const Outfit& o = g.outfit;
+    const RigInfo& r = ch.rig;
+    const float h = m.h;
+    Mat strap{g.palette.leather * 0.85f, MaterialClass::Leather}, metal{g.palette.metal, MaterialClass::Metal};
+    auto surfaceAt = [&](float t, float th, float off) {
+        SuperRing tr = torsoRing(t);
+        Vec2 q = tr.point(th);
+        if (std::sin(th) < 0) q.y -= gluteDepth(t) * std::pow(-std::sin(th), 0.7f) * 0.8f;
+        Vec3 p{q.x, m.crotchY + t * m.torsoLen, q.y};
+        Vec3 n = normalize(Vec3{p.x, 0, p.z - tr.zc});
+        return p + n * off;
+    };
+    auto box = [&](Vec3 c, Vec3 n, float w, float hh, float d, SkinW wt, Mat mat) {
+        Vec3 dn{0, -1, 0};
+        Vec3 v = normalize(n - dn * dot(n, dn));
+        Loft L;
+        for (float t : {0.0f, 1.0f}) {
+            L.rings.push_back(makeRing(c + Vec3{0, hh * (0.5f - t), 0} + v * (d * 0.5f), cross(dn, v), v,
+                                       SuperRing{w * 0.5f, 0, d * 0.5f, d * 0.5f, 6, 6}, 8));
+            L.t.push_back(t);
+        }
+        L.poleStart = L.poleEnd = true;
+        L.startPole = c + Vec3{0, hh * 0.5f, 0} + v * (d * 0.5f);
+        L.endPole = c - Vec3{0, hh * 0.5f, 0} + v * (d * 0.5f);
+        emitLoft(newPart(), L, [=](float, float, Vec3) { return wt; }, [=](float, float) { return mat; });
+    };
+    if (o.bandolier && !r.arms.empty()) {
+        // From the left shoulder across the chest to the right hip (and around the back).
+        for (int side = 0; side < 2; ++side) {
+            std::vector<Vec3> pts;
+            const int n = 8;
+            for (int i = 0; i <= n; ++i) {
+                float f = float(i) / n;
+                float t = lerp(1.0f, 0.42f, f);
+                float frontTh = lerp(0.35f, kPi * 0.62f + 0.4f * f, f);  // slants across the front
+                float th = side == 0 ? lerp(0.25f, kPi - 0.15f, f) : -lerp(0.25f, kPi - 0.15f, f);
+                (void)frontTh;
+                pts.push_back(surfaceAt(t, th, 0.018f * h + (t > 0.66f ? g.body.bust * 0.0f : 0.0f)));
+            }
+            if (side == 0 && r.bustL >= 0)  // ride over the bust
+                for (Vec3& p : pts) p = collide(p, 0.02f * h);
+            Loft L;
+            for (size_t i = 0; i < pts.size(); ++i) {
+                Vec3 tan = normalize(pts[std::min(i + 1, pts.size() - 1)] - pts[i ? i - 1 : 0]);
+                Vec3 out = normalize(Vec3{pts[i].x, 0, pts[i].z});
+                Vec3 v = normalize(out - tan * dot(out, tan), {0, 0, 1});
+                L.rings.push_back(makeRing(pts[i], cross(tan, v), v, SuperRing{0.06f * h, 0, 0.012f * h, 0.012f * h, 6, 6}, 4));
+                L.t.push_back(float(i) / (pts.size() - 1));
+            }
+            int chest = r.chest, spine = r.spine, hips = r.hips;
+            emitLoft(newPart(), L, [=](float t, float, Vec3) {
+                return chainWeights({{0.0f, chest}, {0.6f, spine}, {1.0f, hips}}, t);
+            }, [=](float, float) { return strap; });
+            if (side == 0) box(pts[pts.size() / 2], normalize(Vec3{pts[pts.size() / 2].x, 0, pts[pts.size() / 2].z}), 0.10f * h, 0.10f * h, 0.03f * h, blend(chest, spine, 0.5f), metal);
+        }
+    }
+    if (o.pouches > 0 && (o.belt || o.tabard)) {
+        const float ths[] = {0.15f, kPi - 0.15f, -kPi / 2 + 0.6f};
+        for (int i = 0; i < std::min(o.pouches, 3); ++i) {
+            Vec3 p = surfaceAt(0.38f, ths[i], 0.01f * h);
+            Vec3 n = normalize(Vec3{p.x, 0, p.z});
+            box(p, n, 0.16f * h, 0.17f * h, 0.07f * h, blend(r.hips, r.spine, 0.3f), Mat{g.palette.leather, MaterialClass::Leather});
+        }
+    }
+    if (o.kneePads)
+        for (int s = 0; s < 2; ++s) {
+            const LimbRig& l = r.legs[size_t(s)];
+            float kr = std::max(0.55f * g.body.thigh, 0.85f * g.body.calf) * h;
+            Ellipsoid e;
+            e.center = m.knee[s] + Vec3{0, 0.02f * h, kr * 0.75f};
+            e.axis = {0, 1, 0};
+            e.up = {0, 0, 1};
+            e.rAxis = kr * 1.25f;
+            e.rU = kr * 1.05f;
+            e.rV = kr * 0.65f;
+            e.lat = 5;
+            e.lon = 8;
+            int th = l.upper, sh = l.lower;
+            emitEllipsoid(newPart(), e, [=](float, float, Vec3) { return blend(th, sh, 0.6f); }, [=](float, float) { return metal; });
+        }
 }
 
 void Builder::buildShoulderPads() {
@@ -1054,6 +1208,7 @@ Character Builder::build() {
     buildSkirt();
     buildLoincloth();
     buildShoulderPads();
+    buildAccessories();
     buildTail();
     buildEars();
     buildHorns();
