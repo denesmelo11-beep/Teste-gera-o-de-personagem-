@@ -192,7 +192,7 @@ void Builder::buildNose() {
         return r.frontZ(std::min(std::fabs(x * h), r.w * 0.995f)) + faceRelief(x / g.body.headWidth, s) * h;
     };
     const float L = f.noseLength, P = f.noseProj, Wd = f.noseWidth, tip = f.noseTip;
-    const float sRoot = 0.505f;
+    const float sRoot = lerp(0.505f, 0.485f, g.femininity);
     const float sTip = clamp(0.345f - 0.06f * (L - 1.0f) + 0.010f * tip, 0.285f, 0.385f);
     const float proj = 0.050f * P, dR = 0.004f + 0.008f * f.noseBridge;
     const float sM = lerp(sRoot, sTip, 0.55f), dM = lerp(dR, proj, 0.55f) + 0.016f * f.noseHump;
@@ -234,6 +234,30 @@ void Builder::buildNose() {
         tri(U, Ns, S);
         tri(Ns, As, S);
     }
+}
+
+// Pushes p out along the ray from the head centre so it is never inside the built
+// (faceted) head: the chords of the low-poly surface can sit outside the sculpted one.
+Vec3 Builder::outsideHeadMesh(Vec3 p, float margin) const {
+    const Part& hp = parts[headPart_];
+    const Vec3 c = headCenter(), d = normalize(p - c, Vec3{0, 0, 1});
+    float best = -1.0f;
+    for (const auto& tr : hp.tris) {
+        const Vec3 a = hp.pos[tr.a], e1 = hp.pos[tr.b] - a, e2 = hp.pos[tr.c] - a;
+        const Vec3 pv = cross(d, e2);
+        const float det = dot(e1, pv);
+        if (std::fabs(det) < 1e-12f) continue;
+        const float inv = 1.0f / det;
+        const Vec3 tv = c - a;
+        const float u = dot(tv, pv) * inv;
+        if (u < 0.0f || u > 1.0f) continue;
+        const Vec3 qv = cross(tv, e1);
+        const float v = dot(d, qv) * inv;
+        if (v < 0.0f || u + v > 1.0f) continue;
+        best = std::max(best, dot(e2, qv) * inv);
+    }
+    const float r = length(p - c);
+    return best > 0.0f && best + margin > r ? c + d * (best + margin) : p;
 }
 
 // Front-most intersection of a ray along -z (at x, y relative to the head origin)

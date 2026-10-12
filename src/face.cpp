@@ -344,8 +344,8 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             }, [&](float t) { return (0.0040f + 0.003f * f.eyeDepth) * std::sin(kPi * (0.1f + 0.8f * t)); }, 14);
             strokeLocal(crease, Vec4(lerp(skinDark, Vec3{0.62f, 0.36f, 0.40f}, 0.25f), 0.30f + 0.2f * f.eyeDepth));
             // Inner corner (caruncle): a small warm notch.
-            cp.fill([&](Vec2 p) { return sdEllipse(toLocal(p), Vec2{-W - 0.002f, -0.15f * Hh}, Vec2{0.008f, 0.22f * Hh}); },
-                    Vec4(lerp(pal.skin, Vec3{0.85f, 0.45f, 0.45f}, 0.35f), 0.8f), lo, hi);
+            cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), Vec2{-W + 0.004f, -0.12f * Hh}, Vec2{0.007f, 0.30f * Hh})); },
+                    Vec4(lerp(pal.skin, Vec3{0.86f, 0.52f, 0.52f}, 0.45f), 0.85f), lo, hi);
             // A soft lighter skin edge under the eye (no drawn lower line).
             Stroke lower = curveStroke([&](float t) {
                 float x = lerp(-0.8f * W, 0.9f * W, t);
@@ -567,7 +567,9 @@ void paintSkin(CellPainter& cp, const Genome& g) {
                        clamp(pal.hair.z / std::max(pal.skin.z, 0.05f), 0.22f, 1.0f)};
         const Vec3 mul = lerp(Vec3{1, 1, 1}, rel * Vec3{0.95f, 0.97f, 1.05f}, 0.72f);
         const float mw = 0.060f * f.mouthWidth;
-        auto top = [](float ax) { return 0.300f - 0.060f * smoothstep(0.04f, 0.12f, ax) + 0.20f * smoothstep(0.16f, 0.42f, ax); };
+        // Bearded faces: the shadow runs a little above the beard's edge so the mass grows out of it.
+        const float up = g.facialHair == FacialHair::None || g.facialHair == FacialHair::Stubble ? 0.0f : 0.03f;
+        auto top = [up](float ax) { return 0.300f - 0.060f * smoothstep(0.04f, 0.12f, ax) + 0.20f * smoothstep(0.16f, 0.42f, ax) + up; };
         cp.fill([=](Vec2 p) { return p.y - top(std::fabs(p.x)); },
                 [=](Vec2 p) {
                     float a = 0.95f * f.stubble * smoothstep(0.0f, 0.035f, top(std::fabs(p.x)) - p.y);

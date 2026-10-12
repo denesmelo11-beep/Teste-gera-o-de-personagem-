@@ -409,8 +409,8 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
             default: break;
         }
         f.noseLength = clamp(L + 0.10f * z(rf) + (fem ? -0.07f : 0.05f) + (elder ? 0.07f : 0.0f), 0.65f, 1.45f);
-        f.noseProj = clamp(Pj + 0.14f * z(rf) + (fem ? -0.24f : 0.10f) - (cute ? 0.15f : 0.0f), 0.50f, 1.6f);
-        f.noseWidth = clamp(Wd + 0.12f * z(rf) + (fem ? -0.12f : 0.08f) + 0.05f * std::max(0.0f, fat), 0.7f, 1.7f);
+        f.noseProj = clamp(Pj + 0.14f * z(rf) + (fem ? -0.32f : 0.10f) - (cute ? 0.15f : 0.0f), 0.45f, 1.6f);
+        f.noseWidth = clamp(Wd + 0.12f * z(rf) + (fem ? -0.18f : 0.08f) + 0.05f * std::max(0.0f, fat), 0.65f, 1.7f);
         f.noseHump = saturate(hump + 0.25f * z(rf) + ((rogue || per == Persona::Heroic) && !fem && rf.chance(0.3f) ? 0.5f : 0.0f));
         f.noseTip = clamp(tip + 0.3f * z(rf) - (elder ? 0.25f : 0.0f), -1.0f, 1.0f);
     }

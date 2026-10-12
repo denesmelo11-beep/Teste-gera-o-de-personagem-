@@ -22,13 +22,17 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
-| Os 18 cortes | Expressões |
+| Identidade: rostos aleatórios (homens em cima, mulheres embaixo) |
+|---|
+| ![rostos](docs/rostos.png) |
+
+| Os 37 cortes (`--cuts`) | Expressões |
 |---|---|
 | ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
 
-| Cabelos curtos e barbas (`--heads`) |
+| Barbas (`--heads`): nenhuma, barba rala, bigode, cavanhaque, curta, cheia, longa, trançada |
 |---|
-| ![cabelos e barbas](docs/cabelos_barbas.png) |
+| ![barbas](docs/cabelos_barbas.png) |
 
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
@@ -54,7 +58,11 @@ chargen_viewer [--seed N] [--count K] [--res 480]      # interativo
 chargen_viewer --shots pasta --seed 21                 # gera a bateria de imagens e sai
 chargen_viewer --studio folha.png --seed 21            # folha de modelo: mulher e homem, 4 vistas
 chargen_viewer --population pop.png --seed 40          # população natural + presets
-chargen_viewer --heads cabecas.png --seed 60            # retratos masculinos: cortes curtos e barbas
+chargen_viewer --heads cabecas.png --seed 60            # retratos masculinos: tour de barbas
+chargen_viewer --cuts cortes.png --seed 21              # todos os cortes (CHARGEN_CUTYAW=2.4 mostra as costas)
+chargen_viewer --faces rostos.png --seed 100            # rostos da população
+# variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
+# CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele)
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -92,7 +100,8 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
 
 ### Genoma: população, personas e anatomia (`include/chargen/genome.hpp`)
 - **População comum**: altura, gordura, músculo e ossatura são normais independentes; os extremos
-  ficam nas caudas ou nos presets. Idade (jovem/adulto/maduro/idoso) mexe em altura, gordura,
+  ficam nas caudas ou nos presets. Um **tipo de corpo** (médio, magro, pesado, atarracado, longilíneo,
+  forte) desloca esses eixos, então uma multidão mistura barrigudos, magrelos, troncudos e braçais. Idade (jovem/adulto/maduro/idoso) mexe em altura, gordura,
   queda de tecidos, postura, linhas do rosto e grisalho; a persona puxa corpo, olhar, sobrancelha
   e boca de repouso.
 - **Proporções** em unidades de cabeça (`h = altura / headsTall`), cânone estilizado de 6,4–6,6
@@ -128,16 +137,31 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
 - **Roupa íntima** recortada por campos: triângulos são divididos exatamente na borda (com
   refinamento por bisseção), então as bordas são curvas limpas em qualquer ângulo.
 
-### Rosto 2D e cabeça
-Cabeça esculpida em poucos planos (rosto afinando para um queixo definido mas não pontudo, mandíbula mais quadrada nos homens, nariz em crista, arcada, maçãs).
-Olhos, sobrancelhas e boca são pintados com SDF num atlas 1024×512 (8 células de olhos × 8 de
-boca, combináveis); olhos amendoados nítidos (cerca de metade da largura em altura, topo reto e cantos agudos),
-linha superior forte terminando em ponta, íris grande e redonda cortada pelas duas pálpebras, um
-único brilho, sobrancelha curta e suave. Expressão = offset de UV. Barbas são massas low-poly sólidas
-(do costeleta ao queixo, mais grossas no queixo, barra com poucas pontas grandes); o bigode é uma
-peça única sobre o lábio que desce suavemente após os cantos da boca.
+### Rosto e cabeça: identidade
+- **Crânio em planos**: anéis da cabeça sobre os marcos (queixo, mandíbula, boca, base do nariz,
+  maçãs, linha dos olhos, arcada, testa, crânio) e um eixo central de vértices como na referência.
+  Variam de forma ampla: ângulo da mandíbula, largura do queixo (pontudo a quadrado), maçãs e o
+  vazio abaixo delas, papada, largura do rosto, arcada e profundidade dos olhos, crânio.
+- **Nariz** é uma peça facetada própria (crista, laterais, ponta, asas e base) com comprimento,
+  projeção, largura, giba e ângulo da ponta: é o maior quebrador de planos do rosto.
+- **Olhos** no estilo da referência: abertura larga (cerca de metade da largura em altura), íris
+  grande e redonda cortada pelas duas pálpebras, cílio superior grosso com asa, vinco da pálpebra;
+  sete famílias (padrão, redondo, estreito, afiado, caído, encapuzado, pequeno) com tamanho,
+  espaçamento e inclinação próprios. Sobrancelhas, boca e expressões são SDF num atlas 1024×512.
+- **Camada de pele**: uma cópia da frente da cabeça facetada com UVs para uma célula do atlas,
+  desenhada como multiplicação 2× (o sombreamento dos planos sobrevive). Nela: barba rala,
+  órbitas fundas, olheiras, maçãs encovadas, pele castigada (nariz e bochechas vermelhos), sujeira,
+  sardas, rugas da testa e do cenho, cicatrizes (sobrancelha-bochecha, nariz, lábio, talho, olho
+  cego com a íris leitosa) e tatuagens (linhas rúnicas, garras na bochecha, sigilo na testa).
+- **Barbas** crescem como o cabelo: colunas de mechas enraizadas na pele ao longo da linha da
+  barba, penteadas para baixo pelo rosto e, depois da mandíbula, caindo com gravidade (presas fora do
+  pescoço e do peito). A borda superior fica rente à pele e continua na sombra pintada. Tipos:
+  barba rala, bigode, cavanhaque, curta, cheia, longa, trançada (tranças com física) e costeletas.
 
 ### Cabelo e física
+- Catálogo pensado para um mundo medieval sombrio: rente, raspado, repartido, para trás, bagunçado,
+  tonsura de monge, corte tigela, tranças de guerreiro, trança-coroa, tranças, coques, rabos de
+  cavalo, dreads, cachos longos, muito longo e outros (37 no total, com pesos por sexo, idade e persona).
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
 - Cortes curtos, topo dos longos e presos: **mechas facetadas** (cunhas com crista e ponta) deitadas
   sobre uma calota fina, sobrepostas como telhas e penteadas por um campo de direção próprio de
@@ -161,9 +185,11 @@ coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equi
 
 | | triângulos | tempo/personagem |
 |---|---|---|
-| LOD0 | ~4.600 | ~30 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
-| LOD1 | ~2.900 | ~30 ms |
-| LOD2 | ~2.400 | ~28 ms |
+| LOD0 | ~5.400 | ~40 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
+| LOD1 | ~3.100 | ~33 ms |
+| LOD2 | ~2.700 | ~35 ms |
+
+A camada de pele reaproveita ~400 triângulos da frente da cabeça (um draw a mais, com blend).
 
 No estilo facetado cada face tem vértices próprios (≈3× vértices por triângulo); se memória de
 vértices importar mais que a contagem de triângulos, gere com `--smooth` e faceteie no shader
@@ -176,7 +202,7 @@ include/chargen/  math, rng, genome, character, animation, physics, image, rende
 src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
                   generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, colisores)
-                  head.cpp (cabeça esculpida, decals) · hair.cpp (calota, massas, franjas, barba, orelhas)
+                  head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
 apps/             chargen_cli.cpp, viewer.cpp (Raylib)
 tests/tests.cpp   docs/ (imagens geradas pelo visualizador)

@@ -886,7 +886,7 @@ void Builder::buildHair() {
     if (g.facialHair == FacialHair::BraidedBeard) {
         const bool two = g.seed % 2 == 0;
         for (float off : two ? std::vector<float>{-0.16f, 0.16f} : std::vector<float>{0.0f})
-            tail(kPi / 2 + off, 0.035f, normalize(down + fwd * 0.12f), 0.55f * std::max(0.8f, g.hairLength), 0.050f, true);
+            tail(kPi / 2 + off, 0.035f, normalize(down + fwd * 0.12f), 0.60f * std::max(0.8f, g.hairLength), two ? 0.055f : 0.068f, true);
     }
 
     // ---- grow (styling pass with head/body collision), rig and mesh ----
@@ -1017,6 +1017,7 @@ void Builder::buildFacialHair() {
     struct Sheet {
         std::vector<std::vector<Vec3>> pts, nrm;
         std::vector<std::vector<float>> thick;
+        size_t onSkin = 0;  // rows lying on the face (their inner side is sunk into the head)
     };
     auto emitSheet = [&](const Sheet& S, bool closeHem) {
         Part& p = newPart();
@@ -1031,8 +1032,12 @@ void Builder::buildFacialHair() {
         for (size_t c = 0; c < C; ++c)
             for (size_t k = 0; k < K; ++k) {
                 const float ridge = (c % 2 == 0 ? 0.30f : -0.15f) * smoothstep(0.0f, 0.3f, float(k) / float(K - 1));
-                O[c].push_back(addV(S.pts[c][k] + S.nrm[c][k] * (S.thick[c][k] * (1.0f + ridge))));
-                I[c].push_back(addV(S.pts[c][k] - S.nrm[c][k] * (0.002f * h)));
+                Vec3 o = S.pts[c][k] + S.nrm[c][k] * (S.thick[c][k] * (1.0f + ridge));
+                o = outsideHeadMesh(o, (k == 0 ? 0.005f : k < S.onSkin ? 0.010f : 0.006f) * h);  // never under a facet of the head
+                O[c].push_back(addV(o));
+                // On the face the inner side hides inside the faceted head; hanging rows get real volume.
+                const float in = k < S.onSkin ? 0.012f * h : 0.30f * S.thick[c][k];
+                I[c].push_back(addV(S.pts[c][k] - S.nrm[c][k] * in));
             }
         auto tri = [&](uint32_t a, uint32_t b, uint32_t c2, Vec3 out, Vec3 shade) {
             const Vec3 A = p.pos[a], B = p.pos[b], Cc = p.pos[c2];
@@ -1101,7 +1106,7 @@ void Builder::buildFacialHair() {
                     const Vec3 q = onFace(th, sv, 0.0f);
                     pts.push_back(q);
                     nrm.push_back(headNormalDir(q));
-                    tk.push_back(thick * endT * (0.12f + 0.88f * smoothstep(0.0f, 0.55f, t)) * (0.75f + 0.25f * front));
+                    tk.push_back(std::max(0.003f * h, thick * endT * smoothstep(0.0f, 0.6f, t) * (0.75f + 0.25f * front)));
                 }
                 // Below the jaw: hang down (and a little forward at the chin), kept off the neck and chest.
                 const float dl = drop * lockVar * (chops ? 0.6f : 1.0f) * (1.0f - 0.70f * std::pow(ax, 1.4f)) / float(KD);
@@ -1120,6 +1125,7 @@ void Builder::buildFacialHair() {
                 S.nrm.push_back(nrm);
                 S.thick.push_back(tk);
             }
+            S.onSkin = KF;
             emitSheet(S, true);
         }
     }
@@ -1149,6 +1155,7 @@ void Builder::buildFacialHair() {
             S.nrm.push_back(nrm);
             S.thick.push_back(tk);
         }
+        S.onSkin = K;
         emitSheet(S, true);
     }
 }
