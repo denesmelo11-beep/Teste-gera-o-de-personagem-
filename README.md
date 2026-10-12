@@ -22,9 +22,13 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
-| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin |
+| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin, worgen |
 |---|
 | ![povos](docs/povos.png) |
+
+| Worgen (pernas digitígradas, patas com garras, pelagem) | Morto-vivo (ossos expostos, carne manchada) |
+|---|---|
+| ![worgen](docs/folha_worgen.png) | ![morto-vivo](docs/folha_undead.png) |
 
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|
@@ -92,7 +96,7 @@ chargen_cli export    --seed 42 --lod 0 --out heroi.glb
 chargen_cli stats     --count 300
 ```
 
-Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
+Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
 `--archetype natural|bombshell|dorito|brute|amazon|slender|chibi|monster` (presets estilizados,
 opcionais) e `--exaggeration 0..2`.
@@ -132,6 +136,18 @@ cabeça avançam), pele, orelhas (lâmina com comprimento, largura, ângulos e c
 (orc) ou longas e curvas (troll), focinho bovino (tauren), chifres (para trás, carneiro, eretos,
 bovinos), cascos, cauda, olhos luminosos sem pupila (elfos, draenei, mortos-vivos), decomposição com
 costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cortes, cores e barbas.
+- **Pernas digitígradas** (draenei, worgen): joelho alto e à frente, canela para trás até um
+  jarrete elevado, metatarso longo até os dedos; termina em pata (almofada, quatro dedos com garras)
+  ou casco fendido. O esqueleto usa os mesmos ossos (coxa, canela, pé, dedo), então as animações
+  servem sem mudança.
+- **Worgen**: focinho longo e estreito com parada abaixo dos olhos e trufa escura, orelhas no topo
+  da cabeça, olhos âmbar luminosos, gola de pelo nas bochechas, mãos com dedos e garras, cauda
+  peluda com física, pelagem (peito e garganta claros, dorso escuro, patas escuras) e tufos de pelo
+  facetados nos braços, pernas, ombros e peito.
+- **Mortos-vivos**: carne manchada (hematomas e putrefação por ruído 3D), costelas expostas no
+  flanco, rádio e ulna ou tíbia à mostra (a carne é recortada exatamente por campos, com o osso
+  dentro da cavidade) e mandíbula descarnada pintada na camada de pele.
+- Paleta sombria: matizes fantásticos (verdes, azuis, lilases) são dessaturados e escurecidos.
 `GenomeOptions::species` escolhe um povo; `mixedSpecies` sorteia a população do mundo inteiro.
 
 ### Corpo: uma superfície contínua
@@ -205,9 +221,9 @@ coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equi
 
 | | triângulos | tempo/personagem |
 |---|---|---|
-| LOD0 | ~5.400 | ~40 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
-| LOD1 | ~3.100 | ~33 ms |
-| LOD2 | ~2.700 | ~35 ms |
+| LOD0 | ~5.600 | ~44 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
+| LOD1 | ~3.300 | ~42 ms |
+| LOD2 | ~2.700 | ~37 ms |
 
 A camada de pele reaproveita ~400 triângulos da frente da cabeça (um draw a mais, com blend).
 

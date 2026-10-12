@@ -77,6 +77,10 @@ private:
     void buildHand(const ArmMarks& a, const LimbRig& rig);
     void buildLegs();
     void buildFeet();
+    void buildDigitigradeFeet();
+    void buildBones();
+    void applyFur();
+    void buildFurTufts();
     void buildTail();
     void buildColliders();
     void initHead();

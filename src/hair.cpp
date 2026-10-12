@@ -1012,7 +1012,8 @@ void Builder::buildHair() {
 void Builder::buildFacialHair() {
     const FacialHair fh = g.facialHair;
     if (fh == FacialHair::None || fh == FacialHair::Stubble || fh == FacialHair::Tendrils) return;
-    if (g.body.muzzle > 0.5f) return;  // snouted peoples wear only the chin braid
+    const bool ruffOnly = g.body.snout == 1 && fh == FacialHair::MuttonChops;  // wolves: a cheek ruff of fur
+    if (g.body.muzzle > 0.5f && !ruffOnly) return;  // snouted peoples wear only the chin braid
     const float h = m.h;
     const int head = ch.rig.head;
     Rng r = Rng(g.seed).fork(58);
@@ -1143,7 +1144,7 @@ void Builder::buildFacialHair() {
             emitSheet(S, true);
         }
     }
-    if (fh == FacialHair::Mustache || fh == FacialHair::Goatee || full || chops) {
+    if (!ruffOnly && (fh == FacialHair::Mustache || fh == FacialHair::Goatee || full || chops)) {
         // Moustache: locks from under the nose combed down and out; long ends
         // droop past the mouth corners (and join the chops / the beard).
         const int NC = lod.sparseRings ? 7 : 11, K = 4;
@@ -1224,8 +1225,8 @@ void Builder::buildEars() {
     // head: short and round for humans, long blades for elves and trolls, broad fans
     // for goblins, drooping leaves for the bovine peoples.
     for (float sd : {1.0f, -1.0f}) {
-        const float th = sd > 0 ? 0.08f : kPi - 0.08f;
-        const Vec3 base = headSurface(th, 0.45f, -0.03f * h) + Vec3{0, 0, -0.05f * h};
+        const float th = sd > 0 ? E.baseIn : kPi - E.baseIn;
+        const Vec3 base = headSurface(th, E.baseS, -0.03f * h) + Vec3{0, 0, E.baseS > 0.6f ? -0.02f * h : -0.05f * h};
         const Vec3 dir = normalize(Vec3{sd * std::cos(E.up) * std::cos(E.back), std::sin(E.up), -std::cos(E.up) * std::sin(E.back)});
         const float len = E.length * h * es, wid = E.width * h * std::sqrt(es);
         Vec3 bladeUp = normalize(Vec3{0, 1, 0} - dir * dir.y, Vec3{0, 0, 1});

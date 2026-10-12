@@ -148,7 +148,16 @@ void Builder::computeMarks() {
         m.knee[s] = {sd * std::max(0.45f * P, kneeR * 1.15f), m.kneeY, 0.02f * h};
         m.ankle[s] = {sd * std::max(0.44f * P, ankleR * 1.6f), m.ankleY, -0.01f * h};
         m.ball[s] = m.ankle[s] + Vec3{sd * 0.03f * m.footLen, -0.7f * m.ankleY, 0.53f * m.footLen};
+        if (b.digitigrade) {
+            // Walking on the toes: the knee rides high and forward, the shin runs down and
+            // back to a raised hock, and a long metatarsal angles forward to the toes.
+            const float L = m.hipJointY;
+            m.knee[s] = {m.knee[s].x, 0.60f * L, 0.30f * h};
+            m.ankle[s] = {m.ankle[s].x * 0.95f, 0.30f * L, -0.32f * h};
+            m.ball[s] = {m.ankle[s].x + sd * 0.01f * h, 0.07f * h, 0.12f * h};
+        }
     }
+    if (b.digitigrade) m.ankleY = m.ankle[0].y;
 
     const float S = b.shoulderWidth * h, C = b.chestWidth * h, armR = b.arm * h;
     const float del = armR * (1.12f + 0.45f * mu);
@@ -816,6 +825,77 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     };
     // Palm, knuckle line, then the fingers as one softly curled block whose
     // separations are grooves on both faces (the cavity shading draws them).
+    const bool fingers = lod.handSeg >= 6;  // LOD0/1: separate fingers; LOD2: one mitten block
+    const Mat clawM{g.palette.horn * 0.6f + Vec3{0.03f, 0.03f, 0.03f}, MaterialClass::Horn};
+    if (fingers) {
+        // Palm block up to the knuckles.
+        const K palmKeys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.40f, 1.0f, 1.0f, 0.02f}, {0.50f, 0.98f, 0.92f, 0.05f}};
+        const int n = lod.handSeg;
+        Loft L;
+        for (const K& k : palmKeys) {
+            Vec3 c = a.wrist + d * (k.t * Lh) + palm * (k.curl * th);
+            const float wu = th * k.th, wv = hw * k.w, knuckle = bump((k.t - 0.48f) / 0.06f);
+            std::vector<Vec3> ring(static_cast<size_t>(n));
+            for (int j = 0; j < n; ++j) {
+                float al = kTau * float(j) / float(n);
+                float x = wu * spow(std::cos(al), 2.0f / 2.6f), z = wv * spow(std::sin(al), 2.0f / 2.6f);
+                float back = (x * a.side < 0) ? 1.0f : 0.0f;
+                x += std::copysign(0.08f * wu * knuckle * back, x);
+                ring[size_t(j)] = c + u * x + v * z;
+            }
+            L.rings.push_back(ring);
+            L.t.push_back(k.t);
+        }
+        L.poleEnd = true;
+        L.endPole = a.wrist + d * (0.53f * Lh) + palm * (0.05f * th);
+        L.tEnd = 0.53f;
+        Part& hp = newPart();
+        hp.id = armGroup_;
+        emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
+        // Four fingers, each a tapered, slightly curled three-joint tube.
+        const float lens[] = {0.46f, 0.52f, 0.49f, 0.38f};
+        for (int f = 0; f < 4; ++f) {
+            const float off = (1.5f - float(f)) / 1.5f;  // +1 index (thumb side) .. -1 little finger
+            const float fr = std::min(0.24f * hw, 0.45f * th) * (f == 3 ? 0.85f : 1.0f);
+            Vec3 p = a.wrist + d * (0.46f * Lh) + v * (off * 0.72f * hw) + palm * (0.04f * th);
+            Vec3 fd = normalize(d + v * (off * 0.06f));
+            const float seg = lens[f] * Lh * (g.body.claws ? 1.05f : 1.0f) / 3.0f;
+            std::vector<Vec3> pts{p};
+            for (int k = 0; k < 3; ++k) {
+                fd = normalize(fd + palm * (0.22f + 0.08f * float(k)));  // relaxed curl
+                p = p + fd * seg;
+                pts.push_back(p);
+            }
+            Loft F;
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 dd = normalize(pts[size_t(k + 1)] - pts[size_t(k)]);
+                const Vec3 fv = normalize(v - dd * dot(v, dd)), fu = cross(dd, fv);
+                const float rr = fr * (1.0f - 0.16f * float(k));
+                F.rings.push_back(makeRing(pts[size_t(k)], fu, fv, SuperRing{rr * 0.9f, 0, rr, rr, 2.2f, 2.2f}, 5));
+                F.t.push_back(float(k) / 3.0f);
+            }
+            F.poleEnd = true;
+            F.endPole = pts.back();
+            F.tEnd = 1;
+            Part& fp = newPart();
+            fp.id = armGroup_;
+            emitLoft(fp, F, [=](float, float, Vec3) { return one(hand); },
+                     [&](float t, float) { return g.body.claws && t > 0.75f ? clawM : skin(); });
+            if (g.body.claws) {  // a hooked claw past the fingertip
+                const Vec3 tip = pts.back(), dd = normalize(pts[3] - pts[2]);
+                const Vec3 fv = normalize(v - dd * dot(v, dd)), fu = cross(dd, fv);
+                Loft C;
+                C.rings.push_back(makeRing(tip - dd * (0.3f * fr), fu, fv, SuperRing{0.55f * fr, 0, 0.55f * fr, 0.45f * fr}, 5));
+                C.t.push_back(0);
+                C.poleEnd = true;
+                C.endPole = tip + normalize(dd + palm * 0.6f) * (1.6f * fr);
+                C.tEnd = 1;
+                Part& cp = newPart();
+                cp.id = armGroup_;
+                emitLoft(cp, C, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return clawM; });
+            }
+        }
+    } else {
     const K keys[] = {{-0.05f, 0.62f, 0.85f, 0}, {0.18f, 0.92f, 1.0f, 0}, {0.40f, 1.0f, 1.0f, 0.02f}, {0.48f, 1.0f, 1.0f, 0.05f},
                       {0.58f, 0.97f, 0.86f, 0.10f}, {0.74f, 0.93f, 0.78f, 0.30f}, {0.88f, 0.86f, 0.66f, 0.55f}};
     const int n = lod.handSeg;
@@ -845,6 +925,8 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     hp.cavity = 0.5f;
     emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
 
+    }
+
     // Thumb.
     Vec3 tb = a.wrist + d * (0.2f * Lh) + v * (0.65f * hw) + palm * (0.3f * th);
     Vec3 td = normalize(d * 0.55f + v * 0.45f + palm * 0.55f);
@@ -872,7 +954,7 @@ void Builder::buildLegs() {
     const float h = m.h, mu = g.body.muscle;
     const float T = g.body.thigh * h, Cf = g.body.calf * h * (1 + 0.2f * mu);
     // Knee narrower than the calf, slim ankle: the diamond-shaped lower leg.
-    const float K = std::max(0.50f * T, 0.70f * Cf), A = 0.44f * Cf;
+    const float K = std::max(0.50f * T, 0.70f * Cf), A = (g.body.digitigrade ? 0.62f : 0.44f) * Cf;
     const int N = lod.torsoSeg, q = N / 4;
     const int hips = ch.rig.hips;
     Part& bp = parts[torsoPart_];
@@ -1070,6 +1152,10 @@ void Builder::buildLegs() {
 
 // Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
+    if (g.body.digitigrade) {
+        buildDigitigradeFeet();
+        return;
+    }
     const bool hoof = g.body.hooves;
     const float A = m.ankleY, Lf = m.footLen * (hoof ? 0.62f : 1.0f), Wf = m.footHalfW * (hoof ? 1.05f : 1.0f);
     // Hooves: a short, blocky, dark keratin foot with a cleft front.
@@ -1111,6 +1197,100 @@ void Builder::buildFeet() {
     }
 }
 
+// Digitigrade feet: a long metatarsal from the raised hock down to the toes, then a
+// paw (padded toes with claws) or a cloven hoof on the ground.
+void Builder::buildDigitigradeFeet() {
+    const float h = m.h, fs = g.body.footSize, Cf = g.body.calf * h * (1 + 0.2f * g.body.muscle);
+    const bool hoof = g.body.hooves;
+    const Mat hoofM{g.palette.horn * 0.35f + Vec3{0.05f, 0.04f, 0.04f}, MaterialClass::Horn};
+    const Mat clawM{g.palette.horn * 0.6f + Vec3{0.03f, 0.03f, 0.03f}, MaterialClass::Horn};
+    for (int s = 0; s < 2; ++s) {
+        const LimbRig& rig = ch.rig.legs[size_t(s)];
+        const float sd = s == 0 ? 1.0f : -1.0f;
+        const Vec3 hk = m.ankle[s], bl = m.ball[s];
+        const int foot = rig.end, toe = rig.tip;
+        // Metatarsal: from inside the end of the shin down to the ball.
+        {
+            const Vec3 d = normalize(bl - hk);
+            const Vec3 v = orthoFront(d), u = cross(d, v);
+            Loft L;
+            const float ts[] = {-0.08f, 0.15f, 0.55f, 0.92f};
+            const float rs[] = {0.70f, 0.60f, 0.50f, 0.52f};
+            for (int k = 0; k < 4; ++k) {
+                const float r0 = rs[k] * Cf;
+                L.rings.push_back(makeRing(lerp(hk, bl, ts[k]), u, v, SuperRing{r0 * 0.85f, 0, r0 * 1.05f, r0 * 1.15f, 2.2f, 2.2f}, lod.limbSeg));
+                L.t.push_back(ts[k]);
+            }
+            emitLoft(newPart(), L, [=](float t, float, Vec3) { return blend(foot, toe, smoothstep(0.6f, 0.95f, t)); },
+                     [&](float, float) { return skin(); });
+        }
+        if (hoof) {  // a cloven hoof under the ball
+            Loft L;
+            const float R = 0.62f * Cf * fs;
+            const float ys[] = {bl.y + 0.05f * h, 0.45f * (bl.y + 0.05f * h), 0.004f};
+            const float rs[] = {0.85f, 1.0f, 1.12f};
+            for (int k = 0; k < 3; ++k) {
+                auto ring = makeRing({bl.x, ys[k], bl.z + 0.02f * h * float(k)}, {1, 0, 0}, {0, 0, 1}, SuperRing{R * rs[k], 0, R * rs[k] * 1.15f, R * rs[k] * 0.9f, 2.4f, 2.4f},
+                                     lod.limbSeg);
+                for (Vec3& p : ring) p.z -= 0.25f * R * bump((p.x - bl.x) / (0.12f * R)) * smoothstep(bl.z, bl.z + R, p.z) * float(k) / 2.0f;  // cleft
+                L.rings.push_back(ring);
+                L.t.push_back(float(k) / 2.0f);
+            }
+            L.poleEnd = true;
+            L.endPole = {bl.x, 0.0f, bl.z + 0.04f * h};
+            L.tEnd = 1;
+            emitLoft(newPart(), L, [=](float, float, Vec3) { return one(toe); }, [&](float, float) { return hoofM; });
+            continue;
+        }
+        // Paw: a padded base and four toes, each ending in a claw.
+        const float pw = 0.19f * h * fs, pl = 0.36f * h * fs;
+        {
+            Loft L;
+            const float ts[] = {0.0f, 0.4f, 0.8f};
+            const float ws[] = {0.75f, 1.0f, 0.95f};
+            const float hs[] = {1.0f, 0.75f, 0.55f};
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 c{bl.x, (0.055f * h) * hs[k] + 0.004f, bl.z - 0.05f * h + ts[k] * pl};
+                L.rings.push_back(makeRing(c, {1, 0, 0}, {0, 1, 0}, SuperRing{pw * ws[k], 0, 0.055f * h * hs[k], 0.045f * h * hs[k], 2.4f, 3.0f},
+                                           lod.limbSeg));
+                L.t.push_back(ts[k]);
+            }
+            L.poleStart = true;
+            L.startPole = {bl.x, 0.05f * h, bl.z - 0.09f * h};
+            L.poleEnd = true;
+            L.endPole = {bl.x, 0.03f * h, bl.z - 0.05f * h + 0.95f * pl};
+            emitLoft(newPart(), L, [=](float, float, Vec3) { return one(toe); }, [&](float, float) { return skin(); });
+        }
+        for (int k = 0; k < 4; ++k) {
+            const float off = (float(k) - 1.5f) / 1.5f;  // -1 .. 1 across the paw
+            const Vec3 base{bl.x + sd * 0.0f + off * 0.75f * pw, 0.030f * h, bl.z - 0.05f * h + (0.78f - 0.10f * std::fabs(off)) * pl};
+            const Vec3 d = normalize(Vec3{off * 0.25f, -0.35f, 1.0f});
+            const float tl = 0.10f * h * fs * (1.0f - 0.2f * std::fabs(off)), tr = 0.032f * h * fs;
+            const Vec3 v = Vec3{0, 1, 0}, u = normalize(cross(d, v));
+            Loft T;
+            T.rings.push_back(makeRing(base, u, normalize(cross(u, d)), SuperRing{tr, 0, tr, tr}, 6));
+            T.t.push_back(0);
+            T.rings.push_back(makeRing(base + d * (0.6f * tl), u, normalize(cross(u, d)), SuperRing{tr * 0.9f, 0, tr * 0.9f, tr * 0.8f}, 6));
+            T.t.push_back(0.6f);
+            T.poleEnd = true;
+            T.endPole = base + d * tl;
+            T.tEnd = 1;
+            emitLoft(newPart(), T, [=](float, float, Vec3) { return one(toe); },
+                     [&](float t, float) { return g.body.claws && t > 0.7f ? clawM : skin(); });
+            if (g.body.claws) {  // a hooked claw over the tip
+                const Vec3 tip = base + d * tl;
+                Loft C;
+                C.rings.push_back(makeRing(tip - d * (0.012f * h), u, normalize(cross(u, d)), SuperRing{0.6f * tr, 0, 0.6f * tr, 0.5f * tr}, 5));
+                C.t.push_back(0);
+                C.poleEnd = true;
+                C.endPole = tip + d * (0.05f * h * fs) + Vec3{0, -0.02f * h, 0};
+                C.tEnd = 1;
+                emitLoft(newPart(), C, [=](float, float, Vec3) { return one(toe); }, [&](float, float) { return clawM; });
+            }
+        }
+    }
+}
+
 void Builder::buildTail() {
     if (!g.body.tail) return;
     Skeleton& sk = ch.skeleton;
@@ -1127,7 +1307,7 @@ void Builder::buildTail() {
     for (int i = 0; i < kPts; ++i) {
         pts.push_back(p);
         float u = float(i) / (kPts - 1);
-        p += normalize(Vec3{0, lerp(-0.8f, 0.3f, u), -1.0f}) * step;
+        p += normalize(g.body.tailFur ? Vec3{0, lerp(-1.6f, -0.9f, u), -0.55f} : Vec3{0, lerp(-0.8f, 0.3f, u), -1.0f}) * step;
     }
     const int nb = 4;
     int parent = r.hips;
@@ -1141,7 +1321,10 @@ void Builder::buildTail() {
         Vec3 d = normalize(i + 1 < kPts ? pts[size_t(i + 1)] - pts[size_t(i)] : pts[size_t(i)] - pts[size_t(i - 1)]);
         Vec3 v = normalize(cross(d, {1, 0, 0}), {0, 1, 0});
         Vec3 uu = cross(d, v);
-        float rad = r0 * (1.0f - 0.8f * u);
+        // Furred tails are bushy (fullest past the middle); bovine tails end in a tuft.
+        float rad = g.body.tailFur ? r0 * (0.75f + 1.2f * bump((u - 0.55f) / 0.55f)) * (1.0f - 0.5f * smoothstep(0.85f, 1.0f, u))
+                  : g.body.hooves ? r0 * (1.0f - 0.85f * u) + 1.4f * r0 * bump((u - 0.92f) / 0.10f)
+                                  : r0 * (1.0f - 0.8f * u);
         L.rings.push_back(makeRing(pts[size_t(i)], uu, v, SuperRing{rad, 0, rad, rad}, lod.limbSeg));
         L.t.push_back(u);
     }
@@ -1153,13 +1336,19 @@ void Builder::buildTail() {
     std::vector<int> bones = r.tail;
     int hips = r.hips;
     Vec3 base = g.palette.skin;
+    const bool fur = g.body.tailFur, tuft = g.body.hooves && !fur;
+    const Vec3 hairC = g.palette.hair;
     emitLoft(newPart(), L, [=](float t, float, Vec3) {
         float f = t * nb;
         int i0 = std::clamp(int(f), 0, nb - 1);
         if (i0 == nb - 1) return one(bones[size_t(i0)]);
         if (t < 0.05f) return blend(hips, bones[0], t / 0.05f);
         return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.3f, 1.0f, f - i0));
-    }, [=](float t, float) { return Mat{base * (1.0f - 0.15f * t), MaterialClass::Skin}; });
+    }, [=](float t, float) {
+        if (fur) return Mat{lerp(hairC, base, 0.3f) * (1.0f - 0.2f * t), MaterialClass::Hair};
+        if (tuft && t > 0.8f) return Mat{hairC, MaterialClass::Hair};
+        return Mat{base * (1.0f - 0.15f * t), MaterialClass::Skin};
+    });
     SpringChain sc;
     sc.name = "tail";
     sc.bones = bones;
@@ -1220,6 +1409,218 @@ void Builder::buildColliders() {
     for (int s = 0; s < 2; ++s) add(r.legs[size_t(s)].upper, m.hipJoint[s], m.knee[s], g.body.thigh * h * 0.95f);
 }
 
+// Exposed bones (undead): torn flesh painted as a dark cavity (a clip on the body
+// surface, so the edge is exact) with bone geometry lying across it.
+void Builder::buildBones() {
+    const int bones = g.body.bones;
+    if (!bones) return;
+    const float h = m.h, side = float(g.body.boneSide);
+    Part& bp = parts[torsoPart_];
+    const Mat cavity{{0.17f, 0.09f, 0.09f}, MaterialClass::Dark};
+    const Mat bone{{0.84f, 0.80f, 0.68f}, MaterialClass::Horn};
+    auto tube = [&](const std::vector<Vec3>& pts, float r0, int boneId) {
+        Loft L;
+        const size_t n = pts.size();
+        for (size_t k = 0; k < n; ++k) {
+            const Vec3 d = normalize(pts[std::min(k + 1, n - 1)] - pts[k > 0 ? k - 1 : 0]);
+            const Vec3 v = normalize(cross(d, {0, 1, 0.3f}), {1, 0, 0}), u = cross(d, v);
+            const float t = float(k) / float(n - 1);
+            const float rr = r0 * (0.8f + 0.35f * (bump(t / 0.15f) + bump((t - 1.0f) / 0.15f)));  // knobbly ends
+            L.rings.push_back(makeRing(pts[k], u, v, SuperRing{rr, 0, rr, rr}, 5));
+            L.t.push_back(t);
+        }
+        L.poleStart = true;
+        L.startPole = pts[0] - normalize(pts[1] - pts[0]) * r0;
+        L.poleEnd = true;
+        L.endPole = pts.back() + normalize(pts.back() - pts[n - 2]) * r0;
+        L.tEnd = 1;
+        emitLoft(newPart(), L, [=](float, float, Vec3) { return one(boneId); }, [=](float, float) { return bone; });
+    };
+    if (bones & 1) {  // ribs through the flank
+        const float tc = 0.645f, pc = 1.0f;
+        bp.clips.push_back({[=, this](Vec3 q) {
+            const float t = torsoT(q.y);
+            if (t < 0.4f || t > 0.9f || q.x * side < 0.0f) return 1.0f;
+            if (std::fabs(q.x) > 1.25f * cHw_(clamp(t, -0.06f, 1.1f)) + 0.03f * h) return 1.0f;  // not the arms
+            const float phi = kPi / 2 - std::atan2(q.z - cZc_(t), q.x * side);  // 0 front .. pi/2 side
+            const float et = (t - tc) / 0.125f, ep = (phi - pc) / 0.50f, e = std::sqrt(et * et + ep * ep);
+            return (e - 1.0f) * 0.1f * h;
+        }, cavity});
+        for (int k = 0; k < 5; ++k) {
+            std::vector<Vec3> pts;
+            for (int i = 0; i <= 6; ++i) {
+                const float phi = lerp(0.55f, 1.45f, float(i) / 6.0f);
+                const float t = tc - 0.090f + 0.044f * float(k) - 0.035f * (1.45f - phi) / 0.90f;
+                const float th = kPi / 2 - side * phi;
+                const Vec3 p = torsoPoint(t, th);
+                const Vec3 out = normalize(Vec3{p.x, 0, p.z - cZc_(t)}, Vec3{side, 0, 0});
+                pts.push_back(p + out * (0.004f * h));
+            }
+            tube(pts, 0.017f * h, ch.rig.chest);
+        }
+    }
+    auto limb = [&](Vec3 a, Vec3 b, float r, Vec3 sideDir, int boneId, int count) {
+        const Vec3 d = normalize(b - a);
+        const float L = length(b - a);
+        bp.clips.push_back({[=](Vec3 q) {
+            const float tt = dot(q - a, d) / L;
+            const Vec3 radial = q - (a + d * (tt * L));
+            if (length(radial) > 1.8f * r) return 1.0f;
+            const float along = std::max(0.28f - tt, tt - 0.72f) * L;
+            const float across = (count == 1 ? 0.05f : 0.20f) * r - dot(radial, sideDir);
+            return std::max(along, across);
+        }, cavity});
+        const Vec3 perp = normalize(cross(d, sideDir));
+        for (int k = 0; k < count; ++k) {
+            const float o = count == 1 ? 0.0f : (k == 0 ? -0.28f : 0.28f);
+            std::vector<Vec3> pts;
+            for (int i = 0; i <= 4; ++i) {
+                const float tt = lerp(0.24f, 0.76f, float(i) / 4.0f);
+                pts.push_back(a + d * (tt * L) + sideDir * (0.82f * r) + perp * (o * r));
+            }
+            tube(pts, (count == 1 ? 0.30f : 0.19f) * r, boneId);
+        }
+    };
+    if (bones & 2)  // a bared forearm (radius and ulna) on the outer side
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+            const ArmMarks& am = m.arms[i];
+            if (am.pair != 0 || am.side != side) continue;
+            const Vec3 d = normalize(am.wrist - am.elbow);
+            const Vec3 lat{am.side, 0, 0};
+            const Vec3 sd = normalize(normalize(lat - d * dot(lat, d)) + Vec3{0, 0, -0.5f});
+            limb(am.elbow, am.wrist, am.radius * 0.80f, sd, ch.rig.arms[i].lower, 2);
+        }
+    if (bones & 4) {  // the shin bone on the front of the opposite leg
+        const int s = side > 0 ? 1 : 0;
+        const Vec3 kn = m.knee[s], an = m.ankle[s], d = normalize(an - kn);
+        const Vec3 fwd = normalize(Vec3{0, 0, 1} - d * d.z);
+        limb(kn, an, g.body.calf * h * 0.85f, fwd, ch.rig.legs[size_t(s)].lower, 1);
+    }
+}
+
+// Fur colouring for beast peoples: pale throat, chest and belly, a darker back and,
+// for some, dark lower limbs. Per face, from the face normal and height.
+void Builder::applyFur() {
+    if (g.face.rot > 0.0f) {  // undead: mottled, bruised flesh
+        auto hash = [](int x, int y, int z) {
+            uint32_t n = uint32_t(x) * 73856093u ^ uint32_t(y) * 19349663u ^ uint32_t(z) * 83492791u;
+            n = (n ^ (n >> 13)) * 1274126177u;
+            return float(n & 0xFFFF) / 65535.0f;
+        };
+        auto noise = [&](Vec3 q) {  // trilinear value noise
+            const float fx = std::floor(q.x), fy = std::floor(q.y), fz = std::floor(q.z);
+            const int ix = int(fx), iy = int(fy), iz = int(fz);
+            const float tx = smoothstep(0.0f, 1.0f, q.x - fx), ty = smoothstep(0.0f, 1.0f, q.y - fy), tz = smoothstep(0.0f, 1.0f, q.z - fz);
+            float v = 0;
+            for (int k = 0; k < 8; ++k) {
+                const int dx = k & 1, dy = (k >> 1) & 1, dz = (k >> 2) & 1;
+                v += hash(ix + dx, iy + dy, iz + dz + int(g.seed % 997)) * (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
+            }
+            return v;
+        };
+        const Vec3 sk = g.palette.skin, bruise = sk * Vec3{0.62f, 0.62f, 0.70f}, rotC = sk * Vec3{0.70f, 0.78f, 0.58f};
+        for (Part& p : parts) {
+            if (p.kind != SubmeshKind::Body) continue;
+            for (auto& tr : p.tris) {
+                if (tr.m.cls != MaterialClass::Skin || length(tr.m.color - sk) > 0.02f) continue;
+                const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
+                const float n1 = noise(c * (3.0f / m.h)), n2 = noise(c * (7.0f / m.h) + Vec3{9, 3, 5});
+                Vec3 col = lerp(sk, bruise, g.face.rot * smoothstep(0.55f, 0.80f, n1));
+                col = lerp(col, rotC, 0.8f * g.face.rot * smoothstep(0.70f, 0.85f, n2));
+                tr.m.color = col;
+            }
+        }
+    }
+    const int pat = g.body.furPattern;
+    if (!pat) return;
+    const Vec3 sk = g.palette.skin;
+    const Vec3 pale = lerp(sk, Vec3{0.93f, 0.88f, 0.80f}, 0.45f), dark = sk * 0.62f;
+    for (Part& p : parts) {
+        if (p.kind != SubmeshKind::Body) continue;
+        for (auto& tr : p.tris) {
+            if (tr.m.cls != MaterialClass::Skin || length(tr.m.color - sk) > 0.02f) continue;
+            const Vec3 A = p.pos[tr.a], B = p.pos[tr.b], C = p.pos[tr.c], c = (A + B + C) / 3.0f;
+            const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
+            const float front = smoothstep(0.25f, 0.85f, n.z) * smoothstep(m.crotchY - 0.1f * m.h, m.crotchY + 0.2f * m.h, c.y) *
+                                smoothstep(m.H, m.H - 0.6f * m.h, c.y + 0.3f * m.h * smoothstep(0.0f, 0.3f, -n.y));
+            const float back = smoothstep(-0.2f, -0.8f, n.z) * smoothstep(m.crotchY, m.shoulderY, c.y);
+            Vec3 col = lerp(sk, pale, 0.38f * front);
+            col = lerp(col, dark, 0.35f * back);
+            if (pat >= 2) col = lerp(col, dark, 0.7f * smoothstep(0.16f * m.hipJointY, 0.04f * m.hipJointY, c.y));
+            tr.m.color = col;
+            tr.m.cls = MaterialClass::Hair;  // fur reads with the hair's cool shadow and sheen, not as skin
+        }
+    }
+}
+
+// Fur tufts (beast peoples): small faceted wedges laid along the limbs and over the
+// shoulders, chest and back, combed with the limb, so the body reads as furred.
+void Builder::buildFurTufts() {
+    if (g.body.furPattern < 2) return;
+    const float h = m.h;
+    Rng r = Rng(g.seed).fork(61);
+    Part& p = newPart();
+    const Vec3 c0 = lerp(g.palette.hair, g.palette.skin, 0.35f);
+    auto tuft = [&](Vec3 base, Vec3 n, Vec3 flow, float w, float L, int bone) {
+        flow = normalize(flow - n * dot(flow, n), Vec3{0, -1, 0});
+        const Vec3 side = normalize(cross(n, flow));
+        const SkinW sw = one(bone);
+        const uint32_t i0 = uint32_t(p.pos.size());
+        const Vec3 pts[4] = {base + side * (0.5f * w) - n * (0.01f * h), base - side * (0.5f * w) - n * (0.01f * h),
+                             base - flow * (0.35f * w) + n * (0.02f * h), base + flow * L + n * (0.42f * L)};
+        for (const Vec3& q : pts) {
+            p.pos.push_back(q);
+            p.w.push_back(sw);
+            p.uv.push_back({});
+        }
+        const Mat mt{c0 * r.range(0.85f, 1.08f), MaterialClass::Hair};
+        const uint32_t tri[3][3] = {{0, 2, 3}, {2, 1, 3}, {1, 0, 3}};
+        for (const auto& t : tri) {
+            uint32_t a = i0 + t[0], b = i0 + t[1], c = i0 + t[2];
+            const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
+            if (dot(cross(B - A, C - A), (A + B + C) / 3.0f - (base - n * (0.05f * h))) < 0) std::swap(b, c);
+            p.tris.push_back({a, b, c, mt});
+        }
+    };
+    // Along a limb segment, on the arc of directions around `out` (radians either side).
+    auto alongLimb = [&](Vec3 a, Vec3 b, float r0, float r1, Vec3 out, float arc, int rows, int cols, int bone, float size) {
+        const Vec3 d = normalize(b - a);
+        out = normalize(out - d * dot(out, d), Vec3{1, 0, 0});
+        const Vec3 o2 = normalize(cross(d, out));
+        for (int i = 0; i < rows; ++i)
+            for (int j = 0; j < cols; ++j) {
+                const float t = (float(i) + 0.5f + r.range(-0.2f, 0.2f)) / float(rows);
+                const float ang = cols == 1 ? 0.0f : lerp(-arc, arc, float(j) / float(cols - 1)) + r.range(-0.15f, 0.15f);
+                const Vec3 n = normalize(out * std::cos(ang) + o2 * std::sin(ang));
+                const float rr = lerp(r0, r1, t);
+                tuft(lerp(a, b, t) + n * (0.92f * rr), n, d, 3.0f * size * h * r.range(0.8f, 1.2f), 3.4f * size * h * r.range(0.8f, 1.25f), bone);
+            }
+    };
+    for (size_t i = 0; i < m.arms.size(); ++i) {
+        const ArmMarks& am = m.arms[i];
+        if (am.pair != 0) continue;
+        const Vec3 back = normalize(Vec3{am.side * 0.6f, 0, -1});
+        alongLimb(am.elbow, am.wrist, am.radius * 0.95f, am.radius * 0.70f, back, 0.9f, 4, 3, ch.rig.arms[i].lower, 0.055f);
+        alongLimb(am.shoulder, am.elbow, am.radius * 1.1f, am.radius * 0.95f, Vec3{am.side, 0.2f, -0.3f}, 0.7f, 2, 3, ch.rig.arms[i].upper, 0.06f);
+    }
+    for (int s = 0; s < 2; ++s) {
+        const LimbRig& lg = ch.rig.legs[size_t(s)];
+        const float sd = s == 0 ? 1.0f : -1.0f;
+        const float Cf = g.body.calf * h, T = g.body.thigh * h;
+        alongLimb(m.knee[s], m.ankle[s], Cf * 1.0f, Cf * 0.65f, Vec3{0, 0, -1}, 1.1f, 3, 3, lg.lower, 0.06f);
+        alongLimb(m.hipJoint[s], m.knee[s], T * 0.95f, T * 0.6f, Vec3{sd, 0, -0.4f}, 0.8f, 3, 2, lg.upper, 0.065f);
+    }
+    // Shoulders, upper back and the chest ruff under the throat.
+    for (int i = 0; i < 26; ++i) {
+        const bool chest = i < 9;
+        const float t = chest ? r.range(0.84f, 0.98f) : r.range(0.78f, 1.0f);
+        const float th = chest ? kPi / 2 + r.range(-0.55f, 0.55f) : 1.5f * kPi + r.range(-1.25f, 1.25f);
+        const Vec3 q = torsoPoint(t, th);
+        const Vec3 n = normalize(Vec3{q.x, 0.35f, q.z - cZc_(t)}, Vec3{0, 0, 1});
+        tuft(q, n, Vec3{0, -1, chest ? 0.2f : -0.2f}, 0.14f * h * r.range(0.8f, 1.2f), 0.26f * h * r.range(0.8f, 1.25f), ch.rig.chest);
+    }
+}
+
 Character Builder::build() {
     ch.genome = g;
     ch.height = m.H;
@@ -1237,6 +1638,9 @@ Character Builder::build() {
     buildColliders();
     buildHair();
     buildFacialHair();
+    buildBones();
+    applyFur();
+    buildFurTufts();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
     ch.faceAtlas = paintFaceAtlas(g);

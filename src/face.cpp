@@ -646,6 +646,30 @@ void paintSkin(CellPainter& cp, const Genome& g) {
         }
     }
 
+    // Bared jaw (undead): torn cheek showing the mandible and a row of teeth.
+    if (g.body.bones & 8) {
+        const float js = float(g.body.boneSide);
+        auto mulOf = [&](Vec3 c) {
+            return Vec3{clamp(c.x / std::max(pal.skin.x, 0.05f), 0.0f, 2.0f), clamp(c.y / std::max(pal.skin.y, 0.05f), 0.0f, 2.0f),
+                        clamp(c.z / std::max(pal.skin.z, 0.05f), 0.0f, 2.0f)};
+        };
+        const Vec2 c{js * 0.175f, 0.165f};
+        const Vec3 cav = mulOf({0.15f, 0.08f, 0.08f}), bn = mulOf({0.85f, 0.81f, 0.70f});
+        cp.fill([=](Vec2 p) { return sdEllipse(p, c, {0.085f, 0.060f}); }, Vec4(cav * 0.5f, 0.95f), c - Vec2{0.1f, 0.07f}, c + Vec2{0.1f, 0.07f});
+        // Mandible: the lower part of the wound.
+        cp.fill([=](Vec2 p) { return std::max(sdEllipse(p, c + Vec2{0, -0.006f}, {0.072f, 0.046f}), p.y - (c.y - 0.014f)); },
+                Vec4(bn * 0.5f, 1.0f), c - Vec2{0.1f, 0.07f}, c + Vec2{0.1f, 0.07f});
+        // Teeth along the gum line, upper and lower.
+        for (int k = 0; k < 6; ++k) {
+            const float x = c.x - 0.050f + 0.020f * float(k);
+            for (float yy : {c.y - 0.004f, c.y + 0.016f}) {
+                const Vec2 a{x, yy - 0.009f}, b{x, yy + 0.009f};
+                cp.fill([=](Vec2 p) { return std::max(std::fabs(p.x - x) - 0.0065f, std::fabs(p.y - yy) - 0.009f); }, Vec4(bn * 0.5f, 1.0f), a - Vec2{0.01f, 0.0f},
+                        b + Vec2{0.01f, 0.0f});
+            }
+        }
+    }
+
     // Scars: a pale seam with a darker, pinker margin.
     auto scar = [&](std::vector<Vec2> pts, float wd) {
         std::vector<float> wo(pts.size(), wd * 1.8f), wi(pts.size(), wd);

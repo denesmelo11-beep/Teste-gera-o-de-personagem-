@@ -41,8 +41,12 @@ SuperRing Builder::headRing(float s) const {
     const float chinDrop = f.chin * 0.02f * bump(s / 0.1f);
     const float full = (0.02f * f.roundness + 0.015f * f.jowl) * bump((s - 0.22f) / 0.15f);
     // Muzzle (bovine/beast peoples): the lower face pushed forward below the eyes.
-    const float muz = g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
-    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - 0.22f * g.body.muzzle * smoothstep(0.5f, 0.3f, s)),
+    // Wolf: a long, narrow snout from a stop just under the eyes; the lower jaw shorter.
+    const bool wolf = g.body.snout == 1;
+    const float muz = wolf ? g.body.muzzle * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s))
+                           : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+    const float narrow = wolf ? 0.42f : 0.22f;
+    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.44f, 0.32f, s) : smoothstep(0.5f, 0.3f, s))),
             (hZc_(s) + chinFwd + 0.5f * muz) * h,
             std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,
             hNf_(s), hNb_(s)};
@@ -218,11 +222,12 @@ void Builder::buildNose() {
     const uint32_t R = V(0, sRoot, dR), M = V(0, sM, dM), T = V(0, sTip + 0.006f * tip, proj),
                    U = V(0, sU, proj * (0.70f + 0.10f * tip)), S = V(0, sBase, 0.0f);
     const Vec3 inner = o + Vec3{0, 0.40f * h, faceZ(0, 0.40f) - 0.04f * h};
-    const Mat sk = skin();
+    const Mat sk = skin(), wet{{0.07f, 0.06f, 0.06f}, MaterialClass::Dark};
+    const float tipY = o.y + (sTip + 0.012f) * h;
     auto tri = [&](uint32_t a, uint32_t b, uint32_t c) {
         const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
         if (dot(cross(B - A, C - A), (A + B + C) / 3.0f - inner) < 0) std::swap(b, c);
-        p.tris.push_back({a, b, c, sk});
+        p.tris.push_back({a, b, c, f.darkNose && (A.y + B.y + C.y) / 3.0f < tipY ? wet : sk});  // animal nose: dark leather tip
     };
     for (float sd : {1.0f, -1.0f}) {
         const uint32_t Rs = V(sd * 0.017f * Wd, sRoot + 0.006f, 0), Bs = V(sd * 0.027f * Wd, sM, 0),
