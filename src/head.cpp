@@ -11,7 +11,7 @@ namespace cg::detail {
 void Builder::initHead() {
     // Normalised to head height: s = 0 chin, 1 crown. Eye line ~0.47.
     // Stylised: the lower face narrows to a defined chin, the cranium stays full.
-    hW_ = Curve{{0, 0.075f},    {0.06f, 0.15f}, {0.15f, 0.235f}, {0.25f, 0.30f}, {0.36f, 0.35f}, {0.47f, 0.375f},
+    hW_ = Curve{{0, 0.050f},    {0.06f, 0.12f}, {0.15f, 0.205f}, {0.25f, 0.28f}, {0.36f, 0.345f}, {0.47f, 0.375f},
                 {0.60f, 0.392f}, {0.74f, 0.39f}, {0.86f, 0.345f}, {0.95f, 0.235f}, {1.0f, 0.05f}};
     hZc_ = Curve{{0, 0.20f}, {0.06f, 0.16f}, {0.15f, 0.10f}, {0.28f, 0.03f}, {0.42f, -0.01f},
                  {0.58f, -0.035f}, {0.74f, -0.05f}, {0.88f, -0.06f}, {1.0f, -0.06f}};
@@ -76,7 +76,7 @@ float Builder::faceRelief(float xn, float s) const {
 float Builder::headWarp(float phi) const {
     float d = std::remainder(phi - kPi / 2, kTau);  // -pi..pi
     float a = std::fabs(d) / kPi;
-    return kPi / 2 + std::copysign(kPi * std::pow(a, 1.45f), d);
+    return kPi / 2 + std::copysign(kPi * std::pow(a, 1.12f), d);  // mild: the face stays a few large planes
 }
 
 Vec3 Builder::headPoint(float theta, float s) const {
@@ -154,8 +154,8 @@ void Builder::buildHead() {
     const int head = ch.rig.head;
     const float h = m.h;
     Loft L;
-    const float ss[] = {0.0f, 0.05f, 0.10f, 0.15f, 0.19f, 0.225f, 0.26f, 0.295f, 0.32f, 0.345f, 0.37f,
-                        0.40f, 0.44f, 0.48f, 0.52f, 0.56f, 0.61f, 0.68f, 0.76f, 0.84f, 0.91f, 0.96f};
+    // Few rings, each on a landmark (chin, jaw, mouth, nose tip, cheekbone, eyes, brow, cranium).
+    const float ss[] = {0.0f, 0.10f, 0.20f, 0.28f, 0.34f, 0.42f, 0.52f, 0.64f, 0.78f, 0.90f};
     const int N = lod.headSeg;
     int i = 0;
     for (float s : ss) {
@@ -172,7 +172,7 @@ void Builder::buildHead() {
     L.endPole = m.headOrigin + Vec3{0, h, hZc_(1.0f) * h};
     L.tEnd = 1;
     Part& hp = newPart();
-    hp.smoothAlways = true;  // painted features need clean shading
+    hp.smoothAlways = true;  // smooth in the smooth style; the faceted style flattens it like the body
     headPartId_ = hp.id;
     headPart_ = parts.size() - 1;
     // Mild forward bend of the face normals: keeps hard shadows off the eyes
@@ -186,6 +186,27 @@ void Builder::buildHead() {
     emitLoft(hp, L, [=](float, float, Vec3) { return one(head); }, [&](float, float) { return skin(); });
 }
 
+// Front-most intersection of a ray along -z (at x, y relative to the head origin)
+// with the built head mesh.
+bool Builder::headMeshZ(float x, float y, float& z) const {
+    const Part& hp = parts[headPart_];
+    const Vec3 o = m.headOrigin + Vec3{x, y, 0};
+    bool hit = false;
+    for (const auto& tr : hp.tris) {
+        const Vec3 a = hp.pos[tr.a], b = hp.pos[tr.b], c = hp.pos[tr.c];
+        // 2D barycentric test in the xy plane, then interpolate z.
+        float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+        if (std::fabs(d) < 1e-12f) continue;
+        float l1 = ((b.y - c.y) * (o.x - c.x) + (c.x - b.x) * (o.y - c.y)) / d;
+        float l2 = ((c.y - a.y) * (o.x - c.x) + (a.x - c.x) * (o.y - c.y)) / d;
+        float l3 = 1 - l1 - l2;
+        if (l1 < -1e-5f || l2 < -1e-5f || l3 < -1e-5f) continue;
+        float zz = l1 * a.z + l2 * b.z + l3 * c.z;
+        if (!hit || zz > z) z = zz, hit = true;
+    }
+    return hit;
+}
+
 // The 2D face lives on two decal patches that hug the sculpted front of the
 // head. Their UVs point at the Neutral cells; expressions are UV offsets.
 void Builder::buildFaceDecals() {
@@ -194,6 +215,7 @@ void Builder::buildFaceDecals() {
     auto patch = [&](SubmeshKind kind, float x0, float x1, float s0, float s1, int nx, int ny, int cellX, int cellY,
                      int cellW, int cellH) {
         Part& p = newPart(false, kind);
+        p.smoothAlways = true;
         for (int j = 0; j <= ny; ++j)
             for (int i = 0; i <= nx; ++i) {
                 float fu = float(i) / nx, fv = float(j) / ny;
@@ -201,6 +223,8 @@ void Builder::buildFaceDecals() {
                 SuperRing r = headRing(s);
                 float x = xf * h * g.body.headWidth;
                 float z = r.frontZ(std::min(std::fabs(x), r.w * 0.995f)) + faceRelief(xf, s) * h + eps;
+                // Sit on the actual (possibly faceted, low-poly) head surface: cast along -z.
+                if (float hz; headMeshZ(x, s * h, hz)) z = hz - m.headOrigin.z + eps;
                 p.pos.push_back(m.headOrigin + Vec3{x, s * h, z});
                 p.w.push_back(one(head));
                 float u = (cellX + 0.5f + fu * (cellW - 1)) / FaceLayout::kAtlasW;

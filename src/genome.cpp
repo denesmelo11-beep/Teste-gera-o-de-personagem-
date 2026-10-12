@@ -171,43 +171,43 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.height = (fem ? 1.65f + 0.065f * tz : 1.78f + 0.07f * tz) * ageH;
     // Stylised-heroic canon: a slightly large head (6.4-6.6 heads) keeps faces readable at
     // low resolution; limbs are full, torsos taper cleanly (shoulders > chest > waist).
-    b.headsTall = (fem ? 6.4f : 6.6f) + 0.10f * tz - (young ? 0.12f : 0.0f);
+    b.headsTall = (fem ? 6.35f : 6.5f) + 0.10f * tz - (young ? 0.12f : 0.0f);
     b.legRatio = clamp((fem ? 0.505f : 0.50f) + 0.007f * z(rb), 0.48f, 0.53f);
-    b.neckLength = clamp((fem ? 0.27f : 0.23f) + 0.022f * z(rb) - 0.02f * std::max(0.0f, mus), 0.12f, 0.34f);
-    b.neckThick = (fem ? 0.125f : 0.16f) + 0.007f * frame + 0.014f * std::max(0.0f, mus) + 0.007f * fat;
+    b.neckLength = clamp((fem ? 0.31f : 0.27f) + 0.022f * z(rb) - 0.02f * std::max(0.0f, mus), 0.14f, 0.38f);
+    b.neckThick = (fem ? 0.125f : 0.172f) + 0.007f * frame + 0.014f * std::max(0.0f, mus) + 0.007f * fat;
     if (fem) {
         // Hourglass: waist ~half the hip width, full thighs, arms that read at low res.
-        b.shoulderWidth = 0.63f + 0.025f * frame + 0.02f * mus;
-        b.chestWidth = 0.49f + 0.02f * frame + 0.02f * fat;
-        b.waistWidth = 0.345f + 0.045f * fat - 0.005f * mus;
-        b.hipWidth = 0.71f + 0.03f * frame + 0.04f * fat;
+        b.shoulderWidth = 0.61f + 0.025f * frame + 0.02f * mus;
+        b.chestWidth = 0.46f + 0.02f * frame + 0.02f * fat;
+        b.waistWidth = 0.300f + 0.045f * fat - 0.004f * mus;
+        b.hipWidth = 0.70f + 0.03f * frame + 0.04f * fat;
         b.chestDepth = 0.34f + 0.018f * fat;
         b.bust = clamp(0.6f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.25f);
         b.butt = clamp(0.62f + 0.15f * z(rb) + 0.10f * fat, 0.25f, 1.25f);
         b.muscle = saturate(0.22f + 0.13f * mus);
         b.thigh = 0.34f + 0.022f * fat + 0.008f * mus;
-        b.calf = 0.205f + 0.009f * fat + 0.006f * mus;
+        b.calf = 0.19f + 0.008f * fat + 0.005f * mus;
         b.arm = std::max(0.115f, 0.127f + 0.007f * fat + 0.005f * mus);  // never noodle arms
         b.handSize = 0.94f + 0.02f * frame;
         b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
     } else {
-        b.shoulderWidth = 0.74f + 0.03f * frame + 0.04f * mus;
-        b.chestWidth = 0.58f + 0.022f * frame + 0.03f * mus + 0.02f * fat;
-        b.waistWidth = 0.455f + 0.055f * fat - 0.006f * mus;
+        b.shoulderWidth = 0.80f + 0.03f * frame + 0.04f * mus;
+        b.chestWidth = 0.53f + 0.022f * frame + 0.03f * mus + 0.02f * fat;
+        b.waistWidth = 0.395f + 0.055f * fat - 0.006f * mus;
         b.hipWidth = 0.56f + 0.02f * frame + 0.025f * fat;
         b.chestDepth = 0.42f + 0.018f * mus + 0.018f * fat;
         b.bust = std::max(0.0f, 0.12f * (fat - 1.0f));  // only heavier men get chest softness
         b.butt = clamp(0.32f + 0.08f * z(rb) + 0.05f * mus, 0.12f, 0.65f);
         b.muscle = saturate(0.50f + 0.17f * mus);
         b.thigh = 0.34f + 0.014f * fat + 0.016f * mus;
-        b.calf = 0.235f + 0.008f * fat + 0.010f * mus;
-        b.arm = std::max(0.138f, 0.152f + 0.007f * fat + 0.012f * mus);
+        b.calf = 0.215f + 0.007f * fat + 0.008f * mus;
+        b.arm = std::max(0.145f, 0.160f + 0.007f * fat + 0.012f * mus);
         b.handSize = 1.0f + 0.03f * frame;
         b.posture = 0.45f + 0.05f * z(rb);
     }
     b.belly = std::max(0.0f, 0.18f * (fat - 0.6f)) + (elder ? 0.05f : 0.0f);
     b.footSize = b.handSize;
-    b.headWidth = 1.0f + 0.025f * z(rb) + (fem ? 0.0f : 0.03f);
+    b.headWidth = 1.0f + 0.025f * z(rb);
     b.armLength = 1.0f + 0.015f * z(rb);
     b.sag = elder ? rb.range(0.6f, 0.9f) : mature ? rb.range(0.2f, 0.4f) : rb.range(0.0f, 0.1f);
     b.hunch = elder ? rb.range(0.4f, 0.8f) : mature ? rb.range(0.0f, 0.15f) : 0.0f;
@@ -351,7 +351,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
                             (per == Persona::Cute ? 0.25f : 0.0f));
     f.jaw = clamp(fem ? -0.35f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
-                      : 0.45f + 0.25f * z(rf) + (per == Persona::Heroic ? 0.3f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
+                      : 0.05f + 0.25f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
                   -1.0f, 1.0f);
     f.chin = clamp(0.2f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
                        (per == Persona::Cute ? 0.3f : 0.0f),

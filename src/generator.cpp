@@ -30,10 +30,11 @@ int Skeleton::find(std::string_view name) const {
 namespace detail {
 
 LodSpec lodSpec(int lod) {
+    // Lean budgets: flat facets carry the forms, so rings sit on landmarks only.
     switch (lod) {
-        case 0: return {28, 24, 14, 16, 8, 8, 24, 7, false};
-        case 1: return {16, 16, 8, 8, 6, 5, 16, 5, true};
-        default: return {12, 12, 6, 6, 4, 4, 12, 4, true};
+        case 0: return {16, 16, 8, 8, 6, 6, 16, 5, false};
+        case 1: return {12, 12, 6, 6, 5, 5, 12, 4, true};
+        default: return {8, 10, 5, 5, 4, 4, 10, 3, true};
     }
 }
 
@@ -89,11 +90,16 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
     const Anatomy& an = b.anat;
     const float fem = g.femininity, trap = 0.035f * h * an.traps;
     const float rib55 = lerp(0.48f, 0.62f, fem), rib66 = lerp(0.80f, 0.95f, fem);
-    cHw_ = Curve{{-0.06f, 0.92f * P}, {0.0f, 1.01f * P},  {0.06f, 1.02f * P}, {0.13f, P},
+    cHw_ = Curve{{-0.06f, 0.82f * P}, {0.0f, 0.92f * P},  {0.06f, 0.98f * P}, {0.13f, P},
                  {0.23f, lerp(P, W, 0.38f)}, {0.32f, lerp(P, W, 0.75f)}, {0.42f, W}, {0.55f, lerp(W, C, rib55)}, {0.66f, lerp(W, C, rib66)},
-                 {0.76f, C + 0.6f * lat}, {0.85f, lerp(C, 0.9f * S, 0.55f) + lat}, {0.905f, std::max(0.92f * S, 0.95f * C)},
-                 {0.945f, 0.90f * S}, {0.975f, 0.84f * S}, {1.0f, lerp(0.84f * S, nR, 0.30f) + 0.4f * trap},
-                 {1.03f, lerp(0.84f * S, nR, 0.62f) + trap}, {1.06f, lerp(0.84f * S, nR, 0.88f) + 0.5f * trap}, {1.085f, 1.06f * nR}, {1.10f, nR}};
+                 {0.76f, C + 0.6f * lat}, {0.85f, lerp(C, 0.9f * S, 0.55f) + lat}, {0.90f, std::max(0.84f * S, 0.95f * C)},
+                 // Trapezius: a straight slope from the top of the shoulder joint to the side of
+                 // the neck (slightly convex with the muscle); the deltoid cap of the arm,
+                 // not the torso, forms the shoulder's outline.
+                 {0.94f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.24f) + 0.5f * trap},
+                 {0.98f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.48f) + 0.9f * trap},
+                 {1.02f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.72f) + trap},
+                 {1.06f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.94f) + 0.4f * trap}, {1.085f, 1.04f * nR}, {1.10f, nR}};
     cDf_ = Curve{{-0.06f, 0.74f * D}, {0.0f, 0.86f * D}, {0.10f, 0.86f * D}, {0.20f, 0.84f * D}, {0.30f, 0.76f * D},
                  {0.42f, 0.72f * D},  {0.55f, 0.80f * D}, {0.66f, 0.88f * D}, {0.76f, 0.95f * D}, {0.86f, 0.92f * D - 0.02f * hunch},
                  {0.905f, 0.84f * D - 0.03f * hunch}, {0.945f, 0.76f * D}, {0.975f, 0.66f * D}, {1.0f, 0.56f * D},
@@ -124,7 +130,7 @@ void Builder::computeMarks() {
     m.waistY = m.crotchY + 0.42f * m.torsoLen;
     m.chestY = m.crotchY + 0.62f * m.torsoLen;
     m.ankleY = 0.24f * h * b.footSize;
-    m.kneeY = m.ankleY + (m.hipJointY - m.ankleY) * 0.48f;
+    m.kneeY = m.ankleY + (m.hipJointY - m.ankleY) * 0.57f;  // stylised: long shins, high knees
 
     const float P = b.hipWidth * h, thighR = b.thigh * h, calfR = b.calf * h * (1 + 0.2f * mu);
     const float kneeR = std::max(0.50f * thighR, 0.75f * calfR), ankleR = 0.44f * calfR;
@@ -258,14 +264,19 @@ Vec3 Builder::torsoPoint(float t, float th) const {
         // Serratus on the flank under the armpit.
         n += 0.020f * h * an.serratus * def * smoothstep(0.62f, 0.85f, u) * (bump((t - 0.70f) / 0.035f) + 0.7f * bump((t - 0.635f) / 0.03f));
         // Abdominals: rectus slab, linea alba, three tendinous intersections above the navel.
-        const float absK = 0.070f * h * std::min(an.abs, 1.0f) * def * (1.0f - std::min(1.0f, 2.5f * g.body.belly)) * (1.0f - 0.5f * fem);
+        // Abdominals as planes: a raised rectus slab split by the linea alba, with a
+        // single transverse line at the navel (simple, readable at low poly).
+        const float absK = 0.060f * h * std::min(an.abs, 1.0f) * def * (1.0f - std::min(1.0f, 2.5f * g.body.belly)) * (1.0f - 0.5f * fem);
         if (absK > 0) {
-            float hw = lerp(0.24f, 0.36f, smoothstep(0.15f, 0.60f, t));
-            float ft = smoothstep(0.12f, 0.20f, t) * smoothstep(0.69f, 0.64f, t);
-            float slab = smoothstep(hw + 0.02f, hw - 0.08f, u) * ft;
-            float grooves = (bump((t - 0.445f) / 0.034f) + bump((t - 0.525f) / 0.034f) + bump((t - 0.605f) / 0.034f)) * smoothstep(0.40f, 0.43f, t);
-            n += absK * slab * (0.5f - 0.6f * std::min(grooves, 1.0f)) - absK * 0.8f * bump(u / 0.07f) * ft;
+            float hw = lerp(0.26f, 0.38f, smoothstep(0.15f, 0.60f, t));
+            float ft = smoothstep(0.14f, 0.26f, t) * smoothstep(0.70f, 0.63f, t);
+            float slab = smoothstep(hw + 0.04f, hw - 0.10f, u) * ft;
+            // Two transverse lines (navel, mid) and the linea alba: four readable blocks above the navel.
+            float lines = bump((t - 0.405f) / 0.04f) + 0.8f * bump((t - 0.525f) / 0.035f);
+            n += absK * slab * (0.65f - 0.55f * std::min(lines, 1.0f)) - absK * 0.8f * bump(u / 0.10f) * ft;
         }
+        // Sternum: a shallow groove between the pectorals.
+        n -= 0.012f * h * (1.0f - fem) * bump(u / 0.10f) * bump((t - 0.80f) / 0.12f);
         // Obliques, the inguinal "V" from the hip bone to the pubis, and the hip bone.
         n += 0.022f * h * an.obliques * smoothstep(0.45f, 0.75f, u) * bump((t - 0.33f) / 0.15f);
         {
@@ -427,9 +438,11 @@ void Builder::buildTorso() {
     const float h = m.h, S = g.body.shoulderWidth * h, nR = g.body.neckThick * h;
     // Rings sit on the anatomy: abdominal grooves at 0.445 / 0.525 / 0.605, pectoral
     // shelf around 0.72, clavicles near 0.99, then the trapezius slope.
-    std::vector<float> base{kTorsoBase, 0.17f, 0.23f, 0.29f, 0.35f, 0.40f, 0.445f, 0.485f, 0.525f, 0.565f, 0.605f, 0.645f,
-                            0.685f, 0.72f, 0.755f, 0.79f, 0.825f, 0.86f, 0.89f, 0.92f, 0.945f, 0.97f, 0.99f, 1.01f, 1.035f,
-                            1.06f, 1.085f, 1.10f};
+    // Faceted style: few, large planes. Rings on the hip line, iliac crest, lower
+    // abdomen, navel, upper abdomen, rib arch, the two edges of the pectoral shelf,
+    // mid chest, upper chest, clavicles and the trapezius slope.
+    std::vector<float> base{kTorsoBase, 0.24f, 0.33f, 0.41f, 0.50f, 0.58f, 0.655f, 0.715f, 0.75f, 0.83f, 0.91f,
+                            0.965f, 0.995f, 1.035f, 1.07f, 1.10f};
     auto rings = mergeRings(base, {}, lod.sparseRings);
     const int N = lod.torsoSeg;
     Loft L;
@@ -453,7 +466,7 @@ void Builder::buildTorso() {
     const Vec3 n1 = m.headOrigin + Vec3{0, 0.40f * h, -0.15f * h};  // deep in the skull: the nape enters the occiput
     const Vec3 nd = normalize(n1 - n0), nv = orthoFront(nd), nu = cross(nd, nv);
     const float def = 0.3f + 0.7f * an.definition;
-    std::vector<float> neckT = lod.sparseRings ? std::vector<float>{0.5f, 1.0f} : std::vector<float>{0.3f, 0.6f, 0.85f, 1.0f};
+    std::vector<float> neckT = lod.sparseRings ? std::vector<float>{0.5f, 1.0f} : std::vector<float>{0.4f, 0.8f, 1.0f};
     for (float v : neckT) {
         const float rr = nR * (1.0f - 0.12f * v * v);
         SuperRing sr{rr, 0, rr * 0.94f, rr * 1.0f, 2.0f, 2.0f};
@@ -497,7 +510,7 @@ void Builder::buildTorso() {
     Part& tp = newPart();
     bodyGroup_ = tp.id;
     torsoPart_ = parts.size() - 1;
-    tp.cavity = (0.35f + 0.55f * g.body.anat.definition) * (1.0f - 0.35f * g.femininity);
+    tp.cavity = (0.18f + 0.30f * g.body.anat.definition) * (1.0f - 0.35f * g.femininity);  // facets carry most of the form
     addUnderwear(tp, true);
     if (g.body.bust > 0.05f)  // the bust is one soft form: no creases across it
         tp.smoothAt = [this](Vec3 p) {
@@ -528,15 +541,16 @@ void Builder::buildArms() {
         const float Ltot = upperLen + foreLen, te = upperLen / Ltot;
         const Vec3 d = a.dir;
         const float r = a.radius;
-        Curve rc{{-0.20f, 0.55f}, {-0.12f, 0.86f}, {-0.05f, 1.0f}, {0.05f, 1.0f}, {0.20f, 0.95f}, {0.35f, 0.88f},
-                 {te - 0.05f, 0.79f}, {te, 0.75f}, {te + 0.10f, 0.84f}, {te + 0.25f, 0.74f}, {0.85f, 0.60f}, {1.0f, 0.53f}, {1.05f, 0.53f}};
+        // Above the joint (t < 0) the radius closes like a dome: the deltoid cap.
+        Curve rc{{-0.21f, 0.40f}, {-0.15f, 0.76f}, {-0.08f, 0.95f}, {0.0f, 1.0f}, {0.05f, 1.0f}, {0.20f, 0.95f}, {0.35f, 0.88f},
+                 {te - 0.05f, 0.76f}, {te, 0.72f}, {te + 0.10f, 0.84f}, {te + 0.25f, 0.70f}, {0.85f, 0.54f}, {1.0f, 0.48f}, {1.05f, 0.48f}};
         auto relief = [&](float beta, float t, float rr) {
             auto win = [&](float c, float w) { return bump(std::remainder(beta - c, kTau) / w); };
             float o = 0;
             // Deltoid: wide over the shoulder, its outline closing to a V at the insertion.
             float dw = lerp(1.7f, 0.45f, smoothstep(0.02f, 0.30f, t));
             float dt = smoothstep(-0.17f, -0.07f, t) * smoothstep(0.33f, 0.12f, t);
-            o += rr * 0.24f * (0.4f + an.deltoids) * win(kPi, dw) * dt;
+            o += rr * 0.32f * (0.4f + an.deltoids) * win(kPi, dw) * dt;
             o += rr * 0.10f * (0.4f + an.deltoids) * (win(2.1f, 0.6f) + win(4.2f, 0.6f)) * smoothstep(-0.10f, 0.0f, t) * smoothstep(0.22f, 0.08f, t);
             // The groove under the deltoid, between biceps and triceps.
             o -= rr * 0.06f * def * win(kPi, 0.5f) * bump((t - 0.36f) / 0.06f);
@@ -552,8 +566,8 @@ void Builder::buildArms() {
             o += rr * 0.07f * eb * (win(0.0f, 0.45f) + win(kPi, 0.45f)) * bump((t - te) / 0.03f);
             o -= rr * 0.06f * win(1.57f, 0.55f) * bump((t - te) / 0.04f);
             // Forearm: brachioradialis / extensors high on the outer front, flexors inside.
-            o += rr * 0.20f * (0.35f + an.forearms) * win(2.25f, 0.8f) * bump((t - (te + 0.08f)) / 0.11f);
-            o += rr * 0.14f * (0.35f + an.forearms) * win(0.75f, 0.8f) * bump((t - (te + 0.12f)) / 0.12f);
+            o += rr * 0.30f * (0.35f + an.forearms) * win(2.25f, 0.9f) * bump((t - (te + 0.09f)) / 0.12f);
+            o += rr * 0.18f * (0.35f + an.forearms) * win(0.75f, 0.8f) * bump((t - (te + 0.12f)) / 0.12f);
             // Wrist: flat (wider than deep) with the head of the ulna on the back.
             float wr = smoothstep(0.80f, 0.97f, t);
             o -= rr * 0.20f * wr * (win(1.57f, 0.8f) + win(4.71f, 0.8f));
@@ -562,20 +576,22 @@ void Builder::buildArms() {
             o -= rr * 0.06f * win(0.0f, 0.8f) * bump((t - 0.10f) / 0.18f);
             return o;
         };
-        std::vector<float> ts{-0.20f, -0.13f, -0.07f, -0.01f, 0.06f, 0.14f, 0.22f, 0.30f, 0.37f, te - 0.07f, te - 0.025f, te + 0.02f,
-                              te + 0.08f, te + 0.16f, te + 0.26f, 0.85f, 0.93f, 1.0f, 1.05f};
+        std::vector<float> ts{-0.21f, -0.15f, -0.08f, 0.0f, 0.08f, 0.18f, 0.30f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
         if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         Loft L;
-        const Vec3 dirIn = normalize(Vec3{-a.side, 0.12f, 0});
+        // Above the joint the cap climbs along the trapezius slope towards the neck,
+        // so the shoulder is a rounded deltoid on a sloped trapezius, not a shelf.
+        const Vec3 dirIn = normalize(Vec3{-a.side, 0.25f, 0.0f});
         const int n = lod.limbSeg;
         for (float t : ts) {
             float rr = r * rc(t);
             // Above the joint the loft bends towards the neck so the shoulder cap
             // sits on the trapezius instead of rising above it.
-            float kk = smoothstep(0.06f, -0.10f, t);
-            Vec3 dd = normalize(lerp(d, -dirIn, kk));
+            // Above the joint the loft closes into a dome along the arm axis: a round
+            // deltoid cap; its medial side is then pulled onto the torso (below).
+            Vec3 dd = d;
             Vec3 vv = orthoFront(dd), uu = cross(dd, vv);
-            Vec3 c = t >= 0 ? a.shoulder + d * (t * Ltot) : a.shoulder + dirIn * (-t * Ltot * 0.85f);
+            Vec3 c = a.shoulder + d * (t * Ltot * (t >= 0 ? 1.0f : 0.32f));
             std::vector<Vec3> ring(static_cast<size_t>(n));
             for (int j = 0; j < n; ++j) {
                 float al = kTau * float(j) / float(n);
@@ -583,19 +599,26 @@ void Builder::buildArms() {
                 float beta = a.side > 0 ? al : kPi - al;
                 ring[size_t(j)] = c + radial + normalize(radial, vv) * relief(beta, t, rr);
             }
-            // The top of the cap sinks smoothly into the torso.
-            if (t < -0.04f && a.pair == 0)
-                for (Vec3& p : ring) p = lerp(p, insideTorso(p, 0.95f), smoothstep(-0.04f, -0.15f, t));
+            // The medial half of the cap (towards the neck and chest) lies on the torso
+            // surface, so the deltoid grows out of the trapezius and pectoral without a seam.
+            if (t < 0.10f && a.pair == 0) {
+                const Vec3 dirTop = normalize(dirIn + Vec3{0, 0.9f, 0});
+                for (Vec3& p : ring) {
+                    Vec3 rd = normalize(p - c, dirIn);
+                    float medial = saturate(std::max(dot(rd, dirIn), dot(rd, dirTop)) * 1.4f);
+                    p = lerp(p, insideTorso(p, 0.97f), medial * smoothstep(0.10f, -0.06f, t));
+                }
+            }
             L.rings.push_back(ring);
             L.t.push_back(t);
         }
         L.poleStart = true;
-        L.startPole = a.shoulder + dirIn * (0.24f * Ltot * 0.85f);
+        L.startPole = a.shoulder - d * (0.235f * Ltot * 0.32f);
         L.tStart = -0.26f;
         int clav = rig.root, up = rig.upper, lo = rig.lower, hand = rig.end;
         Part& ap = newPart();
         armGroup_ = ap.id;
-        ap.cavity = (0.35f + 0.55f * an.definition) * (1.0f - 0.35f * g.femininity);
+        ap.cavity = (0.18f + 0.30f * an.definition) * (1.0f - 0.35f * g.femininity);
         // Normal transfer: where the shoulder cap runs into the torso it takes the
         // torso's normal, so the join reads as one surface (only the silhouette remains).
         if (a.pair == 0)
@@ -656,7 +679,7 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     L.tEnd = 1;
     Part& hp = newPart();
     hp.id = armGroup_;
-    hp.cavity = 0.8f;
+    hp.cavity = 0.5f;
     emitLoft(hp, L, [=](float, float, Vec3) { return one(hand); }, [&](float, float) { return skin(); });
 
     // Thumb.
@@ -686,7 +709,7 @@ void Builder::buildLegs() {
     const float h = m.h, mu = g.body.muscle;
     const float T = g.body.thigh * h, Cf = g.body.calf * h * (1 + 0.2f * mu);
     // Knee narrower than the calf, slim ankle: the diamond-shaped lower leg.
-    const float K = std::max(0.52f * T, 0.80f * Cf), A = 0.44f * Cf;
+    const float K = std::max(0.50f * T, 0.70f * Cf), A = 0.44f * Cf;
     const int N = lod.torsoSeg, q = N / 4;
     const int hips = ch.rig.hips;
     Part& bp = parts[torsoPart_];
@@ -720,9 +743,13 @@ void Builder::buildLegs() {
         const float tc = (Hj.y - m.crotchY) / std::max(1e-4f, -d1.y * Lt);  // leg parameter at crotch height
         const float t1 = tc + 0.05f;                                         // first full thigh ring
         const float Ttop = std::max(T * 1.02f, 0.50f * g.body.hipWidth * h);
-        Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {0.14f, lerp(Ttop, T, 0.55f)}, {0.26f, 0.90f * T},
-                 {tk - 0.13f, lerp(T, K, 0.62f)}, {tk - 0.03f, 1.02f * K}, {tk + 0.04f, K}, {tk + 0.10f, 0.93f * Cf},
-                 {tk + 0.18f, Cf}, {tk + 0.30f, 0.90f * Cf}, {0.86f, lerp(Cf, A, 0.72f)}, {0.95f, A}, {1.06f, A}};
+        // Thigh: full at the top, tapering hard into a narrow knee. Lower leg: a
+        // diamond whose widest point sits high (a quarter down the shin), then a long
+        // clean taper to a slim ankle that stays slim for the last third.
+        auto shin = [&](float f) { return tk + f * (1.0f - tk); };
+        Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {0.12f, lerp(Ttop, T, 0.5f)}, {0.24f, 0.92f * T},
+                 {tk - 0.14f, lerp(T, K, 0.55f)}, {tk - 0.04f, 1.03f * K}, {tk + 0.01f, K}, {shin(0.10f), 0.86f * Cf},
+                 {shin(0.27f), Cf}, {shin(0.42f), 0.84f * Cf}, {shin(0.56f), 0.60f * Cf}, {shin(0.70f), A}, {1.0f, 0.96f * A}, {1.06f, 0.96f * A}};
         int th = rig.upper, sh = rig.lower, ft = rig.end;
         auto weights = [=](float t) {
             return chainWeights({{tc - 0.03f, hips}, {t1 + 0.07f, th}, {tk - 0.07f, th}, {tk + 0.07f, sh}, {0.95f, sh}, {1.05f, ft}}, t);
@@ -758,8 +785,8 @@ void Builder::buildLegs() {
             o += rr * 0.04f * bone * win(1.57f, 0.35f) * bump((t - (tk + 0.04f)) / 0.025f);
             // Calf: medial gastrocnemius head lower and larger, lateral head higher; flat
             // tibia in front; Achilles hollows; medial malleolus higher than the lateral.
-            o += rr * 0.12f * an.calves * win(5.35f, 0.8f) * bump((t - (tk + 0.165f)) / 0.11f);
-            o += rr * 0.09f * an.calves * win(4.05f, 0.75f) * bump((t - (tk + 0.12f)) / 0.10f);
+            o += rr * 0.10f * an.calves * win(5.35f, 0.8f) * bump((t - (tk + 0.30f * (1.0f - tk))) / 0.10f);  // medial head, lower
+            o += rr * 0.07f * an.calves * win(4.05f, 0.75f) * bump((t - (tk + 0.22f * (1.0f - tk))) / 0.09f);  // lateral head, higher
             o -= rr * 0.06f * win(1.57f, 0.45f) * smoothstep(tk + 0.06f, tk + 0.12f, t) * smoothstep(0.98f, 0.85f, t);
             o -= rr * 0.08f * (win(4.0f, 0.5f) + win(5.42f, 0.5f)) * bump((t - 0.93f) / 0.06f);
             o += rr * 0.07f * (0.4f + an.wrists) * win(0.0f, 0.6f) * bump((t - 0.99f) / 0.05f);
@@ -863,7 +890,7 @@ void Builder::buildLegs() {
         // Rings on the landmarks only, so flat facets form large, deliberate planes.
         for (float t : {0.19f, 0.28f})
             if (t > t1 + 0.04f && t < tk - 0.17f) ts.push_back(t);
-        for (float t : {tk - 0.12f, tk - 0.055f, tk - 0.015f, tk + 0.03f, tk + 0.08f, tk + 0.15f, tk + 0.24f, 0.85f, 0.93f, 0.99f, 1.06f})
+        for (float t : {tk - 0.13f, tk - 0.05f, tk - 0.01f, tk + 0.03f, shin(0.12f), shin(0.27f), shin(0.43f), shin(0.57f), shin(0.72f), 0.97f, 1.06f})
             if (t > t1 + 0.03f) ts.push_back(t);
         if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         for (float t : ts) {

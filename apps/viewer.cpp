@@ -161,7 +161,7 @@ struct Actor {
     cg::Pose fixed;
 };
 
-cg::GenOptions gGen;  // mesh style for every spawned character (--smooth / --flat)
+cg::GenOptions gGen;  // mesh style for every spawned character (faceted; --crease / --smooth)
 
 cg::Quat yawQuat(float y) { return cg::Quat::axisAngle({0, 1, 0}, y); }
 
@@ -738,8 +738,8 @@ int main(int argc, char** argv) {
         else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
         else if (a == "--population" && i + 1 < argc) population = argv[++i];
         else if (a == "--faceted") faceted = true;
-        else if (a == "--smooth") gGen.creaseAngle = 180.0f;
-        else if (a == "--flat") gGen.faceted = true;
+        else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
+        else if (a == "--crease") gGen.faceted = false;
         else if (a == "--seed" && i + 1 < argc) seed = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--count" && i + 1 < argc) count = std::atoi(argv[++i]);
         else if (a == "--res" && i + 1 < argc) res = std::atoi(argv[++i]);

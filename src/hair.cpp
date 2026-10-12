@@ -50,6 +50,7 @@ void Builder::buildHair() {
     struct CapSpec {
         float front, temple, side, back, nape;  // hairline height per direction
         float thick, top;                       // thickness, highest covered s (1 = crown)
+        float tips = 1.0f;                      // lock tips along the rim (0 = clean edge)
     };
     // Short hair is silhouette: the cap itself carries the cut's volume.
     const float part0 = g.partSide;
@@ -75,7 +76,7 @@ void Builder::buildHair() {
     };
     auto cap = [&](CapSpec cs, float crownVolume) {
         Curve line{{0.0f, cs.front}, {0.8f, cs.temple}, {1.57f, cs.side}, {2.3f, cs.back}, {kPi, cs.nape}};
-        const int cols = lod.capCols, rows = lod.capRows;
+        const int cols = lod.capCols + (lod.capCols % 2), rows = lod.capRows;
         const bool closed = cs.top >= 0.999f;
         Part& p = newPart();
         p.smoothAlways = true;
@@ -85,8 +86,14 @@ void Builder::buildHair() {
                 float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
                 float f = float(i) / (closed ? rows + 1 : rows);
                 float s = lerp(line(phi), cs.top, std::pow(f, 0.85f));
-                float off = cs.thick * (0.35f + 0.65f * smoothstep(0.0f, 0.3f, f)) + crownVolume * h * bump((s - 0.86f) / 0.22f) +
+                // Hairline and nape end in lock tips: alternate rim columns hang lower.
+                if (i == 0 && cs.thick > 0.03f * h && j % 2 == 0)
+                    s -= lerp(0.06f, 0.035f, bump((phi - 1.57f) / 0.7f)) * (cs.top >= 0.999f ? 1.0f : 0.0f) * cs.tips;
+                float off = cs.thick * (0.20f + 0.80f * smoothstep(0.0f, 0.3f, f)) + crownVolume * h * bump((s - 0.86f) / 0.22f) +
                             (cs.thick > 0.03f * h ? volumeField(th, s) * smoothstep(0.0f, 0.35f, f) : 0.0f);
+                // Combed strands: alternate columns sit lower, so the cap reads as locks
+                // radiating from the crown (fades out near the crown and on buzz cuts).
+                if (cs.thick > 0.03f * h && j % 2 == 1) off -= 0.30f * cs.thick * smoothstep(0.98f, 0.70f, s) * smoothstep(0.0f, 0.15f, f);
                 p.pos.push_back(headSurface(th, std::min(s, 0.985f), off));
                 p.w.push_back(one(head));
                 p.uv.push_back({});
@@ -109,8 +116,8 @@ void Builder::buildHair() {
     const float capT = 0.055f * vol * h;
     const CapSpec shortCap{0.80f, 0.66f, 0.47f, 0.36f, 0.28f, capT * 0.9f, 1.0f};
     // Long cuts: the cap only covers the top; the hair mass wraps the back of the skull from the crown.
-    const CapSpec longCap{0.80f, 0.68f, 0.66f, 0.79f, 0.80f, capT, 1.0f};
-    const CapSpec tightCap{0.80f, 0.66f, 0.48f, 0.34f, 0.26f, 0.032f * h, 1.0f};
+    const CapSpec longCap{0.80f, 0.68f, 0.66f, 0.79f, 0.80f, capT, 1.0f, 0.0f};
+    const CapSpec tightCap{0.80f, 0.66f, 0.48f, 0.34f, 0.26f, 0.032f * h, 1.0f, 0.5f};
     switch (style) {
         case HairStyle::Bald: cap({0.62f, 0.60f, 0.42f, 0.30f, 0.26f, 0.025f * h, 0.60f}, 0); break;  // horseshoe (sides/back only)
         case HairStyle::Buzz: cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.016f * h, 1.0f}, 0); break;
@@ -194,14 +201,20 @@ void Builder::buildHair() {
         float tipLen = 0.13f;    // pointed tips at the hem (head units)
     };
     auto sheet = [&](const SheetSpec& S) {
-        const int M = S.cols > 0 ? S.cols : (lod.sparseRings ? 13 : 19), steps = lod.lockSteps + (lod.sparseRings ? 1 : 3);
+        // Odd column count: ridge columns (even) alternate with groove columns (odd),
+        // so every lock is a wedge whose two faces catch the light differently.
+        int M0 = S.cols > 0 ? S.cols : (lod.sparseRings ? 9 : 13);
+        const int M = M0 % 2 ? M0 : M0 + 1, steps = lod.lockSteps + (lod.sparseRings ? 0 : 1);
+        std::vector<float> lockLen(static_cast<size_t>(M), 1.0f);
+        for (int c = 0; c < M; c += 2) lockLen[size_t(c)] = r.range(0.86f, 1.06f);
+        for (int c = 1; c < M; c += 2) lockLen[size_t(c)] = 0.95f * std::min(lockLen[size_t(c - 1)], lockLen[size_t(std::min(c + 1, M - 1))]);
         std::vector<std::vector<Vec3>> cl(static_cast<size_t>(M));
         std::vector<float> colLen(static_cast<size_t>(M));
         for (int c = 0; c < M; ++c) {
             float f = float(c) / float(M - 1), th = lerp(S.th0, S.th1, f);
             float phi = std::fabs(std::remainder(th - kPi / 2, kTau));          // 0 front .. pi back
             float sRoot = lerp(S.sSide, S.sBack, smoothstep(1.2f, kPi, phi));
-            float lk = (S.lenOf ? S.lenOf(f) : lerp(S.frontLen, 1.0f, smoothstep(0.9f, 2.0f, phi))) * r.range(0.96f, 1.04f);
+            float lk = (S.lenOf ? S.lenOf(f) : lerp(S.frontLen, 1.0f, smoothstep(0.9f, 2.0f, phi))) * lockLen[size_t(c)];
             const float sweep = S.sweepOf ? S.sweepOf(f) : 0.0f;
             // Roots sit just under the cap surface so the mass grows out of it seamlessly.
             Vec3 p = headSurface(th, sRoot, std::max(0.004f * h, capT * 0.95f - 0.28f * S.thick));
@@ -286,22 +299,20 @@ void Builder::buildHair() {
         // Surfaces: outer (sculpted locks), inner, hem and the two side edges.
         Part& sp = newPart();
         sp.smoothAlways = true;
-        sp.cavity = 1.1f;
+        sp.cavity = 0.0f;  // locks read from their facets, no dark divider lines
         const int K = steps + 1;
         std::vector<uint32_t> outer(static_cast<size_t>(M * K)), inner(static_cast<size_t>(M * K));
-        const float lockW = float(M - 1) / float(std::max(1, S.locks));  // columns per lock
         for (int c = 0; c < M; ++c) {
             const auto& pts = cl[size_t(c)];
-            // +1 at a lock's centre, -1 in the groove between locks (grooves narrower than locks)
-            float lockPhase = 1.0f - 2.0f * std::pow(std::fabs(std::sin(kPi * float(c) / lockW)), 2.5f);
-            float lockLift = 0.5f + 0.5f * std::sin(float(int(float(c) / lockW + 0.5f)) * 2.7f);  // some locks sit further out
+            const float lockPhase = c % 2 == 0 ? 1.0f : -1.0f;                    // ridge / groove
+            const float lockLift = 0.5f + 0.5f * std::sin(float(c / 2) * 2.7f + float(g.seed % 7));  // some locks sit further out
             for (int k = 0; k < K; ++k) {
                 float t = float(k) / float(K - 1);
                 Vec3 tan = normalize(pts[size_t(std::min(k + 1, K - 1))] - pts[size_t(std::max(k - 1, 0))]);
                 Vec3 out = normalize(pts[size_t(k)] - hc);
                 out = normalize(out - tan * dot(out, tan), {0, 0, 1});
                 float thk = S.thick * (1.0f - 0.55f * smoothstep(0.5f, 1.0f, t)) * (0.55f + 0.45f * smoothstep(0.0f, 0.12f, t));
-                float groove = (0.45f * lockPhase + 0.25f * lockLift) * thk * smoothstep(0.05f, 0.3f, t);
+                float groove = (lockPhase > 0 ? 0.55f + 0.25f * lockLift : -0.30f) * thk * smoothstep(0.04f, 0.25f, t);
                 Vec3 base = pts[size_t(k)];
                 // Pointed tips hang with gravity even where the hem rests on the body.
                 const Vec3 tipDir = normalize(tan + Vec3{0, -1.2f, 0}, Vec3{0, -1, 0});
@@ -364,17 +375,17 @@ void Builder::buildHair() {
         };
         switch (g.fringe) {
             case Fringe::Straight:
-                mk(60 * deg, 120 * deg, [](float x) { return 1.0f - 0.15f * std::fabs(x - 0.5f); }, nullptr, 4, 9);
+                mk(60 * deg, 120 * deg, [](float x) { return 1.0f - 0.15f * std::fabs(x - 0.5f); }, nullptr, 4, 7);
                 break;
             case Fringe::SideSwept: {
                 const float sd = part;
                 mk(56 * deg, 124 * deg, [sd](float x) { float k = sd > 0 ? 1.0f - x : x; return 0.72f + 0.55f * k; },
-                   [sd](float) { return -0.55f * sd; }, 4, 9);
+                   [sd](float) { return -0.55f * sd; }, 4, 7);
                 break;
             }
             case Fringe::Curtain:
-                mk(90 * deg, 126 * deg, [](float x) { return 0.85f + 0.40f * x; }, [](float x) { return -0.15f - 0.30f * x; }, 2, 6);
-                mk(54 * deg, 90 * deg, [](float x) { return 1.25f - 0.40f * x; }, [](float x) { return 0.45f - 0.30f * x; }, 2, 6);
+                mk(90 * deg, 126 * deg, [](float x) { return 0.85f + 0.40f * x; }, [](float x) { return -0.15f - 0.30f * x; }, 2, 5);
+                mk(54 * deg, 90 * deg, [](float x) { return 1.25f - 0.40f * x; }, [](float x) { return 0.45f - 0.30f * x; }, 2, 5);
                 break;
             default: break;
         }
@@ -382,7 +393,7 @@ void Builder::buildHair() {
 
     switch (style) {
         case HairStyle::ShortCrop: break;
-        case HairStyle::SidePart: break;  // the cap's swept volume is the fringe
+        case HairStyle::SidePart: break;  // the cap's swept volume and its tipped hairline are the fringe
         case HairStyle::SlickedBack: break;
         case HairStyle::Messy:
             around(9, 0.40f, 0.78f, 0.36f, 0.1f, true);
@@ -394,24 +405,24 @@ void Builder::buildHair() {
             fringe(0.85f);
             break;
         case HairStyle::Bob:
-            sheet({125 * deg, 415 * deg, 0.88f, 0.062f * h * vol, 0.66f, 0.82f, 0.78f, 0.30f, 0.14f, 8, 2.2f, 0.5f, 0.04f});
+            sheet({125 * deg, 415 * deg, 0.95f, 0.062f * h * vol, 0.72f, 0.92f, 0.78f, 0.30f, 0.14f, 8, 2.2f, 0.5f, 0.04f});
             fringe(1.0f);
             break;
         case HairStyle::Shoulder:
-            sheet({122 * deg, 418 * deg, 1.45f * len, 0.066f * h * vol, 0.66f, 0.82f, 0.72f, 0.12f, 0.10f, 9, 1.4f, 0.45f, 0.05f});
+            sheet({122 * deg, 418 * deg, 1.55f * len, 0.066f * h * vol, 0.72f, 0.92f, 0.72f, 0.12f, 0.10f, 9, 1.4f, 0.45f, 0.05f});
             fringe(1.0f);
             break;
         case HairStyle::LongStraight:
         case HairStyle::LongWavy: {
             const float ps = 0.95f - 0.15f * g.hairWave;
-            SheetSpec backMass{178 * deg, 362 * deg, 2.45f * len, 0.078f * h * vol, 0.68f, 0.82f, 0.85f, 0.04f, 0.20f, 8, ps, 0.4f, 0.05f};
+            SheetSpec backMass{168 * deg, 372 * deg, 2.45f * len, 0.078f * h * vol, 0.74f, 0.92f, 0.85f, 0.04f, 0.20f, 8, ps, 0.4f, 0.05f};
             backMass.fwdBias = -0.25f;
             sheet(backMass);
             for (float sd : {1.0f, -1.0f}) {  // face-framing locks over the front of the shoulders
-                float a0 = sd > 0 ? 128 * deg : 368 * deg, a1 = sd > 0 ? 172 * deg : 412 * deg;
+                float a0 = sd > 0 ? 126 * deg : 360 * deg, a1 = sd > 0 ? 180 * deg : 414 * deg;
                 SheetSpec front{a0, a1, 1.55f * len, 0.062f * h * vol, 0.70f, 0.70f, 1.0f, 0.02f, 0.06f, 2, ps * 1.2f, 0.45f, 0.05f};
                 front.fwdBias = 0.16f;
-                front.cols = 6;
+                front.cols = 4;
                 front.tipLen = 0.07f;
                 sheet(front);
             }
@@ -435,14 +446,14 @@ void Builder::buildHair() {
             sideFrame(0.62f, 0.26f);
             break;
         case HairStyle::HalfUp: {
-            SheetSpec backMass{178 * deg, 362 * deg, 2.1f * len, 0.072f * h * vol, 0.68f, 0.82f, 0.85f, 0.04f, 0.20f, 7, 1.0f, 0.4f, 0.05f};
+            SheetSpec backMass{168 * deg, 372 * deg, 2.1f * len, 0.072f * h * vol, 0.74f, 0.92f, 0.85f, 0.04f, 0.20f, 7, 1.0f, 0.4f, 0.05f};
             backMass.fwdBias = -0.25f;
             sheet(backMass);
             for (float sd : {1.0f, -1.0f}) {
-                float a0 = sd > 0 ? 130 * deg : 370 * deg, a1 = sd > 0 ? 170 * deg : 410 * deg;
+                float a0 = sd > 0 ? 128 * deg : 362 * deg, a1 = sd > 0 ? 178 * deg : 412 * deg;
                 SheetSpec front{a0, a1, 1.1f * len, 0.058f * h * vol, 0.70f, 0.70f, 1.0f, 0.02f, 0.06f, 2, 1.2f, 0.45f, 0.05f};
                 front.fwdBias = 0.14f;
-                front.cols = 6;
+                front.cols = 4;
                 front.tipLen = 0.07f;
                 sheet(front);
             }

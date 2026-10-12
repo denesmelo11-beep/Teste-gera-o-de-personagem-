@@ -64,6 +64,7 @@ public:
     Vec3 headNormalDir(Vec3 p) const;
     Vec3 headCenter() const;
     Vec3 collide(Vec3 p, float margin) const;    // keeps hair out of head and body
+    bool headMeshZ(float x, float y, float& z) const;  // front of the built head mesh along -z
 
 private:
     void computeMarks();

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <unordered_map>
 
 namespace cg::detail {
@@ -237,10 +238,107 @@ namespace {
 // Splits the part's triangles along each clip boundary. New vertices interpolate
 // position, weights and uv; every triangle carries its own corner normals, which
 // are interpolated along the cut edge so the cut leaves no shading seam.
+// Conforming (red-green) refinement near a clip boundary: triangles whose
+// interior the boundary touches (even when all three corners lie on the same
+// side, e.g. a thin band inside one large facet) are subdivided at edge midpoints;
+// neighbours split the shared edges too, so no T-junctions appear. Sub-triangles
+// stay in their parent's plane, so the shape and flat shading are unchanged.
+void refineNear(Part& part, std::vector<std::array<Vec3, 3>>& cn, std::vector<uint32_t>& src, std::vector<float>& shade,
+                const std::function<float(Vec3)>& field, int passes) {
+    for (int pass = 0; pass < passes; ++pass) {
+        auto edgeKey = [](uint32_t a, uint32_t b) { return a < b ? (uint64_t(a) << 32 | b) : (uint64_t(b) << 32 | a); };
+        std::unordered_map<uint64_t, uint32_t> mid;  // marked edge -> midpoint (UINT32_MAX until created)
+        for (const auto& tr : part.tris) {
+            const Vec3 a = part.pos[tr.a], b = part.pos[tr.b], c = part.pos[tr.c];
+            const bool sa = field(a) < 0, sb = field(b) < 0, sc = field(c) < 0;
+            // An edge the boundary crosses an even number of times (0 or 2) while its
+            // interior changes sign cannot be cut exactly: sample a few points per edge.
+            auto edgeTrouble = [&](Vec3 p, Vec3 q, bool sp, bool sq) {
+                int changes = 0;
+                bool prev = sp;
+                for (float k : {0.25f, 0.5f, 0.75f}) {
+                    bool cur = field(lerp(p, q, k)) < 0;
+                    changes += cur != prev;
+                    prev = cur;
+                }
+                changes += sq != prev;
+                return changes >= 2;
+            };
+            bool interior = false;
+            if (sa == sb && sb == sc) {  // boundary may sit entirely inside this face
+                const Vec3 inner[] = {(a + b + c) / 3.0f, (a * 2.0f + b + c) * 0.25f, (a + b * 2.0f + c) * 0.25f, (a + b + c * 2.0f) * 0.25f};
+                for (const Vec3& q : inner) interior |= (field(q) < 0) != sa;
+            }
+            if (!interior && !edgeTrouble(a, b, sa, sb) && !edgeTrouble(b, c, sb, sc) && !edgeTrouble(c, a, sc, sa)) continue;
+            for (auto [x, y] : {std::pair{tr.a, tr.b}, std::pair{tr.b, tr.c}, std::pair{tr.c, tr.a}}) mid.emplace(edgeKey(x, y), UINT32_MAX);
+        }
+        if (mid.empty()) return;
+        auto midOf = [&](uint32_t x, uint32_t y) -> uint32_t {
+            auto it = mid.find(edgeKey(x, y));
+            if (it == mid.end()) return UINT32_MAX;
+            if (it->second == UINT32_MAX) {
+                SkinW w;
+                for (int i = 0; i < 4; ++i) {
+                    w.add(part.w[x].j[i], part.w[x].w[i] * 0.5f);
+                    w.add(part.w[y].j[i], part.w[y].w[i] * 0.5f);
+                }
+                it->second = uint32_t(part.pos.size());
+                part.pos.push_back((part.pos[x] + part.pos[y]) * 0.5f);
+                part.w.push_back(w);
+                part.uv.push_back((part.uv[x] + part.uv[y]) * 0.5f);
+                if (!shade.empty()) shade.push_back(0.5f * (shade[x] + shade[y]));
+            }
+            return it->second;
+        };
+        std::vector<Part::Tri> out;
+        std::vector<std::array<Vec3, 3>> outN;
+        std::vector<uint32_t> outSrc;
+        auto nmid = [](Vec3 p, Vec3 q) { return normalize(p + q, p); };
+        auto emit = [&](uint32_t a, uint32_t b, uint32_t c, const Mat& m, Vec3 na, Vec3 nb, Vec3 nc, uint32_t s0) {
+            out.push_back({a, b, c, m});
+            outN.push_back({na, nb, nc});
+            outSrc.push_back(s0);
+        };
+        for (size_t t = 0; t < part.tris.size(); ++t) {
+            const Part::Tri tr = part.tris[t];
+            const uint32_t v[3] = {tr.a, tr.b, tr.c};
+            const auto& n = cn[t];
+            uint32_t m3[3] = {midOf(v[0], v[1]), midOf(v[1], v[2]), midOf(v[2], v[0])};
+            const Vec3 nm[3] = {nmid(n[0], n[1]), nmid(n[1], n[2]), nmid(n[2], n[0])};
+            const int k = int(m3[0] != UINT32_MAX) + int(m3[1] != UINT32_MAX) + int(m3[2] != UINT32_MAX);
+            if (k == 0) {
+                emit(v[0], v[1], v[2], tr.m, n[0], n[1], n[2], src[t]);
+            } else if (k == 3) {
+                emit(v[0], m3[0], m3[2], tr.m, n[0], nm[0], nm[2], src[t]);
+                emit(m3[0], v[1], m3[1], tr.m, nm[0], n[1], nm[1], src[t]);
+                emit(m3[2], m3[1], v[2], tr.m, nm[2], nm[1], n[2], src[t]);
+                emit(m3[0], m3[1], m3[2], tr.m, nm[0], nm[1], nm[2], src[t]);
+            } else if (k == 1) {
+                int e = m3[0] != UINT32_MAX ? 0 : m3[1] != UINT32_MAX ? 1 : 2;  // edge v[e] -> v[e+1]
+                const int a = e, b = (e + 1) % 3, c = (e + 2) % 3;
+                emit(v[a], m3[e], v[c], tr.m, n[size_t(a)], nm[e], n[size_t(c)], src[t]);
+                emit(m3[e], v[b], v[c], tr.m, nm[e], n[size_t(b)], n[size_t(c)], src[t]);
+            } else {  // two split edges: the unsplit one is opposite the corner both split edges share
+                int u = m3[0] == UINT32_MAX ? 0 : m3[1] == UINT32_MAX ? 1 : 2;  // unsplit edge v[u] -> v[u+1]
+                const int a = u, b = (u + 1) % 3, c = (u + 2) % 3;          // c is the shared corner
+                const uint32_t mbc = m3[b], mca = m3[c];                    // edges b->c and c->a
+                const Vec3 nbc = nm[b], nca = nm[c];
+                emit(v[c], mca, mbc, tr.m, n[size_t(c)], nca, nbc, src[t]);
+                emit(v[a], v[b], mbc, tr.m, n[size_t(a)], n[size_t(b)], nbc, src[t]);
+                emit(v[a], mbc, mca, tr.m, n[size_t(a)], nbc, nca, src[t]);
+            }
+        }
+        part.tris.swap(out);
+        cn.swap(outN);
+        src.swap(outSrc);
+    }
+}
+
 void applyClips(Part& part, std::vector<std::array<Vec3, 3>>& cn, std::vector<uint32_t>& src, std::vector<float>& shade) {
     src.resize(part.tris.size());
     for (size_t t = 0; t < part.tris.size(); ++t) src[t] = uint32_t(t);
     for (const ClipRegion& clip : part.clips) {
+        refineNear(part, cn, src, shade, clip.field, 2);
         std::vector<float> f(part.pos.size());
         for (size_t i = 0; i < part.pos.size(); ++i) f[i] = clip.field(part.pos[i]);
         std::unordered_map<uint64_t, uint32_t> cut;
@@ -446,7 +544,8 @@ void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float cre
         Submesh sm{kind, uint32_t(mesh.indices.size()), 0};
         for (Part& part : parts) {
             if (part.kind != kind || part.tris.empty()) continue;
-            const bool flat = (faceted && !part.smoothAlways) || part.flat;
+            // Faceted style: every body surface (head and hair too) is flat; decals stay smooth.
+            const bool flat = faceted ? kind == SubmeshKind::Body : part.flat;
             std::vector<Vec3> faceN(part.tris.size());
             for (size_t t = 0; t < part.tris.size(); ++t) {
                 const auto& tr = part.tris[t];
