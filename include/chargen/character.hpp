@@ -26,7 +26,9 @@ struct Vertex {
     float weights[4];
 };
 
-enum class SubmeshKind : uint8_t { Body, FaceEyes, FaceMouth };
+// FaceSkin is a modulation layer over the head (stubble, sockets, weathering,
+// scars, ink): drawn with a 2x multiply blend, so the faceted shading survives.
+enum class SubmeshKind : uint8_t { Body, FaceEyes, FaceMouth, FaceSkin };
 
 struct Submesh {
     SubmeshKind kind;
@@ -130,6 +132,10 @@ struct FaceLayout {
     static constexpr int kMouthCellW = 128, kMouthCellH = 96, kMouthY = 256;
     static constexpr float kEyeX0 = -0.37f, kEyeX1 = 0.37f, kEyeS0 = 0.31f, kEyeS1 = 0.68f;
     static constexpr float kMouthX0 = -0.16f, kMouthX1 = 0.16f, kMouthS0 = 0.115f, kMouthS1 = 0.355f;
+    // Skin layer: one static cell below the mouth row. Texels hold a colour multiplier
+    // (rgb x2, so 0.5 is neutral) with coverage in alpha.
+    static constexpr int kSkinCellX = 0, kSkinCellY = 352, kSkinCellW = 384, kSkinCellH = 160;
+    static constexpr float kSkinX0 = -0.50f, kSkinX1 = 0.50f, kSkinS0 = -0.08f, kSkinS1 = 0.80f;
 
     // Pixel origin (top-left) of a cell.
     static std::array<int, 2> eyeCell(EyeExpr e) {

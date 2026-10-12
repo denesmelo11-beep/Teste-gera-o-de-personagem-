@@ -33,9 +33,9 @@ namespace detail {
 LodSpec lodSpec(int lod) {
     // Lean budgets: flat facets carry the forms, so rings sit on landmarks only.
     switch (lod) {
-        case 0: return {16, 16, 8, 8, 6, 6, 16, 5, false};
+        case 0: return {16, 20, 8, 8, 6, 6, 16, 5, false};
         case 1: return {12, 12, 6, 6, 5, 5, 12, 4, true};
-        default: return {8, 10, 5, 5, 4, 4, 10, 3, true};
+        default: return {8, 12, 5, 5, 4, 4, 10, 3, true};
     }
 }
 
@@ -1218,6 +1218,7 @@ Character Builder::build() {
     buildSkeleton();
     buildTorso();
     buildHead();
+    buildNose();
     buildArms();
     buildLegs();
     buildFeet();

@@ -26,57 +26,41 @@ void Builder::initHead() {
 SuperRing Builder::headRing(float s) const {
     const float h = m.h;
     const FaceStyle& f = g.face;
-    // Individual structure: jaw width, chin, cheekbones, fullness.
-    // Jaw: widens the lower face and flattens the chin into a square front.
-    float wMul = 1.0f + f.jaw * 0.14f * bump((s - 0.17f) / 0.17f) + f.jaw * 0.30f * bump(s / 0.10f) +
-                 f.cheek * 0.07f * bump((s - 0.37f) / 0.12f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f) +
-                 f.faceWidth * 0.08f * bump((s - 0.28f) / 0.30f) +
-                 f.crown * 0.05f * bump((s - 0.78f) / 0.22f);
-    // Cranium: taller/rounder or flatter at the back and top.
-    const float crownBack = f.crown * 0.04f * bump((s - 0.75f) / 0.25f);
-    float chinFwd = f.chin * 0.03f * bump(s / 0.14f);
-    float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
-    float full = f.roundness * 0.02f * bump((s - 0.25f) / 0.15f);
+    // Individual structure. Each term sits on its landmark so the planes of the head
+    // change with it: jaw angle, chin, cheekbones and the hollows beneath them, jowls,
+    // overall face width and the cranium.
+    float wMul = 1.0f + f.jaw * 0.15f * bump((s - 0.15f) / 0.16f) + f.chinWidth * 0.30f * bump(s / 0.09f) +
+                 f.cheek * 0.08f * bump((s - 0.38f) / 0.11f) - f.cheekHollow * 0.07f * bump((s - 0.25f) / 0.08f) +
+                 f.jowl * 0.11f * bump((s - 0.13f) / 0.13f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f) +
+                 f.faceWidth * 0.10f * bump((s - 0.30f) / 0.32f) + f.crown * 0.06f * bump((s - 0.78f) / 0.22f);
+    const float crownBack = f.crown * 0.05f * bump((s - 0.75f) / 0.25f);
+    const float chinFwd = f.chin * 0.04f * bump(s / 0.14f);
+    const float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
+    const float full = (0.02f * f.roundness + 0.015f * f.jowl) * bump((s - 0.22f) / 0.15f);
     return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul, (hZc_(s) + chinFwd) * h,
             std::max(hDf_(s) + chinDrop * 0.5f + full, 0.01f) * h, std::max(hDb_(s) + crownBack, 0.01f) * h, hNf_(s), hNb_(s)};
 }
 
 // Forward relief of the face in head units; xn is the horizontal position in
-// head units before headWidth scaling, s the height above the chin.
+// head units before headWidth scaling, s the height above the chin. The nose is
+// a separate faceted piece (buildNose); only a soft base for it is sculpted here.
 float Builder::faceRelief(float xn, float s) const {
     const FaceStyle& f = g.face;
-    const float ns = f.noseSize, ax = std::fabs(xn);
+    const float ax = std::fabs(xn);
     float r = 0;
-    // Nose: bridge between the eyes down to the tip, then under to the base.
-    // Nose types: button (short, upturned), straight, aquiline (long, humped), broad.
-    const float nLen = f.noseShape == 0 ? 0.82f : f.noseShape == 2 ? 1.12f : 1.0f;
-    const float nWid = f.noseShape == 3 ? 1.35f : f.noseShape == 0 ? 0.85f : 1.0f;
-    if (s > 0.28f && s < 0.55f) {
-        const float tip = 0.335f + (1.0f - nLen) * 0.04f;
-        float depth, width;
-        if (s > tip) {
-            float k = smoothstep(tip, 0.53f, s);
-            float bridge = 0.010f + 0.016f * f.noseBridge;
-            depth = lerp(0.026f * ns * nLen, bridge, k) + (f.noseShape == 2 ? 0.010f : 0.004f) * f.noseBridge * bump((k - 0.5f) / 0.5f);  // hump
-            width = lerp(0.040f, 0.022f, k) * std::sqrt(ns) * nWid;
-        } else {
-            depth = 0.026f * ns * nLen * smoothstep(0.295f, tip, s);
-            width = 0.044f * std::sqrt(ns) * nWid;
-        }
-        r += depth * bump(xn / (width * 1.7f));
-        r += 0.006f * ns * bump((s - 0.315f) / 0.022f) * bump((ax - 0.045f * ns) / 0.028f);  // nostril wings
-    }
-    // Brow ridge and the eye sockets beneath it.
-    r += (0.006f + 0.020f * f.browRidge) * bump((s - 0.555f) / 0.045f) * bump(xn / 0.34f);
-    r -= 0.015f * bump((s - 0.468f) / 0.055f) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
-    // Cheekbones.
-    r += (0.010f + 0.012f * f.cheek) * bump((s - 0.375f) / 0.05f) * bump((ax - 0.235f) / 0.09f);
+    r += (0.006f + 0.004f * f.noseBridge) * bump((s - 0.43f) / 0.13f) * bump(xn / 0.07f);
+    // Brow ridge (with the glabella) overhanging the sockets.
+    r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - 0.56f) / 0.045f) * bump(xn / 0.36f);
+    r -= (0.008f + 0.020f * f.eyeDepth) * bump((s - 0.468f) / 0.055f) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
+    // Cheekbones and the hollow beneath them.
+    r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * bump((s - 0.375f) / 0.05f) * bump((ax - 0.235f) / 0.09f);
+    r -= 0.016f * f.cheekHollow * bump((s - 0.27f) / 0.06f) * bump((ax - 0.22f) / 0.08f);
     // Lips, the dip below them, and the chin.
     const float mw = f.mouthWidth;
     r += (0.003f + 0.004f * f.lipFullness) * bump((s - 0.252f) / 0.024f) * bump(xn / (0.075f * mw));
     r += (0.004f + 0.005f * f.lipFullness) * bump((s - 0.218f) / 0.024f) * bump(xn / (0.068f * mw));
     r -= 0.007f * bump((s - 0.188f) / 0.018f) * bump(xn / 0.07f);
-    r += (0.010f + 0.012f * f.chin) * bump((s - 0.09f) / 0.06f) * bump(xn / 0.11f);
+    r += (0.010f + 0.014f * f.chin) * bump((s - 0.09f) / 0.06f) * bump(xn / (0.11f * (1.0f + 0.4f * f.chinWidth)));
     return r;
 }
 
@@ -163,11 +147,11 @@ void Builder::buildHead() {
     const float h = m.h;
     Loft L;
     // Few rings, each on a landmark (chin, jaw, mouth, nose tip, cheekbone, eyes, brow, cranium).
-    const float ss[] = {0.0f, 0.10f, 0.20f, 0.28f, 0.34f, 0.42f, 0.52f, 0.64f, 0.78f, 0.90f};
+    const float ss[] = {0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.34f, 0.40f, 0.47f, 0.56f, 0.64f, 0.76f, 0.88f};
     const int N = lod.headSeg;
     int i = 0;
     for (float s : ss) {
-        if (lod.sparseRings && (i++ % 2) && s < 0.9f) continue;
+        if (lod.sparseRings && (i++ % 2) && s < 0.85f) continue;
         std::vector<Vec3> ring(static_cast<size_t>(N));
         for (int j = 0; j < N; ++j) ring[size_t(j)] = headPoint(headWarp(kTau * j / N), s);
         L.rings.push_back(ring);
@@ -192,6 +176,64 @@ void Builder::buildHead() {
         return normalize(lerp(n, normalize(Vec3{n.x * 0.5f, n.y * 0.6f + 0.1f, 1.0f}), 0.5f * front));
     };
     emitLoft(hp, L, [=](float, float, Vec3) { return one(head); }, [&](float, float) { return skin(); });
+}
+
+// The nose: its own small faceted solid (ridge, side planes, tip, wings and the
+// underside), set on the built face. It is the strongest plane break of the
+// face, so length, projection, width, hump and tip angle all read clearly.
+void Builder::buildNose() {
+    const FaceStyle& f = g.face;
+    const float h = m.h;
+    const Vec3 o = m.headOrigin;
+    auto faceZ = [&](float x, float s) {  // front of the built head, metres relative to the head origin
+        float z;
+        if (headMeshZ(x * h, s * h, z)) return z - o.z;
+        SuperRing r = headRing(s);
+        return r.frontZ(std::min(std::fabs(x * h), r.w * 0.995f)) + faceRelief(x / g.body.headWidth, s) * h;
+    };
+    const float L = f.noseLength, P = f.noseProj, Wd = f.noseWidth, tip = f.noseTip;
+    const float sRoot = 0.505f;
+    const float sTip = clamp(0.345f - 0.06f * (L - 1.0f) + 0.010f * tip, 0.285f, 0.385f);
+    const float proj = 0.050f * P, dR = 0.004f + 0.008f * f.noseBridge;
+    const float sM = lerp(sRoot, sTip, 0.55f), dM = lerp(dR, proj, 0.55f) + 0.016f * f.noseHump;
+    const float droop = std::max(0.0f, -tip);
+    const float sU = sTip - 0.016f - 0.008f * droop, sBase = sTip - 0.030f - 0.006f * droop;
+    Part& p = newPart();
+    p.id = headPartId_;
+    nosePart_ = parts.size() - 1;
+    const SkinW w = one(ch.rig.head);
+    auto V = [&](float x, float sv, float d) {  // d: standoff from the face in head units (negative sinks in)
+        p.pos.push_back(o + Vec3{x * h, sv * h, faceZ(x, sv) + (d > 0 ? d : d - 0.003f) * h});
+        p.w.push_back(w);
+        p.uv.push_back({});
+        return uint32_t(p.pos.size() - 1);
+    };
+    const uint32_t R = V(0, sRoot, dR), M = V(0, sM, dM), T = V(0, sTip + 0.006f * tip, proj),
+                   U = V(0, sU, proj * (0.70f + 0.10f * tip)), S = V(0, sBase, 0.0f);
+    const Vec3 inner = o + Vec3{0, 0.40f * h, faceZ(0, 0.40f) - 0.04f * h};
+    const Mat sk = skin();
+    auto tri = [&](uint32_t a, uint32_t b, uint32_t c) {
+        const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
+        if (dot(cross(B - A, C - A), (A + B + C) / 3.0f - inner) < 0) std::swap(b, c);
+        p.tris.push_back({a, b, c, sk});
+    };
+    for (float sd : {1.0f, -1.0f}) {
+        const uint32_t Rs = V(sd * 0.017f * Wd, sRoot + 0.006f, 0), Bs = V(sd * 0.027f * Wd, sM, 0),
+                       Ts = V(sd * 0.024f * Wd, sTip + 0.004f, proj * 0.62f), Ws = V(sd * 0.040f * Wd, sTip - 0.010f, proj * 0.32f),
+                       As = V(sd * 0.045f * Wd, sTip - 0.022f, 0), Ns = V(sd * 0.016f * Wd, sBase + 0.005f, proj * 0.26f);
+        tri(R, Rs, Bs);
+        tri(R, Bs, M);
+        tri(M, Bs, Ts);
+        tri(M, Ts, T);
+        tri(Bs, Ws, Ts);
+        tri(Bs, As, Ws);
+        tri(T, Ts, U);
+        tri(Ts, Ws, Ns);
+        tri(Ts, Ns, U);
+        tri(Ws, As, Ns);
+        tri(U, Ns, S);
+        tri(Ns, As, S);
+    }
 }
 
 // Front-most intersection of a ray along -z (at x, y relative to the head origin)
@@ -224,6 +266,7 @@ void Builder::buildFaceDecals() {
                      int cellW, int cellH) {
         Part& p = newPart(false, kind);
         p.smoothAlways = true;
+        std::vector<bool> onHead;
         for (int j = 0; j <= ny; ++j)
             for (int i = 0; i <= nx; ++i) {
                 float fu = float(i) / nx, fv = float(j) / ny;
@@ -232,7 +275,9 @@ void Builder::buildFaceDecals() {
                 float x = xf * h * g.body.headWidth;
                 float z = r.frontZ(std::min(std::fabs(x), r.w * 0.995f)) + faceRelief(xf, s) * h + eps;
                 // Sit on the actual (possibly faceted, low-poly) head surface: cast along -z.
+                const bool hit = std::fabs(x) < r.w * 0.96f;
                 if (float hz; headMeshZ(x, s * h, hz)) z = hz - m.headOrigin.z + eps;
+                onHead.push_back(hit);
                 p.pos.push_back(m.headOrigin + Vec3{x, s * h, z});
                 p.w.push_back(one(head));
                 float u = (cellX + 0.5f + fu * (cellW - 1)) / FaceLayout::kAtlasW;
@@ -240,11 +285,18 @@ void Builder::buildFaceDecals() {
                 p.uv.push_back({u, v});
             }
         Mat white{{1, 1, 1}, MaterialClass::Skin};
+        // Only the front of the face: quads off the silhouette or turned sideways would
+        // stretch the cell across the temples.
+        auto ok = [&](uint32_t a, uint32_t b, uint32_t c) {
+            const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
+            const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
+            return std::fabs(n.z) > 0.45f && onHead[a] && onHead[b] && onHead[c];
+        };
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i) {
                 uint32_t a = uint32_t(j * (nx + 1) + i), b = a + 1, c = a + uint32_t(nx + 1) + 1, d = a + uint32_t(nx + 1);
-                p.tris.push_back({a, b, c, white});
-                p.tris.push_back({a, c, d, white});
+                if (ok(a, b, c)) p.tris.push_back({a, b, c, white});
+                if (ok(a, c, d)) p.tris.push_back({a, c, d, white});
             }
         return parts.size() - 1;
     };
@@ -257,6 +309,46 @@ void Builder::buildFaceDecals() {
                          FaceLayout::kMouthS1, std::max(6, lod.headSeg / 2), 8, mc[0], mc[1], FaceLayout::kMouthCellW,
                          FaceLayout::kMouthCellH);
     parts[eyes].id = parts[mouth].id = headPartId_;
+
+    // Skin layer: a copy of the front of the faceted head (and the nose) with UVs
+    // into the skin cell, so stubble, sockets, weathering, scars and ink follow
+    // every facet exactly.
+    Part& sk = newPart(false, SubmeshKind::FaceSkin);
+    sk.smoothAlways = true;
+    sk.id = headPartId_;
+    const Vec3 o = m.headOrigin;
+    auto copyFront = [&](size_t src) {
+        if (src >= parts.size()) return;
+        const Part& sp = parts[src];
+        std::vector<int> map(sp.pos.size(), -1);
+        for (const auto& tr : sp.tris) {
+            const Vec3 c = (sp.pos[tr.a] + sp.pos[tr.b] + sp.pos[tr.c]) / 3.0f;
+            const float sc = (c.y - o.y) / h, xc = (c.x - o.x) / (h * g.body.headWidth);
+            if (c.z - o.z < hZc_(clamp(sc, 0.0f, 1.0f)) * h - 0.02f * h) continue;  // front half only
+            if (sc < FaceLayout::kSkinS0 + 0.01f || sc > FaceLayout::kSkinS1 - 0.01f || std::fabs(xc) > FaceLayout::kSkinX1 - 0.01f) continue;
+            uint32_t ids[3];
+            const uint32_t vs[3] = {tr.a, tr.b, tr.c};
+            for (int k = 0; k < 3; ++k) {
+                const uint32_t v = vs[k];
+                if (map[v] < 0) {
+                    const Vec3 q = sp.pos[v];
+                    const float x = clamp((q.x - o.x) / (h * g.body.headWidth), FaceLayout::kSkinX0, FaceLayout::kSkinX1);
+                    const float sv = clamp((q.y - o.y) / h, FaceLayout::kSkinS0, FaceLayout::kSkinS1);
+                    const float fu = (x - FaceLayout::kSkinX0) / (FaceLayout::kSkinX1 - FaceLayout::kSkinX0);
+                    const float fv = (FaceLayout::kSkinS1 - sv) / (FaceLayout::kSkinS1 - FaceLayout::kSkinS0);
+                    map[v] = int(sk.pos.size());
+                    sk.pos.push_back(q);
+                    sk.w.push_back(sp.w[v]);
+                    sk.uv.push_back({(FaceLayout::kSkinCellX + 0.5f + fu * (FaceLayout::kSkinCellW - 1)) / FaceLayout::kAtlasW,
+                                     (FaceLayout::kSkinCellY + 0.5f + fv * (FaceLayout::kSkinCellH - 1)) / FaceLayout::kAtlasH});
+                }
+                ids[k] = uint32_t(map[v]);
+            }
+            sk.tris.push_back({ids[0], ids[1], ids[2], Mat{{1, 1, 1}, MaterialClass::Skin}});
+        }
+    };
+    copyFront(headPart_);
+    copyFront(nosePart_);
 }
 
 }  // namespace cg::detail

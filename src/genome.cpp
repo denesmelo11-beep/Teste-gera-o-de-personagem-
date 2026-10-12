@@ -14,11 +14,12 @@ constexpr std::string_view kPersonaNames[] = {"heroic", "villainous", "cute", "s
 constexpr std::string_view kAgeNames[] = {"young", "adult", "mature", "elder"};
 constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepart", "slickedback", "messy", "undercut", "pixie", "bob",
                                            "shoulder", "longstraight", "longwavy", "ponytail", "highponytail", "braid", "bun", "halfup", "manbun",
-                                           "crewcut", "mohawk", "pompadour", "curly", "afro", "mullet", "topknot", "locs", "wolf",
-                                           "hime", "twintails", "twinbraids", "sidebraid", "lowponytail", "spacebuns", "messybun",
+                                           "crewcut", "tonsure", "warriorbraids", "curly", "afro", "mullet", "topknot", "locs", "wolf",
+                                           "hime", "crownbraid", "twinbraids", "sidebraid", "lowponytail", "bowlcut", "messybun",
                                            "longcurly", "verylong", "asymbob"};
 static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
-constexpr std::string_view kBeardNames[] = {"none", "mustache", "goatee", "shortbeard", "fullbeard"};
+constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops"};
+static_assert(std::size(kBeardNames) == size_t(cg::FacialHair::Count));
 
 template <size_t N>
 int indexOf(const std::string_view (&names)[N], std::string_view s) {
@@ -38,15 +39,6 @@ constexpr float kBrowTilt[] = {-0.10f, -0.30f, 0.18f, -0.05f, -0.22f, 0.15f, -0.
 constexpr float kRestLid[] = {0.02f, 0.18f, 0.0f, 0.14f, 0.10f, 0.03f, 0.08f, 0.06f};
 constexpr float kMouthRest[] = {0.0f, 0.0f, 0.004f, 0.002f, -0.005f, 0.006f, 0.0f, -0.002f};
 constexpr float kMouthAsym[] = {0.0f, 0.006f, 0.0f, 0.002f, 0.0f, 0.0f, 0.005f, 0.0f};
-// Eye families: 0 standard (reference), 1 big/round, 2 narrow, 3 sharp, 4 droopy.
-constexpr std::array<std::array<float, 5>, 8> kEyeShapeW = {{{4, 1.2f, 1, 1, 0.6f},
-                                                              {1.5f, 0.2f, 2.5f, 3, 0.3f},
-                                                              {2, 4, 0.2f, 0.5f, 1.5f},
-                                                              {3, 1, 0.8f, 2.5f, 0.8f},
-                                                              {3, 0.4f, 2.5f, 1, 0.5f},
-                                                              {3, 2, 0.4f, 0.4f, 2.5f},
-                                                              {3, 0.6f, 1, 2, 0.6f},
-                                                              {4, 0.8f, 1.5f, 1.2f, 0.6f}}};
 constexpr std::array<std::array<float, 3>, 8> kBrowShapeW = {{{2, 1, 1.5f},
                                                                {0.5f, 0.5f, 3},
                                                                {1, 3, 0.2f},
@@ -109,15 +101,15 @@ bool isShortHair(HairStyle h) {
     using H = HairStyle;
     switch (h) {
         case H::Bald: case H::Buzz: case H::ShortCrop: case H::SidePart: case H::SlickedBack: case H::Messy: case H::Undercut:
-        case H::Pixie: case H::CrewCut: case H::Mohawk: case H::Pompadour: case H::Curly: case H::Afro: return true;
+        case H::Pixie: case H::CrewCut: case H::Tonsure: case H::Curly: case H::Afro: case H::BowlCut: return true;
         default: return false;
     }
 }
 bool isTiedHair(HairStyle h) {
     using H = HairStyle;
     switch (h) {
-        case H::Ponytail: case H::HighPonytail: case H::Braid: case H::Bun: case H::ManBun: case H::Topknot: case H::TwinTails:
-        case H::TwinBraids: case H::SideBraid: case H::LowPonytail: case H::SpaceBuns: case H::MessyBun: return true;
+        case H::Ponytail: case H::HighPonytail: case H::Braid: case H::Bun: case H::ManBun: case H::Topknot: case H::CrownBraid:
+        case H::TwinBraids: case H::SideBraid: case H::LowPonytail: case H::MessyBun: return true;
         default: return false;
     }
 }
@@ -186,8 +178,21 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         case Persona::Gentle: fat += 0.2f; break;
         default: break;
     }
-    fat = clamp(fat, -2.0f, 2.6f);
-    mus = clamp(mus, -2.2f, 2.5f);
+    // Build: a broad body type biasing the axes (most people are average), so a crowd
+    // mixes wiry, heavy, stocky, lanky and labour-strong bodies around the base.
+    const int build = opt.archetype && arch != Archetype::Natural ? 0
+                    : rb.weighted({4.0f, 1.2f, fem ? 0.9f : 1.2f, 0.8f, 0.7f, fem ? 0.4f : 1.0f});
+    g.body.build = build;
+    switch (build) {
+        case 1: fat -= 1.0f; mus += 0.2f; break;                                             // lean, wiry
+        case 2: fat += 1.6f + 0.5f * std::fabs(z(rb)); mus -= 0.2f; break;                    // heavy
+        case 3: frame += 1.4f; tz -= 1.3f; fat += 0.4f; mus += 0.5f; break;                  // stocky
+        case 4: tz += 1.3f; frame -= 0.8f; fat -= 0.6f; break;                                // lanky
+        case 5: mus += 1.2f; frame += 0.8f; fat += 0.5f; break;                               // strong (labour, soldiers)
+        default: break;
+    }
+    fat = clamp(fat, -2.0f, 3.4f);
+    mus = clamp(mus, -2.2f, 2.6f);
 
     BodyShape& b = g.body;
     const float ageH = young ? 0.99f : elder ? 0.975f : 1.0f;
@@ -202,7 +207,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         // Hourglass: waist ~half the hip width, full thighs, arms that read at low res.
         b.shoulderWidth = 0.61f + 0.025f * frame + 0.02f * mus;
         b.chestWidth = 0.46f + 0.02f * frame + 0.02f * fat;
-        b.waistWidth = 0.300f + 0.045f * fat - 0.004f * mus;
+        b.waistWidth = 0.300f + (fat > 0 ? 0.062f : 0.040f) * fat - 0.004f * mus;
         b.hipWidth = 0.70f + 0.03f * frame + 0.04f * fat;
         b.chestDepth = 0.34f + 0.018f * fat;
         b.bust = clamp(0.6f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.25f);
@@ -215,9 +220,9 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
     } else {
         b.shoulderWidth = 0.80f + 0.03f * frame + 0.04f * mus;
-        b.chestWidth = 0.53f + 0.022f * frame + 0.03f * mus + 0.02f * fat;
-        b.waistWidth = 0.395f + 0.055f * fat - 0.006f * mus;
-        b.hipWidth = 0.56f + 0.02f * frame + 0.025f * fat;
+        b.chestWidth = 0.53f + 0.022f * frame + 0.03f * mus + 0.03f * fat;
+        b.waistWidth = 0.395f + (fat > 0 ? 0.080f : 0.050f) * fat - 0.006f * mus;
+        b.hipWidth = 0.56f + 0.02f * frame + 0.035f * fat;
         b.chestDepth = 0.42f + 0.018f * mus + 0.018f * fat;
         b.bust = std::max(0.0f, 0.12f * (fat - 1.0f));  // only heavier men get chest softness
         b.butt = clamp(0.32f + 0.08f * z(rb) + 0.05f * mus, 0.12f, 0.65f);
@@ -228,9 +233,11 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         b.handSize = 1.0f + 0.03f * frame;
         b.posture = 0.45f + 0.05f * z(rb);
     }
-    b.belly = std::max(0.0f, 0.18f * (fat - 0.6f)) + (elder ? 0.05f : 0.0f);
+    b.belly = std::max(0.0f, 0.24f * (fat - 0.5f)) + (elder ? 0.05f : 0.0f);
     b.footSize = b.handSize;
-    b.headWidth = 1.0f + 0.040f * z(rb);
+    b.headWidth = 1.0f + 0.045f * z(rb) + 0.02f * std::max(0.0f, fat);
+    if (build == 3) { b.legRatio -= 0.02f; b.headsTall -= 0.25f; b.neckLength *= 0.8f; b.handSize *= 1.06f; }
+    if (build == 4) { b.legRatio += 0.012f; b.headsTall += 0.25f; b.neckLength *= 1.1f; }
     b.armLength = 1.0f + 0.015f * z(rb);
     b.sag = elder ? rb.range(0.6f, 0.9f) : mature ? rb.range(0.2f, 0.4f) : rb.range(0.0f, 0.1f);
     b.hunch = elder ? rb.range(0.4f, 0.8f) : mature ? rb.range(0.0f, 0.15f) : 0.0f;
@@ -351,110 +358,175 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.ears = (fantasy ? rx.chance(0.6f) : rx.chance(0.10f)) ? EarStyle::Elf : EarStyle::Human;
 
     // ---- face: persona + age + sex ----
+    // Identity lives in the planes of the head (nose, brow, cheekbones, jaw, chin),
+    // the eye family and the skin's history (scars, stubble, weather, dirt), so all
+    // of them vary widely; persona, age and sex only bias the draws.
     Rng rf = root.fork(6);
     FaceStyle& f = g.face;
-    f.eyeShape = rf.weighted(std::span<const float>(kEyeShapeW[P]));
-    f.eyeSize = 1.0f + 0.08f * z(rf) + (per == Persona::Cute ? 0.12f : 0.0f) - (per == Persona::Villainous ? 0.08f : 0.0f) +
-                (young ? 0.06f : 0.0f) - (elder ? 0.06f : 0.0f) - (fem ? 0.0f : 0.05f);
-    f.eyeSpacing = 1.0f + 0.06f * z(rf);
-    f.eyeTilt = 0.07f * z(rf) + (per == Persona::Villainous ? 0.06f : 0.0f) - (per == Persona::Gentle ? 0.05f : 0.0f);
-    f.restLid = clamp(kRestLid[P] + (elder ? 0.08f : 0.0f) + 0.03f * z(rf), 0.0f, 0.32f);
-    f.lashWeight = saturate(fem ? 0.55f + 0.15f * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) : 0.25f + 0.1f * z(rf));
-    f.pupil = fantasy && per == Persona::Villainous && rf.chance(0.5f) ? PupilStyle::Slit : PupilStyle::Round;
+    const bool villain = per == Persona::Villainous, cute = per == Persona::Cute, stern = per == Persona::Stern;
+    const bool rogue = per == Persona::Rogue, noble = per == Persona::Noble, gentle = per == Persona::Gentle;
+    {   // Eye families: 0 standard (reference), 1 round, 2 narrow, 3 sharp, 4 droopy, 5 hooded, 6 small.
+        std::array<float, 7> ew{3.0f, 1.0f, 1.0f, 1.0f, 0.8f, 0.7f, 0.6f};
+        if (!fem) { ew[1] *= 0.35f; ew[2] += 1.4f; ew[5] += 1.0f; ew[6] += 1.2f; }
+        if (young) { ew[1] += 1.0f; ew[6] *= 0.5f; }
+        if (mature) { ew[5] += 0.6f; ew[6] += 0.6f; }
+        if (elder) { ew[1] *= 0.2f; ew[4] += 1.5f; ew[5] += 1.2f; ew[6] += 1.6f; }
+        if (cute) ew[1] += 2.5f;
+        if (villain) { ew[3] += 2.0f; ew[2] += 1.0f; ew[1] *= 0.2f; }
+        if (noble) ew[3] += 1.0f;
+        if (gentle) { ew[4] += 1.2f; ew[1] += 0.5f; }
+        if (stern) { ew[2] += 1.5f; ew[5] += 1.0f; }
+        if (rogue) { ew[3] += 1.0f; ew[2] += 1.0f; }
+        if (per == Persona::Heroic) ew[0] += 1.0f;
+        f.eyeShape = rf.weighted(std::span<const float>(ew));
+    }
+    f.eyeSize = 1.0f + 0.09f * z(rf) + (cute ? 0.10f : 0.0f) - (villain ? 0.06f : 0.0f) + (young ? 0.05f : 0.0f) -
+                (elder ? 0.05f : 0.0f) - (fem ? 0.0f : 0.05f);
+    f.eyeSpacing = 1.0f + 0.07f * z(rf);
+    f.eyeTilt = 0.07f * z(rf) + (villain ? 0.06f : 0.0f) - (gentle ? 0.05f : 0.0f);
+    f.restLid = clamp(kRestLid[P] + (elder ? 0.08f : 0.0f) + 0.04f * z(rf), 0.0f, 0.34f);
+    f.lashWeight = saturate(fem ? 0.60f + 0.15f * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) : 0.32f + 0.12f * z(rf));
+    f.pupil = fantasy && villain && rf.chance(0.5f) ? PupilStyle::Slit : PupilStyle::Round;
     f.browShape = rf.weighted(std::span<const float>(kBrowShapeW[P]));
-    f.browThick = saturate((fem ? 0.35f : 0.62f) + 0.22f * z(rf) + (elder && !fem ? 0.15f : 0.0f));
-    f.browTilt = kBrowTilt[P] + 0.08f * z(rf);
-    f.browHeight = per == Persona::Noble ? 0.005f : per == Persona::Stern ? -0.006f : per == Persona::Cute ? 0.006f : 0.0f;
-    f.mouthWidth = 1.0f + 0.09f * z(rf) + (fem ? 0.0f : 0.05f);
-    f.lipFullness = saturate((fem ? 0.55f : 0.30f) + (fem ? 0.15f : 0.10f) * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) -
+    f.browThick = saturate((fem ? 0.35f : 0.66f) + 0.24f * z(rf) + (elder && !fem ? 0.18f : 0.0f));
+    f.browTilt = kBrowTilt[P] + 0.10f * z(rf);
+    f.browHeight = (noble ? 0.005f : stern ? -0.006f : cute ? 0.006f : 0.0f) + 0.004f * z(rf);
+    f.browLength = 1.0f + 0.12f * z(rf);
+    f.irisSize = 1.0f + 0.06f * z(rf) + (cute ? 0.06f : 0.0f) - (villain ? 0.06f : 0.0f);
+    f.mouthWidth = 1.0f + 0.10f * z(rf) + (fem ? 0.0f : 0.06f);
+    f.lipFullness = saturate((fem ? 0.55f : 0.28f) + (fem ? 0.17f : 0.12f) * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) -
                              (elder ? 0.15f : 0.0f));
-    f.mouthRest = kMouthRest[P];
+    f.mouthRest = kMouthRest[P] + 0.002f * z(rf);
     f.mouthAsym = kMouthAsym[P] * (rf.chance(0.5f) ? 1.0f : -1.0f);
-    f.noseSize = (fem ? 0.92f : 1.10f) + 0.08f * z(rf) - (per == Persona::Cute ? 0.1f : 0.0f) + (elder ? 0.06f : 0.0f);
-    f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
-                            (per == Persona::Cute ? 0.25f : 0.0f));
-    f.jaw = clamp(fem ? -0.10f + 0.30f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
-                      : 0.70f + 0.28f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
-                  -1.0f, 1.0f);
-    f.chin = clamp(0.35f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
-                       (per == Persona::Cute ? 0.3f : 0.0f),
-                   -1.0f, 1.0f);
-    f.cheek = clamp(0.40f * z(rf) + (per == Persona::Villainous ? 0.45f : 0.0f) + (per == Persona::Noble ? 0.25f : 0.0f) +
-                        (per == Persona::Sexy ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.2f : 0.0f),
-                    -1.0f, 1.0f);
-    f.browRidge = saturate(fem ? 0.2f + 0.1f * z(rf) : 0.7f + 0.15f * z(rf)) + (per == Persona::Villainous ? 0.15f : 0.0f);
-    f.roundness = saturate((young ? 0.35f : 0.0f) + (per == Persona::Cute ? 0.4f : 0.0f) + 0.15f * fat);
-    f.ageLines = saturate((g.age - 36.0f) / 36.0f);
-    f.freckles = rf.chance(young ? 0.18f : 0.10f);
-    f.scar = rf.chance(per == Persona::Rogue ? 0.30f : per == Persona::Heroic ? 0.10f : fem ? 0.03f : 0.06f);
-    f.fang = fantasy && per == Persona::Villainous && rf.chance(0.3f);
-    f.blush = per == Persona::Cute && rf.chance(0.3f);
-    f.crown = clamp(0.40f * z(rf), -1.0f, 1.0f);
-    f.faceWidth = clamp(0.38f * z(rf) + 0.25f * std::max(0.0f, fat) - (per == Persona::Noble ? 0.15f : 0.0f), -1.0f, 1.0f);
-    f.browLength = 1.0f + 0.10f * z(rf);
-    f.irisSize = 1.0f + 0.05f * z(rf) + (per == Persona::Cute ? 0.06f : 0.0f) - (per == Persona::Villainous ? 0.06f : 0.0f);
-    f.noseShape = rf.weighted({fem ? 2.0f : 0.8f, 3.0f, per == Persona::Noble || per == Persona::Villainous ? 2.0f : 0.8f, fem ? 0.6f : 1.4f});
-    f.earSize = 1.0f + 0.10f * z(rf);
+    // Nose: a preset family, then continuous variation around it.
+    f.noseShape = rf.weighted({fem ? 2.0f : 0.6f, 3.0f, noble || villain ? 2.2f : 1.0f, fem ? 0.6f : 1.6f});
     {
-        const float pm = per == Persona::Rogue || per == Persona::Villainous ? 0.30f : per == Persona::Heroic ? 0.16f : 0.10f;
-        if (rf.chance(pm)) f.marking = rf.weighted({1.5f, fantasy ? 1.5f : 0.7f, 1.0f, 0.6f, fem ? 0.4f : 1.0f, 0.5f});
-        if (f.marking == 0 && rf.chance(0.10f)) f.marking = 1;  // moles are common
+        float L = 1.0f, Pj = 1.0f, Wd = 1.0f, hump = 0.0f, tip = 0.0f;
+        switch (f.noseShape) {
+            case 0: L = 0.80f; Pj = 0.78f; Wd = 0.90f; tip = 0.6f; break;  // button
+            case 2: L = 1.14f; Pj = 1.15f; Wd = 0.95f; hump = 0.65f; tip = -0.35f; break;  // aquiline
+            case 3: L = 1.00f; Pj = 0.92f; Wd = 1.38f; tip = 0.1f; break;  // broad
+            default: break;
+        }
+        f.noseLength = clamp(L + 0.10f * z(rf) + (fem ? -0.07f : 0.05f) + (elder ? 0.07f : 0.0f), 0.65f, 1.45f);
+        f.noseProj = clamp(Pj + 0.14f * z(rf) + (fem ? -0.24f : 0.10f) - (cute ? 0.15f : 0.0f), 0.50f, 1.6f);
+        f.noseWidth = clamp(Wd + 0.12f * z(rf) + (fem ? -0.12f : 0.08f) + 0.05f * std::max(0.0f, fat), 0.7f, 1.7f);
+        f.noseHump = saturate(hump + 0.25f * z(rf) + ((rogue || per == Persona::Heroic) && !fem && rf.chance(0.3f) ? 0.5f : 0.0f));
+        f.noseTip = clamp(tip + 0.3f * z(rf) - (elder ? 0.25f : 0.0f), -1.0f, 1.0f);
+    }
+    f.noseSize = f.noseProj;
+    f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (noble || villain ? 0.15f : 0.0f) - (cute ? 0.25f : 0.0f));
+    // Skull.
+    f.jaw = clamp(fem ? -0.10f + 0.32f * z(rf) - (villain ? 0.1f : 0.0f)
+                      : 0.62f + 0.32f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (cute ? 0.3f : 0.0f),
+                  -1.0f, 1.0f);
+    f.chinWidth = clamp((fem ? -0.25f : 0.35f) + 0.38f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (cute ? 0.2f : 0.0f), -1.0f, 1.0f);
+    f.chin = clamp(0.40f * z(rf) + (villain ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) - (cute ? 0.3f : 0.0f), -1.0f, 1.0f);
+    f.cheek = clamp(0.45f * z(rf) + (villain ? 0.45f : 0.0f) + (noble ? 0.25f : 0.0f) + (per == Persona::Sexy ? 0.2f : 0.0f) -
+                        (cute ? 0.2f : 0.0f),
+                    -1.0f, 1.0f);
+    f.browRidge = saturate((fem ? 0.18f + 0.12f * z(rf) : 0.62f + 0.22f * z(rf)) + (villain ? 0.15f : 0.0f) + (stern ? 0.1f : 0.0f));
+    f.roundness = saturate((young ? 0.35f : 0.0f) + (cute ? 0.4f : 0.0f) + 0.18f * fat);
+    f.crown = clamp(0.45f * z(rf), -1.0f, 1.0f);
+    f.faceWidth = clamp(0.42f * z(rf) + 0.25f * std::max(0.0f, fat) - (noble ? 0.15f : 0.0f), -1.0f, 1.0f);
+    f.cheekHollow = saturate(0.30f * z(rf) + 0.20f - 0.25f * fat + (elder ? 0.35f : mature ? 0.12f : 0.0f) + (villain ? 0.2f : 0.0f) -
+                             (young ? 0.15f : 0.0f));
+    f.jowl = saturate(0.35f * fat - 0.05f + (elder ? 0.35f : mature ? 0.15f : 0.0f) + 0.12f * z(rf));
+    f.eyeDepth = saturate((fem ? 0.22f : 0.45f) + 0.18f * z(rf) + (stern ? 0.15f : 0.0f) + (elder ? 0.15f : 0.0f) +
+                          (villain ? 0.2f : 0.0f) - (cute ? 0.2f : 0.0f));
+    f.eyeBags = saturate((g.age - 34.0f) / 45.0f + 0.15f * z(rf) + (rogue ? 0.1f : 0.0f));
+    f.earSize = 1.0f + 0.12f * z(rf) + (elder ? 0.08f : 0.0f);
+    f.ageLines = saturate((g.age - 34.0f) / 34.0f);
+    // Skin history.
+    f.freckles = rf.chance(young ? 0.18f : 0.10f);
+    f.ruddy = saturate(0.18f * z(rf) + (fem ? 0.05f : 0.15f) + (elder ? 0.15f : 0.0f));
+    f.grime = rf.chance(rogue ? 0.45f : per == Persona::Heroic || stern ? 0.25f : noble ? 0.03f : 0.15f) ? rf.range(0.35f, 0.9f) : 0.0f;
+    {
+        const float pScar = rogue ? 0.40f : per == Persona::Heroic ? 0.22f : villain ? 0.30f : stern ? 0.18f : fem ? 0.05f : 0.10f;
+        if (rf.chance(pScar)) f.scarType = 1 + rf.weighted({1.5f, 1.0f, 0.8f, 1.0f, villain || rogue ? 0.6f : 0.25f});
+        f.scar = f.scarType != 0;
+        const float pTat = (fantasy ? 0.25f : 0.06f) + (villain || rogue ? 0.06f : 0.0f);
+        if (rf.chance(pTat)) f.tattoo = 1 + rf.weighted({1.0f, 1.0f, 0.8f});
+        static constexpr Vec3 kInk[] = {{0.16f, 0.22f, 0.34f}, {0.12f, 0.12f, 0.14f}, {0.18f, 0.28f, 0.20f}, {0.45f, 0.14f, 0.10f}};
+        f.tattooColor = kInk[rf.rangeInt(0, 3)];
+    }
+    f.fang = fantasy && villain && rf.chance(0.3f);
+    f.blush = cute && rf.chance(0.3f);
+    {
+        const float pm = rogue || villain ? 0.22f : per == Persona::Heroic ? 0.12f : 0.06f;
+        if (rf.chance(pm)) f.marking = rf.weighted({1.5f, fantasy ? 1.5f : 0.5f, 1.0f, 0.4f, fem ? 0.3f : 0.8f, 0.4f});
+        if (f.marking == 0 && rf.chance(0.12f)) f.marking = 1;  // moles are common
         static constexpr Vec3 kPaint[] = {{0.55f, 0.10f, 0.10f}, {0.12f, 0.14f, 0.18f}, {0.85f, 0.85f, 0.80f}, {0.20f, 0.30f, 0.55f}, {0.70f, 0.50f, 0.15f}};
         f.markColor = kPaint[rf.rangeInt(0, 4)];
     }
 
-    // ---- hair ----
+    // ---- hair: what people wear in a grim medieval world ----
     Rng rh = root.fork(7);
     std::array<float, size_t(HairStyle::Count)> w{};
     using H = HairStyle;
     auto W = [&](H s) -> float& { return w[size_t(s)]; };
     if (fem) {
-        W(H::Buzz) = 0.1f; W(H::ShortCrop) = 0.2f; W(H::SidePart) = 0.3f; W(H::SlickedBack) = 0.2f; W(H::Messy) = 0.5f;
-        W(H::Undercut) = 0.4f; W(H::Pixie) = 1.2f; W(H::Bob) = 2.0f; W(H::Shoulder) = 2.5f; W(H::LongStraight) = 3.0f;
-        W(H::LongWavy) = 2.5f; W(H::Ponytail) = 2.0f; W(H::HighPonytail) = 1.2f; W(H::Braid) = 1.5f; W(H::Bun) = 1.2f;
-        W(H::HalfUp) = 1.5f; W(H::Curly) = 0.4f; W(H::Afro) = 0.6f; W(H::Wolf) = 1.0f; W(H::Hime) = 1.2f;
-        W(H::TwinTails) = 0.9f; W(H::TwinBraids) = 1.0f; W(H::SideBraid) = 1.2f; W(H::LowPonytail) = 1.4f; W(H::SpaceBuns) = 0.5f;
-        W(H::MessyBun) = 1.3f; W(H::LongCurly) = 1.3f; W(H::VeryLong) = 0.9f; W(H::AsymBob) = 1.0f; W(H::Locs) = 0.5f;
-        W(H::Mohawk) = 0.1f; W(H::Mullet) = 0.2f;
-        if (elder) { W(H::Bun) += 2; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f; W(H::LongWavy) *= 0.5f; W(H::TwinTails) *= 0.1f;
-                     W(H::SpaceBuns) *= 0.1f; W(H::VeryLong) *= 0.3f; W(H::Wolf) *= 0.3f; }
+        W(H::ShortCrop) = 0.2f; W(H::SidePart) = 0.2f; W(H::Messy) = 0.5f; W(H::Pixie) = 0.5f; W(H::Bob) = 1.0f;
+        W(H::Shoulder) = 2.2f; W(H::LongStraight) = 2.5f; W(H::LongWavy) = 2.5f; W(H::Ponytail) = 1.6f; W(H::HighPonytail) = 0.6f;
+        W(H::Braid) = 2.2f; W(H::Bun) = 1.6f; W(H::HalfUp) = 1.6f; W(H::Curly) = 0.4f; W(H::Afro) = 0.4f; W(H::Wolf) = 0.8f;
+        W(H::Hime) = 0.3f; W(H::CrownBraid) = 1.6f; W(H::TwinBraids) = 1.5f; W(H::SideBraid) = 1.6f; W(H::LowPonytail) = 1.6f;
+        W(H::MessyBun) = 1.4f; W(H::LongCurly) = 1.3f; W(H::VeryLong) = 0.9f; W(H::AsymBob) = 0.3f; W(H::Locs) = 0.4f;
+        W(H::WarriorBraids) = 1.0f; W(H::Undercut) = 0.15f; W(H::BowlCut) = 0.2f;
+        if (elder) { W(H::Bun) += 2.5f; W(H::CrownBraid) += 1.0f; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f;
+                     W(H::LongWavy) *= 0.5f; W(H::VeryLong) *= 0.3f; W(H::Wolf) *= 0.3f; }
     } else {
-        W(H::Bald) = elder ? 2.3f : mature ? 0.6f : 0.15f; W(H::Buzz) = 1.2f; W(H::ShortCrop) = 3.0f; W(H::SidePart) = 2.5f;
-        W(H::SlickedBack) = 1.5f; W(H::Messy) = 2.5f; W(H::Undercut) = 1.5f; W(H::Shoulder) = 1.0f; W(H::LongStraight) = 0.6f;
-        W(H::LongWavy) = 0.5f; W(H::Ponytail) = 0.8f; W(H::Braid) = 0.3f; W(H::HalfUp) = 0.3f; W(H::ManBun) = 0.8f;
-        W(H::CrewCut) = 2.0f; W(H::Mohawk) = 0.5f; W(H::Pompadour) = 1.0f; W(H::Curly) = 1.2f; W(H::Afro) = 0.6f; W(H::Mullet) = 0.6f;
-        W(H::Topknot) = 0.7f; W(H::Locs) = 0.6f; W(H::Wolf) = 1.0f; W(H::LowPonytail) = 0.6f; W(H::SideBraid) = 0.2f;
-        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; W(H::Mohawk) *= 0.1f; W(H::Pompadour) *= 0.5f; W(H::Wolf) *= 0.2f; }
+        W(H::Bald) = elder ? 2.5f : mature ? 0.8f : 0.2f; W(H::Buzz) = 1.2f; W(H::ShortCrop) = 3.0f; W(H::SidePart) = 1.2f;
+        W(H::SlickedBack) = 1.2f; W(H::Messy) = 2.5f; W(H::Undercut) = 0.7f; W(H::Shoulder) = 1.4f; W(H::LongStraight) = 0.8f;
+        W(H::LongWavy) = 0.6f; W(H::Ponytail) = 1.0f; W(H::Braid) = 0.4f; W(H::HalfUp) = 0.5f; W(H::ManBun) = 0.6f;
+        W(H::CrewCut) = 1.5f; W(H::Tonsure) = elder || mature ? 0.8f : 0.3f; W(H::WarriorBraids) = 1.4f; W(H::Curly) = 1.0f;
+        W(H::Afro) = 0.4f; W(H::Mullet) = 0.4f; W(H::Topknot) = 0.6f; W(H::Locs) = 0.5f; W(H::Wolf) = 1.0f;
+        W(H::LowPonytail) = 1.0f; W(H::SideBraid) = 0.2f; W(H::BowlCut) = young ? 1.0f : 0.5f; W(H::TwinBraids) = 0.3f;
+        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; W(H::Wolf) *= 0.3f; W(H::BowlCut) *= 0.3f; }
     }
     switch (per) {
-        case Persona::Rogue: W(H::Messy) += 2; W(H::Undercut) += 1; W(H::Wolf) += 1; W(H::Mohawk) += fem ? 0.2f : 0.8f; W(H::Locs) += 0.5f; break;
+        case Persona::Rogue: W(H::Messy) += 2; W(H::Wolf) += 1; W(H::Undercut) += 0.6f; W(H::Locs) += 0.5f; W(H::WarriorBraids) += 0.6f; break;
         case Persona::Noble: (fem ? W(H::LongStraight) : W(H::SlickedBack)) += 1.5f; W(H::Bun) += fem ? 1.0f : 0.0f;
-                             W(H::Hime) += fem ? 1.0f : 0.0f; W(H::VeryLong) += fem ? 0.6f : 0.0f; W(H::Topknot) += fem ? 0.0f : 0.6f; break;
-        case Persona::Cute: W(H::Bob) += fem ? 1.0f : 0.0f; W(H::HighPonytail) += fem ? 1.0f : 0.0f; W(H::Pixie) += fem ? 1.0f : 0.0f;
-                            W(H::TwinTails) += fem ? 1.5f : 0.0f; W(H::SpaceBuns) += fem ? 1.0f : 0.0f; W(H::Curly) += 0.5f; break;
-        case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Undercut) += 1; break;
-        case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::SidePart) += 1; W(H::Ponytail) += 1; break;
+                             W(H::CrownBraid) += fem ? 1.5f : 0.0f; W(H::VeryLong) += fem ? 0.6f : 0.0f; W(H::Topknot) += fem ? 0.0f : 0.4f; break;
+        case Persona::Cute: W(H::Bob) += fem ? 0.8f : 0.0f; W(H::TwinBraids) += fem ? 1.2f : 0.0f; W(H::BowlCut) += 0.6f; W(H::Curly) += 0.5f; break;
+        case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Bald) += fem ? 0.0f : 0.6f; break;
+        case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::WarriorBraids) += 1.0f; W(H::Ponytail) += 1; W(H::Braid) += 0.6f; break;
         case Persona::Sexy: W(H::LongWavy) += fem ? 1.5f : 0.3f; W(H::HalfUp) += 1; break;
+        case Persona::Stern: W(H::Tonsure) += fem ? 0.0f : 0.6f; W(H::CrewCut) += 0.6f; W(H::Bun) += fem ? 0.8f : 0.0f; break;
+        case Persona::Gentle: W(H::Braid) += 0.6f; W(H::BowlCut) += 0.3f; break;
         default: break;
     }
     if (arch == Archetype::Brute || arch == Archetype::Monster) { W(H::Bald) += 1.5f; W(H::Buzz) += 1; }
     g.hair = opt.hair ? *opt.hair : HairStyle(rh.weighted(std::span<const float>(w)));
     const bool shortHair = isShortHair(g.hair) && g.hair != HairStyle::Pixie;
-    g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.2f}));
+    g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.0f}));
     if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz || g.hair == HairStyle::CrewCut ||
-        g.hair == HairStyle::Mohawk || g.hair == HairStyle::Pompadour || g.hair == HairStyle::Afro || g.hair == HairStyle::Topknot ||
-        g.hair == HairStyle::Locs)
+        g.hair == HairStyle::Tonsure || g.hair == HairStyle::WarriorBraids || g.hair == HairStyle::Afro || g.hair == HairStyle::Topknot ||
+        g.hair == HairStyle::Locs || g.hair == HairStyle::CrownBraid)
         g.fringe = Fringe::None;
-    if (g.hair == HairStyle::Hime) g.fringe = Fringe::Straight;
+    if (g.hair == HairStyle::Hime || g.hair == HairStyle::BowlCut) g.fringe = Fringe::Straight;
     g.hairVolume = clamp(1.0f + 0.1f * z(rh), 0.8f, 1.25f);
     g.hairLength = clamp(1.0f + 0.12f * z(rh), 0.75f, 1.3f);
     g.hairWave = g.hair == HairStyle::LongWavy ? rh.range(0.6f, 1.0f) : g.hair == HairStyle::LongCurly ? 1.0f
                : g.hair == HairStyle::Hime ? 0.0f : rh.range(0.0f, 0.2f);
     g.partSide = rh.chance(0.5f) ? 1.0f : -1.0f;
-    if (!fem && g.age >= 19)
-        g.facialHair = FacialHair(rh.weighted({young ? 10.0f : 4.0f, 0.25f, 0.9f,
-                                               1.5f + (per == Persona::Heroic || per == Persona::Rogue ? 1.0f : 0.0f),
-                                               1.0f + (elder ? 1.5f : 0.0f) + (per == Persona::Stern ? 1.0f : 0.0f)}));
+    if (!fem && g.age >= 18) {
+        // None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops
+        std::array<float, size_t(FacialHair::Count)> bw{young ? 6.0f : 2.2f, young ? 2.5f : 2.0f, 0.5f, 0.8f, 1.6f, 1.6f, 0.4f, 0.35f, 0.4f};
+        if (elder) { bw[5] += 1.0f; bw[6] += 1.8f; bw[1] *= 0.5f; }
+        if (mature) { bw[5] += 0.6f; bw[6] += 0.5f; }
+        if (per == Persona::Heroic || rogue) { bw[1] += 1.0f; bw[4] += 0.8f; bw[7] += 0.4f; }
+        if (stern) { bw[5] += 1.0f; bw[6] += 0.6f; }
+        if (noble) { bw[3] += 0.8f; bw[2] += 0.4f; bw[0] += 1.0f; }
+        if (villain) { bw[3] += 1.0f; bw[2] += 0.5f; }
+        if (arch == Archetype::Brute) { bw[7] += 1.0f; bw[5] += 1.0f; }
+        if (young) { bw[6] = 0.0f; bw[7] *= 0.3f; }
+        g.facialHair = FacialHair(rh.weighted(std::span<const float>(bw)));
+    }
+    // Beard shadow: shaved men show it, bearded ones carry it around the beard's edge.
+    if (!fem && g.age >= 18)
+        f.stubble = g.facialHair == FacialHair::Stubble ? rh.range(0.6f, 1.0f)
+                  : g.facialHair == FacialHair::None ? (rh.chance(0.5f) ? rh.range(0.15f, 0.5f) : 0.0f)
+                                                    : rh.range(0.35f, 0.7f);
 
     // ---- palette ----
     Rng rc = root.fork(8);

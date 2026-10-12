@@ -81,6 +81,7 @@ private:
     void initHead();
     // head.cpp
     void buildHead();
+    void buildNose();
     void buildFaceDecals();
     // hair.cpp
     void buildHair();
@@ -95,6 +96,7 @@ private:
     void addUnderwear(Part& p, bool chestBand) const;
     size_t torsoPart_ = 0;               // index into parts: torso + legs share one surface
     size_t headPart_ = 0;
+    size_t nosePart_ = SIZE_MAX;
     size_t torsoTriStart_ = 0;           // first torso-loft triangle in the torso part
     uint32_t torsoFirst_ = 0;            // first torso-loft vertex
     int torsoN_ = 0;                     // vertices per torso ring

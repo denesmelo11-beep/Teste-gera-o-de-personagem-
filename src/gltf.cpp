@@ -116,7 +116,7 @@ bool exportGlb(const Character& c, const std::vector<Clip>& clips, const std::st
     for (const Submesh& sm : m.submeshes) {
         if (!sm.indexCount) continue;
         int acc = js.accessor(ibv, sm.firstIndex * (small ? 2u : 4u), small ? 5123 : 5125, sm.indexCount, "SCALAR");
-        int mat = sm.kind == SubmeshKind::Body ? 0 : (sm.kind == SubmeshKind::FaceEyes ? 1 : 2);
+        int mat = sm.kind == SubmeshKind::Body ? 0 : sm.kind == SubmeshKind::FaceEyes ? 1 : sm.kind == SubmeshKind::FaceMouth ? 2 : 3;
         if (!prims.empty()) prims += ",";
         prims += "{\"attributes\":{\"POSITION\":" + std::to_string(aPos) + ",\"NORMAL\":" + std::to_string(aNrm) +
                  ",\"COLOR_0\":" + std::to_string(aCol) + ",\"TEXCOORD_0\":" + std::to_string(aUv) +
@@ -213,12 +213,16 @@ bool exportGlb(const Character& c, const std::vector<Clip>& clips, const std::st
                "\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0},\"metallicFactor\":0,\"roughnessFactor\":0.9},"
                "\"alphaMode\":\"MASK\",\"alphaCutoff\":0.5}";
     };
+    // Skin layer: meant for a 2x multiply blend (texel rgb = multiplier / 2); plain viewers show it as a blend.
+    const std::string skinMat =
+        "{\"name\":\"face_skin_multiply2x\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0},\"metallicFactor\":0,"
+        "\"roughnessFactor\":0.9},\"alphaMode\":\"BLEND\",\"extras\":{\"blend\":\"dst_color,src_color\"}}";
     std::string json = "{\"asset\":{\"version\":\"2.0\",\"generator\":\"chargen procedural character generator\"},"
                        "\"scene\":0,\"scenes\":[{\"nodes\":[" + std::to_string(nb + 1) + "]}],"
                        "\"nodes\":[" + nodes + "],"
                        "\"meshes\":[{\"name\":\"body\",\"primitives\":[" + prims + "]}],"
                        "\"skins\":[{\"inverseBindMatrices\":" + std::to_string(aIbm) + ",\"skeleton\":0,\"joints\":[" + joints + "]}],"
-                       "\"materials\":[" + mat + "," + decalMat("face_eyes") + "," + decalMat("face_mouth") + "],"
+                       "\"materials\":[" + mat + "," + decalMat("face_eyes") + "," + decalMat("face_mouth") + "," + skinMat + "],"
                        "\"samplers\":[{\"magFilter\":9729,\"minFilter\":9729,\"wrapS\":33071,\"wrapT\":33071}],"
                        "\"images\":[{\"bufferView\":" + std::to_string(imgView) + ",\"mimeType\":\"image/png\",\"name\":\"face_atlas\"}],"
                        "\"textures\":[{\"sampler\":0,\"source\":0}],"

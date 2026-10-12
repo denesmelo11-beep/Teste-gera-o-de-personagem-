@@ -9,6 +9,7 @@
 //
 // Interactive:  chargen_viewer [--seed N] [--count K] [--res 480]
 // Headless:     chargen_viewer --shots out_dir   (renders a set of PNGs and exits)
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -140,16 +141,31 @@ void main() {
 }
 )";
 
+// Skin layer: 2x multiply (blend DST_COLOR, SRC_COLOR), texel rgb = multiplier / 2.
+const char* kFSSkin = R"(#version 330
+in vec3 fragPos;
+in vec3 fragNormal;
+in vec4 fragColor;
+in vec2 fragUV;
+uniform sampler2D texture0;
+out vec4 finalColor;
+void main() {
+    vec4 t = texture(texture0, fragUV);
+    vec3 mul = mix(vec3(1.0), t.rgb * 2.0, t.a);
+    finalColor = vec4(mul * 0.5, 1.0);
+}
+)";
+
 struct Actor {
     cg::Character ch;
     std::vector<cg::Clip> clips;
     int clip = 0;
     float time = 0;
     cg::SecondaryMotion* sim = nullptr;
-    Mesh body{}, decal{};
-    Model bodyModel{}, decalModel{};
+    Mesh body{}, decal{}, skinL{};
+    Model bodyModel{}, decalModel{}, skinModel{};
     Texture2D atlas{};
-    std::vector<int> decalMap;  // decal vertex -> mesh vertex
+    std::vector<int> decalMap, skinMap;  // decal vertex -> mesh vertex
     std::vector<cg::Vec3> pos, nrm;
     std::vector<cg::Mat4> global, skin;
     cg::Vec3 worldPos;
@@ -165,6 +181,8 @@ struct Actor {
 cg::GenOptions gGen;  // mesh style for every spawned character (faceted; --crease / --smooth)
 
 cg::Quat yawQuat(float y) { return cg::Quat::axisAngle({0, 1, 0}, y); }
+
+Shader skinSh{};  // skin-layer shader (loaded once)
 
 void buildMeshes(Actor& a, Shader body, Shader decal) {
     const cg::Mesh& m = a.ch.mesh;
@@ -189,54 +207,60 @@ void buildMeshes(Actor& a, Shader body, Shader decal) {
     a.bodyModel = LoadModelFromMesh(a.body);
     a.bodyModel.materials[0].shader = body;
 
-    // Decals: eyes + mouth vertices remapped into their own mesh.
-    std::vector<int> remap(nv, -1);
-    std::vector<unsigned short> idx;
-    for (size_t s = 1; s < m.submeshes.size(); ++s) {
-        const cg::Submesh& sm = m.submeshes[s];
-        for (uint32_t k = 0; k < sm.indexCount; ++k) {
-            uint32_t vi = m.indices[sm.firstIndex + k];
-            if (remap[vi] < 0) {
-                remap[vi] = int(a.decalMap.size());
-                a.decalMap.push_back(int(vi));
+    // Decals: eyes + mouth (alpha-tested, flag in colour alpha) and the skin layer
+    // (multiplied), each remapped into its own mesh.
+    auto makeDecal = [&](std::initializer_list<cg::SubmeshKind> kinds, std::vector<int>& map, Mesh& dm, Model& model, Shader sh) {
+        std::vector<int> remap(nv, -1);
+        std::vector<unsigned short> idx;
+        std::vector<unsigned char> flag;
+        for (const cg::Submesh& sm : m.submeshes) {
+            if (std::find(kinds.begin(), kinds.end(), sm.kind) == kinds.end()) continue;
+            for (uint32_t k = 0; k < sm.indexCount; ++k) {
+                uint32_t vi = m.indices[sm.firstIndex + k];
+                if (remap[vi] < 0) {
+                    remap[vi] = int(map.size());
+                    map.push_back(int(vi));
+                    flag.push_back(sm.kind == cg::SubmeshKind::FaceMouth ? 64 : 255);
+                }
+                idx.push_back((unsigned short)remap[vi]);
             }
-            idx.push_back((unsigned short)remap[vi]);
         }
-    }
-    // Flag eyes vs mouth in the colour alpha.
-    std::vector<unsigned char> flag(a.decalMap.size(), 255);
-    const cg::Submesh& mouth = m.submeshes[2];
-    for (uint32_t k = 0; k < mouth.indexCount; ++k) flag[size_t(remap[m.indices[mouth.firstIndex + k]])] = 64;
-    const size_t nd = a.decalMap.size();
-    a.decal = Mesh{};
-    a.decal.vertexCount = int(nd);
-    a.decal.triangleCount = int(idx.size() / 3);
-    a.decal.vertices = (float*)MemAlloc(unsigned(nd * 3 * sizeof(float)));
-    a.decal.normals = (float*)MemAlloc(unsigned(nd * 3 * sizeof(float)));
-    a.decal.colors = (unsigned char*)MemAlloc(unsigned(nd * 4));
-    a.decal.texcoords = (float*)MemAlloc(unsigned(nd * 2 * sizeof(float)));
-    a.decal.indices = (unsigned short*)MemAlloc(unsigned(idx.size() * sizeof(unsigned short)));
-    for (size_t i = 0; i < nd; ++i) {
-        const cg::Vertex& v = m.vertices[size_t(a.decalMap[i])];
-        a.decal.colors[i * 4] = a.decal.colors[i * 4 + 1] = a.decal.colors[i * 4 + 2] = 255;
-        a.decal.colors[i * 4 + 3] = flag[i];
-        a.decal.texcoords[i * 2] = v.uv.x;
-        a.decal.texcoords[i * 2 + 1] = v.uv.y;
-    }
-    std::memcpy(a.decal.indices, idx.data(), idx.size() * sizeof(unsigned short));
-    UploadMesh(&a.decal, true);
-    a.decalModel = LoadModelFromMesh(a.decal);
-    a.decalModel.materials[0].shader = decal;
+        const size_t nd = map.size();
+        dm = Mesh{};
+        dm.vertexCount = int(nd);
+        dm.triangleCount = int(idx.size() / 3);
+        dm.vertices = (float*)MemAlloc(unsigned(std::max<size_t>(nd, 1) * 3 * sizeof(float)));
+        dm.normals = (float*)MemAlloc(unsigned(std::max<size_t>(nd, 1) * 3 * sizeof(float)));
+        dm.colors = (unsigned char*)MemAlloc(unsigned(std::max<size_t>(nd, 1) * 4));
+        dm.texcoords = (float*)MemAlloc(unsigned(std::max<size_t>(nd, 1) * 2 * sizeof(float)));
+        dm.indices = (unsigned short*)MemAlloc(unsigned(std::max<size_t>(idx.size(), 3) * sizeof(unsigned short)));
+        for (size_t i = 0; i < nd; ++i) {
+            const cg::Vertex& v = m.vertices[size_t(map[i])];
+            dm.colors[i * 4] = dm.colors[i * 4 + 1] = dm.colors[i * 4 + 2] = 255;
+            dm.colors[i * 4 + 3] = flag[i];
+            dm.texcoords[i * 2] = v.uv.x;
+            dm.texcoords[i * 2 + 1] = v.uv.y;
+        }
+        if (!idx.empty()) std::memcpy(dm.indices, idx.data(), idx.size() * sizeof(unsigned short));
+        UploadMesh(&dm, true);
+        model = LoadModelFromMesh(dm);
+        model.materials[0].shader = sh;
+    };
+    makeDecal({cg::SubmeshKind::FaceEyes, cg::SubmeshKind::FaceMouth}, a.decalMap, a.decal, a.decalModel, decal);
+    makeDecal({cg::SubmeshKind::FaceSkin}, a.skinMap, a.skinL, a.skinModel, skinSh);
     const cg::Image& at = a.ch.faceAtlas;
     Image img{(void*)at.rgba.data(), at.width, at.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     a.atlas = LoadTextureFromImage(img);
+    if (const char* dump = std::getenv("CHARGEN_DUMPATLAS"); dump && !FileExists(dump)) ExportImage(img, dump);
     SetTextureFilter(a.atlas, TEXTURE_FILTER_BILINEAR);
     a.decalModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = a.atlas;
+    a.skinModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = a.atlas;
 }
 
 void unload(Actor& a) {
     UnloadModel(a.bodyModel);
     UnloadModel(a.decalModel);
+    UnloadModel(a.skinModel);
     UnloadTexture(a.atlas);
     delete a.sim;
     a.sim = nullptr;
@@ -273,6 +297,15 @@ void update(Actor& a, float dt) {
     }
     UpdateMeshBuffer(a.decal, 0, a.decal.vertices, int(a.decalMap.size() * 3 * sizeof(float)), 0);
     UpdateMeshBuffer(a.decal, 2, a.decal.normals, int(a.decalMap.size() * 3 * sizeof(float)), 0);
+    if (!a.skinMap.empty()) {
+        for (size_t i = 0; i < a.skinMap.size(); ++i) {
+            size_t vi = size_t(a.skinMap[i]);
+            std::memcpy(&a.skinL.vertices[i * 3], &a.body.vertices[vi * 3], 3 * sizeof(float));
+            std::memcpy(&a.skinL.normals[i * 3], &a.body.normals[vi * 3], 3 * sizeof(float));
+        }
+        UpdateMeshBuffer(a.skinL, 0, a.skinL.vertices, int(a.skinMap.size() * 3 * sizeof(float)), 0);
+        UpdateMeshBuffer(a.skinL, 2, a.skinL.normals, int(a.skinMap.size() * 3 * sizeof(float)), 0);
+    }
 }
 
 struct Scene {
@@ -348,6 +381,14 @@ void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
     SetShaderValue(s.decal, s.locLightD, lp, SHADER_UNIFORM_VEC3);
     for (Actor& a : s.actors) {
         DrawModel(a.bodyModel, {0, 0, 0}, 1.0f, WHITE);
+        if (!a.skinMap.empty() && !std::getenv("CHARGEN_NOSKIN")) {
+            rlSetBlendFactors(RL_DST_COLOR, RL_SRC_COLOR, RL_FUNC_ADD);
+            BeginBlendMode(BLEND_CUSTOM);
+            rlDisableDepthMask();
+            DrawModel(a.skinModel, {0, 0, 0}, 1.0f, WHITE);
+            rlEnableDepthMask();
+            EndBlendMode();
+        }
         cg::Vec2 eo = cg::FaceLayout::eyeUvOffset(a.face.eyes), mo = cg::FaceLayout::mouthUvOffset(a.face.mouth);
         float e[2] = {eo.x, eo.y}, mm[2] = {mo.x, mo.y};
         SetShaderValue(s.decal, s.locEye, e, SHADER_UNIFORM_VEC2);
@@ -763,8 +804,14 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
         o.sex = cg::Sex::Male;
         o.age = cg::AgeGroup(1 + i % 3);
         o.hair = hs[i];
+        // CHARGEN_HEADRAND=m|f: plain random people of that sex (identity check), else the hair/beard tour.
+        const char* hr = std::getenv("CHARGEN_HEADRAND");
+        if (hr) {
+            o = cg::GenomeOptions{};
+            o.sex = hr[0] == 'f' ? cg::Sex::Female : cg::Sex::Male;
+        }
         cg::Genome g = cg::randomGenome(seed + uint64_t(i), o);
-        g.facialHair = cg::FacialHair(i % int(cg::FacialHair::Count));
+        if (!hr) g.facialHair = cg::FacialHair(i % int(cg::FacialHair::Count));
         s.actors.emplace_back();
         Actor& a = s.actors.back();
         a.ch = cg::generateCharacter(g, gGen);
@@ -777,7 +824,9 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
         for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
         cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
         float hh = a.ch.height / a.ch.genome.body.headsTall;
-        Camera3D cam = makeCam({head.x, head.y + 0.05f * hh, head.z}, 0.55f, 0.06f, hh * 4.6f, 30.0f);
+        const char* hy = std::getenv("CHARGEN_HEADYAW");
+        const float hz = std::getenv("CHARGEN_HEADZOOM") ? float(std::atof(std::getenv("CHARGEN_HEADZOOM"))) : 4.6f;
+        Camera3D cam = makeCam({head.x, head.y + 0.05f * hh, head.z}, hy ? float(std::atof(hy)) : 0.55f, 0.06f, hh * hz, 30.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
         ClearBackground(BLACK);
@@ -868,6 +917,7 @@ int main(int argc, char** argv) {
     Scene s;
     s.body = LoadShaderFromMemory(kVS, kFSBody);
     s.decal = LoadShaderFromMemory(kVSDecal, kFSDecal);
+    skinSh = LoadShaderFromMemory(kVSDecal, kFSSkin);
     s.locLight = GetShaderLocation(s.body, "lightDir");
     s.locView = GetShaderLocation(s.body, "viewPos");
     s.locSky = GetShaderLocation(s.body, "skyColor");

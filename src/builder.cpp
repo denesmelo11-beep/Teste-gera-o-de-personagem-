@@ -535,7 +535,7 @@ std::vector<std::array<Vec3, 3>> cornerNormals(const Part& part, const std::vect
 }  // namespace
 
 void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float creaseDeg) {
-    const SubmeshKind order[] = {SubmeshKind::Body, SubmeshKind::FaceEyes, SubmeshKind::FaceMouth};
+    const SubmeshKind order[] = {SubmeshKind::Body, SubmeshKind::FaceSkin, SubmeshKind::FaceEyes, SubmeshKind::FaceMouth};
     auto quant = [](Vec3 n) {
         auto q = [](float c) { return uint64_t(std::lround((c + 1.0f) * 1023.0f)) & 0x7FF; };
         return q(n.x) | (q(n.y) << 11) | (q(n.z) << 22);

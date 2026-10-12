@@ -132,7 +132,7 @@ void Builder::buildHair() {
 
     const bool tied = isTiedHair(style);
     const bool elderBald = style == HairStyle::Bald && g.age > 45;
-    if (style == HairStyle::Bald && !elderBald) return;
+    if (style == HairStyle::Bald && !elderBald && g.facialHair != FacialHair::BraidedBeard) return;
 
     // ---- scalp cap ----
     struct CapSpec {
@@ -168,6 +168,10 @@ void Builder::buildHair() {
         for (int i = 0; i < rows; ++i)
             for (int j = 0; j < cols; ++j) {
                 uint32_t a = idx(i, j), b = idx(i + 1, j), c = idx(i + 1, j + 1), d = idx(i, j + 1);
+                // A partial cap (horseshoe) pinches to nothing where its hairline meets its top.
+                const float th0 = kTau * j / cols, th1 = kTau * (j + 1) / cols;
+                const float l0 = line(std::fabs(std::remainder(th0 - kPi / 2, kTau))), l1 = line(std::fabs(std::remainder(th1 - kPi / 2, kTau)));
+                if (!closed && std::min(cs.top - l0, cs.top - l1) < 0.015f) continue;
                 p.tris.push_back({a, b, c, capMat});
                 p.tris.push_back({a, c, d, capMat});
             }
@@ -194,15 +198,23 @@ void Builder::buildHair() {
     const Mat shaved{lerp(c0 * 0.80f, g.palette.skin, 0.72f), MaterialClass::Skin};
     const Mat faded{lerp(c0 * 0.80f, g.palette.skin, 0.45f), MaterialClass::Skin};
     switch (style) {
-        case HairStyle::Bald: cap({0.62f, 0.60f, 0.42f, 0.30f, 0.26f, 0.025f * h, 0.60f}, 0, hairMat); break;  // horseshoe (sides/back only)
+        case HairStyle::Bald:
+            if (elderBald) cap({0.60f, 0.60f, 0.44f, 0.30f, 0.26f, 0.025f * h, 0.60f}, 0, hairMat);  // horseshoe (sides/back only)
+            break;  // horseshoe (sides/back only)
         case HairStyle::Buzz: cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.016f * h, 1.0f}, 0, hairMat); break;
         case HairStyle::Undercut:
-        case HairStyle::Mohawk:
-        case HairStyle::CrewCut:
-        case HairStyle::Pompadour: {
-            const bool shave = style == HairStyle::Undercut || style == HairStyle::Mohawk;
+        case HairStyle::CrewCut: {
+            const bool shave = style == HairStyle::Undercut;
             cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.013f * h, 1.0f, 0.0f}, 0, shave ? shaved : faded);  // shaved / faded sides
             if (style == HairStyle::Undercut) cap({0.80f, 0.74f, 0.74f, 0.70f, 0.66f, capT * 1.1f, 1.0f}, 0.0f, hairMat);  // full top
+            break;
+        }
+        case HairStyle::Tonsure: {  // monk's ring: the crown is shaved
+            CapSpec c = shortCap;
+            c.thick = 0.018f * h;
+            c.tips = 0.0f;
+            c.top = 0.86f;
+            cap(c, 0.0f, hairMat);
             break;
         }
         case HairStyle::Afro: {  // a big rounded volume of tight curls
@@ -232,8 +244,12 @@ void Builder::buildHair() {
             case HairStyle::ManBun: case HairStyle::MessyBun: ties = {headSurface(270 * deg, 0.88f, 0.0f)}; break;
             case HairStyle::Topknot: ties = {headSurface(270 * deg, 0.97f, 0.0f)}; break;
             case HairStyle::LowPonytail: ties = {headSurface(270 * deg, 0.40f, 0.0f)}; break;
-            case HairStyle::TwinTails: case HairStyle::SpaceBuns:
-                ties = {headSurface(215 * deg, 0.84f, 0.0f), headSurface(325 * deg, 0.84f, 0.0f)}; break;
+            case HairStyle::CrownBraid:  // combed up and back into a braid wound round the head
+                for (int k = 0; k < 16; ++k) {
+                    const float th = kTau * float(k) / 16.0f;
+                    ties.push_back(headSurface(th, 0.80f + 0.08f * std::sin(th), 0.0f));
+                }
+                break;
             case HairStyle::TwinBraids: ties = {headSurface(190 * deg, 0.45f, 0.0f), headSurface(350 * deg, 0.45f, 0.0f)}; break;
             case HairStyle::SideBraid: ties = {headSurface(g.partSide > 0 ? 200 * deg : 340 * deg, 0.45f, 0.0f)}; break;
             default: ties = {headSurface(270 * deg, 0.52f, 0.0f)}; break;
@@ -283,18 +299,18 @@ void Builder::buildHair() {
                 L = 0.20f; W = 0.17f; Tk = 0.032f; jit = 0.05f;
                 hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.74f}, {1.57f, 0.70f}, {2.3f, 0.66f}, {kPi, 0.62f}};
                 break;
-            case HairStyle::Mohawk:  // a crest from forehead to nape, swept back (never spiked up)
-                flow = [&](Vec3 q) { return Vec3{0, 0.15f, -1.0f} + away(q) * 0.1f; };
-                L = 0.40f; W = 0.22f; Tk = 0.11f; lift = 0.06f; jit = 0.04f;
-                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.76f}, {1.57f, 0.74f}, {2.3f, 0.55f}, {kPi, 0.40f}};
+            case HairStyle::Tonsure:  // a ring of short hair combed down around a shaved crown
+                flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.6f, 0}; };
+                L = 0.22f; W = 0.18f; Tk = 0.040f; jit = 0.10f;
                 break;
-            case HairStyle::Pompadour:  // volume at the front swept up and back, short tapered sides
-                flow = [&](Vec3 q) {
-                    float front = smoothstep(0.0f, 0.3f * h, q.z - m.headOrigin.z);
-                    return Vec3{0, 0.22f * front - 0.25f, -1.0f} + away(q) * 0.15f;
-                };
-                L = 0.42f; W = 0.23f; Tk = 0.040f; lift = 0.0f; jit = 0.03f;
-                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.74f}, {1.57f, 0.72f}, {2.3f, 0.68f}, {kPi, 0.64f}};
+            case HairStyle::WarriorBraids:  // pulled straight back off the face (the braids and mass hang below)
+                flow = [&](Vec3 q) { return Vec3{0, -0.30f, -1.0f} + away(q) * 0.25f; };
+                L = 0.42f; W = 0.22f; Tk = 0.034f; jit = 0.04f;
+                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.70f}, {1.57f, 0.66f}, {2.3f, 0.82f}, {kPi, 0.86f}};
+                break;
+            case HairStyle::BowlCut:  // combed down from the crown all round
+                flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.4f, 0}; };
+                L = 0.34f; W = 0.22f; Tk = 0.034f; jit = 0.04f;
                 break;
             case HairStyle::Curly:  // short, dense, tight curls
                 flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.2f, 0}; };
@@ -349,7 +365,7 @@ void Builder::buildHair() {
                     float th = kTau * (float(j) + 0.5f * float(row % 2) + r.range(-0.12f, 0.12f)) / float(nAround);
                     float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
                     if (sr < hairline(phi) + 0.02f) continue;
-                    if (style == HairStyle::Mohawk && std::fabs(headSurface(th, sr, 0.0f).x - m.headOrigin.x) > 0.13f * h) continue;
+                    if (style == HairStyle::Tonsure && sr > 0.83f) continue;
                     Vec3 col = c0 * r.range(0.90f, 1.08f);
                     Vec3 jdir{r.range(-jit, jit), r.range(-0.3f * jit, 0.3f * jit), r.range(-jit, jit)};
                     auto fl = [&, jdir](Vec3 q) { return normalize(flow(q), Vec3{0, -1, 0}) + jdir; };
@@ -361,91 +377,6 @@ void Builder::buildHair() {
     }
 
     const Vec3 down{0, -1, 0}, fwd{0, 0, 1}, back{0, 0, -1};
-    // ---- free-standing locks: crests and quiffs that rise off the scalp ----
-    // A closed diamond section (wide along wAxis, thin across it, ridge raised
-    // away from the head) tapering to a point; every face is a clean plane.
-    auto freeLock = [&](Part& fp, std::vector<Vec3> pts, Vec3 wAxis, float width, float thick, Vec3 col) {
-        for (size_t k = 1; k < pts.size(); ++k) pts[k] = collide(pts[k], 0.012f * h);
-        const size_t n = pts.size();
-        const SkinW w = one(head);
-        auto addV = [&](Vec3 v) {
-            fp.pos.push_back(v);
-            fp.w.push_back(w);
-            fp.uv.push_back({});
-            return uint32_t(fp.pos.size() - 1);
-        };
-        const size_t t0 = fp.tris.size();
-        std::vector<std::array<uint32_t, 4>> rings;
-        for (size_t k = 0; k + 1 < n; ++k) {
-            const float t = float(k) / float(n - 1);
-            const Vec3 T = normalize(pts[k + 1] - pts[k > 0 ? k - 1 : 0], Vec3{0, 1, 0});
-            const Vec3 Wd = normalize(wAxis - T * dot(wAxis, T), Vec3{1, 0, 0});
-            Vec3 Nd = normalize(cross(T, Wd), Vec3{0, 1, 0});
-            if (dot(Nd, pts[k] - hc) < 0) Nd = Nd * -1.0f;
-            const float hw = 0.5f * width * std::pow(1.0f - 0.80f * t, 0.8f), ht = 0.5f * thick * (1.0f - 0.6f * t);
-            rings.push_back({addV(pts[k] + Wd * hw), addV(pts[k] + Nd * (1.5f * ht)), addV(pts[k] - Wd * hw), addV(pts[k] - Nd * ht)});
-        }
-        const uint32_t tip = addV(pts.back());
-        const Mat mt{col, MaterialClass::Hair};
-        for (size_t k = 0; k + 1 < rings.size(); ++k)
-            for (int j = 0; j < 4; ++j) {
-                const uint32_t a = rings[k][size_t(j)], b = rings[k][size_t((j + 1) % 4)], c = rings[k + 1][size_t((j + 1) % 4)],
-                               d = rings[k + 1][size_t(j)];
-                fp.tris.push_back({a, b, c, mt});
-                fp.tris.push_back({a, c, d, mt});
-            }
-        for (int j = 0; j < 4; ++j) fp.tris.push_back({rings.back()[size_t(j)], rings.back()[size_t((j + 1) % 4)], tip, Mat{col * 1.06f, MaterialClass::Hair}});
-        fp.tris.push_back({rings[0][0], rings[0][2], rings[0][1], mt});
-        fp.tris.push_back({rings[0][0], rings[0][3], rings[0][2], mt});
-        // Winding: outward from the lock's own axis.
-        for (size_t i = t0; i < fp.tris.size(); ++i) {
-            auto& tr = fp.tris[i];
-            const Vec3 A = fp.pos[tr.a], B = fp.pos[tr.b], C = fp.pos[tr.c], ctr = (A + B + C) / 3.0f;
-            float best = 1e30f;
-            Vec3 axis = pts[0];
-            for (size_t k = 0; k + 1 < n; ++k) {
-                const Vec3 ab = pts[k + 1] - pts[k];
-                const Vec3 q = pts[k] + ab * saturate(dot(ctr - pts[k], ab) / std::max(1e-9f, dot(ab, ab)));
-                if (length(q - ctr) < best) best = length(q - ctr), axis = q;
-            }
-            Vec3 out = i + 2 >= fp.tris.size() ? pts[0] - pts[1] : ctr - axis;
-            if (dot(cross(B - A, C - A), out) < 0) std::swap(tr.b, tr.c);
-        }
-    };
-    if (style == HairStyle::Mohawk) {  // a tall crest of swept-back spikes from the forehead to the nape
-        Part& fp = newPart();
-        const int K = lod.sparseRings ? 8 : 12;
-        for (int k = 0; k < K; ++k) {
-            const float a = float(k) / float(K - 1);
-            const float th = a < 0.30f ? kPi / 2 : 1.5f * kPi;
-            const float sv = a < 0.30f ? lerp(0.80f, 0.985f, a / 0.30f) : lerp(0.985f, 0.46f, (a - 0.30f) / 0.70f);
-            const Vec3 root = headSurface(th, sv, 0.0f), N = headNormalDir(root);
-            const float H = (0.13f + 0.17f * bump((a - 0.36f) / 0.50f)) * h * vol * r.range(0.95f, 1.05f);
-            const Vec3 dir = normalize(N + back * 0.85f + Vec3{0, 0.25f, 0});
-            const Vec3 sag = normalize(cross(Vec3{1, 0, 0}, N), Vec3{0, 0, 1});
-            std::vector<Vec3> pts{root - N * (0.01f * h), root + dir * (0.40f * H), root + dir * (0.78f * H) + back * (0.05f * H),
-                                  root + dir * H + back * (0.22f * H)};
-            freeLock(fp, pts, sag, 0.27f * h, 0.085f * h * vol, c0 * (k % 2 ? 0.94f : 1.04f));
-        }
-    }
-    if (style == HairStyle::Pompadour) {  // a raised quiff over the forehead rolling back over the top
-        Part& fp = newPart();
-        const int K = lod.sparseRings ? 4 : 5;
-        for (int row = 0; row < 3; ++row)
-            for (int i = 0; i < K; ++i) {
-                const float u = (float(i) + 0.5f + 0.5f * float(row % 2) - 0.25f) / float(K) * 2.0f - 1.0f;
-                const float th = kPi / 2 - u * 0.66f;
-                const Vec3 root = headSurface(th, 0.79f + 0.08f * float(row) + 0.03f * (1.0f - u * u), 0.0f), N = headNormalDir(root);
-                const float H = (0.20f - 0.04f * float(row)) * h * vol * (0.75f + 0.25f * (1.0f - u * u));
-                const Vec3 p1 = root + N * (0.55f * H) + fwd * (0.05f * h) + Vec3{0, 0.03f * h, 0};
-                const Vec3 p2 = p1 + Vec3{0, 0.40f * H, 0} + back * (0.08f * h);
-                const Vec3 p3 = p2 + back * (0.18f * h) + Vec3{u * 0.02f * h, -0.01f * h, 0};
-                const Vec3 p4 = p3 + back * (0.18f * h) + Vec3{u * 0.04f * h, -0.08f * h, 0};
-                freeLock(fp, {root - N * (0.01f * h), p1, p2, p3, p4}, Vec3{1, 0, 0}, 0.19f * h, 0.075f * h * vol,
-                         c0 * ((i + row) % 2 ? 0.95f : 1.03f));
-            }
-    }
-
     // ---- locks ----
     std::vector<LockSpec> locks;
     const float part = g.partSide;
@@ -493,6 +424,40 @@ void Builder::buildHair() {
         Part& bp = newPart();
         bp.smoothAlways = true;
         emitEllipsoid(bp, e, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return hairMat; });
+    };
+
+    // A braid wound round the head (crown braid): a twisted, beaded tube on the scalp.
+    auto braidLoop = [&](float s0, float sAmp, float radius) {
+        Part& bp = newPart();
+        const int K = lod.sparseRings ? 20 : 32, S = 6;
+        const float R = radius * h;
+        std::vector<Vec3> path;
+        for (int k = 0; k < K; ++k) {
+            const float th = kTau * float(k) / float(K);
+            path.push_back(headSurface(th, s0 + sAmp * std::sin(th), 0.55f * R + 0.012f * h));
+        }
+        const SkinW w = one(head);
+        for (int k = 0; k < K; ++k) {
+            const Vec3 c = path[size_t(k)], T = normalize(path[size_t((k + 1) % K)] - path[size_t((k + K - 1) % K)]);
+            const Vec3 N0 = headNormalDir(c), N = normalize(N0 - T * dot(N0, T)), B = cross(T, N);
+            const float bead = 0.80f + 0.30f * std::fabs(std::sin(kPi * float(k) / 2.0f + 0.5f));  // a plait every two steps
+            for (int j = 0; j < S; ++j) {
+                const float a = kTau * float(j) / float(S) + 0.9f * float(k);  // twist
+                bp.pos.push_back(c + (N * std::cos(a) * 0.75f + B * std::sin(a)) * (R * bead));
+                bp.w.push_back(w);
+                bp.uv.push_back({});
+            }
+        }
+        for (int k = 0; k < K; ++k)
+            for (int j = 0; j < S; ++j) {
+                const uint32_t a = uint32_t(k * S + j), b = uint32_t(k * S + (j + 1) % S), c = uint32_t(((k + 1) % K) * S + (j + 1) % S),
+                               d = uint32_t(((k + 1) % K) * S + j);
+                const Mat mt{c0 * (k % 2 ? 0.92f : 1.04f), MaterialClass::Hair};
+                const Vec3 ctr = (bp.pos[a] + bp.pos[c]) * 0.5f, axis = (path[size_t(k)] + path[size_t((k + 1) % K)]) * 0.5f;
+                const bool flip = dot(cross(bp.pos[b] - bp.pos[a], bp.pos[c] - bp.pos[a]), ctr - axis) < 0;
+                bp.tris.push_back(flip ? Part::Tri{a, c, b, mt} : Part::Tri{a, b, c, mt});
+                bp.tris.push_back(flip ? Part::Tri{a, d, c, mt} : Part::Tri{a, c, d, mt});
+            }
     };
 
     // Hair mass for longer cuts: one thick, continuous sheet around the back and
@@ -830,11 +795,20 @@ void Builder::buildHair() {
             fringe(1.0f);
             break;
         }
-        case HairStyle::TwinTails:
-            for (float sd : {1.0f, -1.0f})
-                tail((sd > 0 ? 215 : 325) * deg, 0.84f, normalize(back * 0.35f + Vec3{(sd > 0 ? 0.0f : 0.0f) + thetaDir((sd > 0 ? 215 : 325) * deg).x * 0.9f, 0.35f, 0}), 1.5f * len, 0.115f, false);
-            fringe(0.9f);
+        case HairStyle::CrownBraid:  // milkmaid braid wound round the head
+            braidLoop(0.79f, 0.10f, 0.088f * vol);
             break;
+        case HairStyle::WarriorBraids: {  // northern warrior: hair pulled back, two braids from the temples
+            const bool fm = g.femininity > 0.5f;
+            SheetSpec backMass{172 * deg, 368 * deg, (fm ? 2.2f : 1.45f) * len, 0.070f * h * vol, 0.74f, 0.90f, 0.85f, 0.04f, 0.16f, 7,
+                               1.0f, 0.4f, 0.05f};
+            backMass.fwdBias = -0.30f;
+            sheet(backMass);
+            for (float sd : {1.0f, -1.0f})
+                tail((sd > 0 ? 34 : 146) * deg, 0.66f, normalize(down + fwd * 0.25f + Vec3{sd * 0.08f, 0, 0}), (fm ? 1.7f : 1.4f) * len, 0.062f,
+                     true);
+            break;
+        }
         case HairStyle::TwinBraids:
             for (float sd : {1.0f, -1.0f})
                 tail((sd > 0 ? 190 : 350) * deg, 0.45f, normalize(down + fwd * 0.35f + Vec3{-sd * 0.2f, 0, 0} * -1.0f), 1.7f * len, 0.085f, true);
@@ -850,11 +824,14 @@ void Builder::buildHair() {
             tail(270 * deg, 0.40f, normalize(back * 0.3f + down), 2.0f * len, 0.11f, false);
             if (g.fringe != Fringe::None) fringe(1.0f);
             break;
-        case HairStyle::SpaceBuns:
-            bunAt(222 * deg, 0.88f, 0.23f * vol);
-            bunAt(318 * deg, 0.88f, 0.23f * vol);
-            fringe(0.9f);
+        case HairStyle::BowlCut: {  // the medieval page-boy: level all round, straight fringe
+            SheetSpec bowl{120 * deg, 420 * deg, 0.50f, 0.060f * h * vol, 0.76f, 0.88f, 1.0f, 0.30f, 0.14f, 8, 2.4f, 0.5f, 0.04f};
+            bowl.lenOf = [](float x) { return lerp(0.62f, 1.0f, 1.0f - std::fabs(2.0f * x - 1.0f)); };
+            bowl.tipLen = 0.015f;
+            sheet(bowl);
+            fringe(0.72f);
             break;
+        }
         case HairStyle::MessyBun:
             bunAt(270 * deg, 0.88f, 0.19f * vol);
             sideFrame(0.60f, 0.14f);
@@ -903,6 +880,13 @@ void Builder::buildHair() {
             break;
         }
         default: break;
+    }
+
+    // Braided beards: one or two plaits hanging from the chin (with physics).
+    if (g.facialHair == FacialHair::BraidedBeard) {
+        const bool two = g.seed % 2 == 0;
+        for (float off : two ? std::vector<float>{-0.16f, 0.16f} : std::vector<float>{0.0f})
+            tail(kPi / 2 + off, 0.035f, normalize(down + fwd * 0.12f), 0.55f * std::max(0.8f, g.hairLength), 0.050f, true);
     }
 
     // ---- grow (styling pass with head/body collision), rig and mesh ----
@@ -1006,101 +990,166 @@ void Builder::buildHair() {
     }
 }
 
-// Beards and moustaches: shells over the jaw following the sculpted face.
-// Facial hair as solid low-poly masses (faceted like the rest of the head):
-//  * beard: a shell around the jaw from ear to ear, its upper line running from
-//    the sideburn down the cheek to under the lower lip, thickest at the chin,
-//    with a hem of a few large points;
-//  * moustache: one bar over the upper lip that droops past the mouth corners.
+// Facial hair grows like the scalp hair: columns of locks rooted on the skin along
+// the beard line, combed down the face and, past the jaw, hanging with gravity.
+// The upper edge lies flush on the skin (the painted beard shadow carries it on),
+// the mass thickens towards the jaw and ends in a soft, rounded hem of lock tips.
+// The moustache is the same thing in small: locks from under the nose, combed
+// down and out over the lip.
 void Builder::buildFacialHair() {
     const FacialHair fh = g.facialHair;
-    if (fh == FacialHair::None) return;
+    if (fh == FacialHair::None || fh == FacialHair::Stubble) return;
     const float h = m.h;
     const int head = ch.rig.head;
-    const Vec3 col = lerp(g.palette.hair, g.palette.skin * 0.45f, 0.15f);
-    Part& p = newPart();
+    Rng r = Rng(g.seed).fork(58);
+    const Vec3 col = lerp(g.palette.hair, g.palette.brow, 0.25f);
+    const Vec3 tipCol = lerp(col, g.palette.hairTip * 1.1f, 0.5f);
+    const Vec3 hcen = headCenter();
     const SkinW w = one(head);
-    auto addV = [&](Vec3 v) {
-        p.pos.push_back(v);
-        p.w.push_back(w);
-        p.uv.push_back({});
-        return uint32_t(p.pos.size() - 1);
-    };
+    const float mw = g.face.mouthWidth, len = std::max(0.75f, g.hairLength);
     auto onFace = [&](float th, float sv, float off) {
         Vec3 q = headPoint(th, std::max(sv, 0.0f));
         if (sv < 0.0f) q.y += sv * h;
         return q + headNormalDir(q) * off;
     };
-    const Vec3 hcen = headCenter();
-    auto tri = [&](uint32_t a, uint32_t b, uint32_t c, Vec3 shade) {
-        const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
-        Vec3 nrm = cross(B - A, C - A), out = (A + B + C) / 3.0f - hcen;
-        if (dot(nrm, out) < 0) std::swap(b, c);
-        p.tris.push_back({a, b, c, Mat{shade, MaterialClass::Hair}});
+
+    // A sheet of locks: column c has points pts[c][k]; out[c][k] its outward direction.
+    struct Sheet {
+        std::vector<std::vector<Vec3>> pts, nrm;
+        std::vector<std::vector<float>> thick;
     };
-    const float mw = g.face.mouthWidth;
-    const bool full = fh == FacialHair::FullBeard, shortB = fh == FacialHair::ShortBeard, goatee = fh == FacialHair::Goatee;
-    if (full || shortB || goatee) {
-        // Columns across the jaw (theta 0 = right ear, pi/2 = chin front, pi = left ear).
-        const float th0 = goatee ? kPi / 2 - 0.55f : -0.12f, th1 = kPi - th0;
-        const int NC = goatee ? 6 : 14, NR = 3;
-        const float thick = (full ? 0.030f : shortB ? 0.010f : 0.020f) * h;
-        const float drop = full ? 0.08f * std::max(0.7f, g.hairLength) : goatee ? 0.03f : 0.0f;
-        std::vector<std::vector<uint32_t>> outer(NC + 1), inner(NC + 1);
-        for (int c = 0; c <= NC; ++c) {
-            const float th = lerp(th0, th1, float(c) / NC), sn = std::max(0.0f, std::sin(th)), ax = std::fabs(std::cos(th));
-            const float front = smoothstep(0.55f, 0.18f, ax);                    // 1 at the chin front
-            // Top line: sideburn at the ear, down the cheek, under the lower lip at the front.
-            float sTop = goatee ? 0.19f : lerp(0.36f - 0.12f * sn, 0.185f, front * smoothstep(0.30f, 0.10f, ax / std::max(mw, 0.5f)));
-            // Bottom: under the jaw at the sides, a pointed hem at the chin.
-            const bool tipCol = c % 2 == 1;
-            const float chin = smoothstep(0.90f, 0.25f, ax);  // the hem's points spread across the whole chin
-            float sBot = -0.02f - (drop * (0.55f + 0.45f * front) + (tipCol ? 0.022f : 0.0f) * (full ? 1.0f : 0.5f)) * chin * (shortB ? 0.0f : 1.0f);
-            if (!goatee) sBot = lerp(sBot, 0.02f, smoothstep(0.75f, 1.0f, ax));
-            for (int r = 0; r <= NR; ++r) {
-                float f = float(r) / NR, sv = lerp(sTop, sBot, f);
-                float edge = std::min(f, 1.0f - f) * 2.0f;                             // 0 on the borders
-                float side = goatee ? std::min(float(c), float(NC - c)) / 1.5f : 1.0f; // goatee: taper the sides too
-                float off = 0.003f * h + thick * std::min(1.0f, 0.35f + edge) * (0.6f + 0.4f * front) * std::min(side, 1.0f);
-                outer[size_t(c)].push_back(addV(onFace(th, sv, off)));
-                inner[size_t(c)].push_back(addV(onFace(th, sv, -0.004f * h)));
+    auto emitSheet = [&](const Sheet& S, bool closeHem) {
+        Part& p = newPart();
+        const size_t C = S.pts.size(), K = S.pts[0].size();
+        std::vector<std::vector<uint32_t>> O(C), I(C);
+        auto addV = [&](Vec3 v) {
+            p.pos.push_back(v);
+            p.w.push_back(w);
+            p.uv.push_back({});
+            return uint32_t(p.pos.size() - 1);
+        };
+        for (size_t c = 0; c < C; ++c)
+            for (size_t k = 0; k < K; ++k) {
+                const float ridge = (c % 2 == 0 ? 0.30f : -0.15f) * smoothstep(0.0f, 0.3f, float(k) / float(K - 1));
+                O[c].push_back(addV(S.pts[c][k] + S.nrm[c][k] * (S.thick[c][k] * (1.0f + ridge))));
+                I[c].push_back(addV(S.pts[c][k] - S.nrm[c][k] * (0.002f * h)));
             }
-        }
-        for (int c = 0; c < NC; ++c)
-            for (int r = 0; r < NR; ++r) {
-                Vec3 sh = col * (0.94f + 0.08f * float((c + r) % 2));
-                tri(outer[size_t(c)][size_t(r)], outer[size_t(c + 1)][size_t(r)], outer[size_t(c + 1)][size_t(r + 1)], sh);
-                tri(outer[size_t(c)][size_t(r)], outer[size_t(c + 1)][size_t(r + 1)], outer[size_t(c)][size_t(r + 1)], sh);
+        auto tri = [&](uint32_t a, uint32_t b, uint32_t c2, Vec3 out, Vec3 shade) {
+            const Vec3 A = p.pos[a], B = p.pos[b], Cc = p.pos[c2];
+            if (dot(cross(B - A, Cc - A), out) < 0) std::swap(b, c2);
+            p.tris.push_back({a, b, c2, Mat{shade, MaterialClass::Hair}});
+        };
+        for (size_t c = 0; c + 1 < C; ++c)
+            for (size_t k = 0; k + 1 < K; ++k) {
+                const float t = float(k) / float(K - 1);
+                const Vec3 sh = lerp(col, tipCol, smoothstep(0.5f, 1.0f, t)) * (c % 2 == 0 ? 1.03f : 0.95f);
+                const Vec3 n = S.nrm[c][k] + S.nrm[c + 1][k + 1];
+                tri(O[c][k], O[c + 1][k], O[c + 1][k + 1], n, sh);
+                tri(O[c][k], O[c + 1][k + 1], O[c][k + 1], n, sh);
+                // Underside of the hanging part (seen from below and from the sides).
+                tri(I[c][k], I[c + 1][k + 1], I[c + 1][k], n * -1.0f, col * 0.75f);
+                tri(I[c][k], I[c][k + 1], I[c + 1][k + 1], n * -1.0f, col * 0.75f);
             }
-        // Hem and side walls (only visible where the beard has thickness).
-        for (int c = 0; c < NC; ++c) {
-            tri(outer[size_t(c)][NR], inner[size_t(c)][NR], inner[size_t(c + 1)][NR], col * 0.8f);
-            tri(outer[size_t(c)][NR], inner[size_t(c + 1)][NR], outer[size_t(c + 1)][NR], col * 0.8f);
+        if (closeHem)
+            for (size_t c = 0; c + 1 < C; ++c) {
+                const Vec3 dn = S.pts[c][K - 1] - S.pts[c][K - 2];
+                tri(O[c][K - 1], I[c][K - 1], I[c + 1][K - 1], dn, tipCol * 0.9f);
+                tri(O[c][K - 1], I[c + 1][K - 1], O[c + 1][K - 1], dn, tipCol * 0.9f);
+            }
+        for (size_t c : {size_t(0), C - 1})  // side walls
+            for (size_t k = 0; k + 1 < K; ++k) {
+                const Vec3 side = S.pts[c][k] - S.pts[c == 0 ? 1 : C - 2][k];
+                tri(O[c][k], I[c][k], I[c][k + 1], side, col * 0.85f);
+                tri(O[c][k], I[c][k + 1], O[c][k + 1], side, col * 0.85f);
+            }
+    };
+
+    const bool full = fh == FacialHair::FullBeard || fh == FacialHair::LongBeard || fh == FacialHair::BraidedBeard;
+    const bool chops = fh == FacialHair::MuttonChops, goatee = fh == FacialHair::Goatee, shortB = fh == FacialHair::ShortBeard;
+    if (full || chops || goatee || shortB) {
+        // Beard line: under the lower lip at the front, up past the mouth corners, along the cheek to the sideburn.
+        auto sTop = [&](float ax) {
+            return 0.185f + 0.075f * smoothstep(0.10f, 0.25f, ax) + 0.21f * smoothstep(0.30f, 0.95f, ax);
+        };
+        auto sJaw = [&](float ax) { return 0.03f + 0.09f * smoothstep(0.45f, 0.95f, ax); };
+        const float thick = (fh == FacialHair::LongBeard ? 0.034f : full ? 0.030f : chops ? 0.024f : shortB ? 0.013f : 0.022f) * h;
+        const float drop = (fh == FacialHair::LongBeard ? 0.42f * len : full ? 0.13f * len : goatee ? 0.10f : shortB ? 0.025f : 0.02f) * h;
+        float th0 = -0.10f, th1 = kPi + 0.10f;
+        if (goatee) th0 = kPi / 2 - 0.42f, th1 = kPi / 2 + 0.42f;
+        const int NC = goatee ? 7 : lod.sparseRings ? 11 : 17;
+        const int KF = 4, KD = drop > 0.03f * h ? 4 : 2;
+        // One sheet, or for mutton chops two (the chin stays bare).
+        std::vector<std::pair<float, float>> spans;
+        if (chops) spans = {{th0, kPi / 2 - 0.40f}, {kPi / 2 + 0.40f, th1}};
+        else spans = {{th0, th1}};
+        for (auto [a0, a1] : spans) {
+            Sheet S;
+            const int nc = chops ? 7 : NC;
+            for (int c = 0; c < nc; ++c) {
+                const float th = lerp(a0, a1, float(c) / float(nc - 1));
+                const float ax = std::fabs(std::cos(th)), front = 1.0f - ax;
+                const float lockVar = r.range(0.9f, 1.1f) * (c % 2 == 0 ? 1.08f : 0.94f);
+                std::vector<Vec3> pts, nrm;
+                std::vector<float> tk;
+                float top = goatee ? 0.185f + 0.02f * smoothstep(0.1f, 0.4f, ax) : sTop(ax);
+                const float bot = goatee ? 0.03f : sJaw(ax);
+                // Goatee / mutton chops: taper the thickness at the open ends.
+                const float endT = goatee || chops ? std::min(1.0f, std::min(float(c), float(nc - 1 - c)) / 1.5f) : 1.0f;
+                for (int k = 0; k < KF; ++k) {
+                    const float t = float(k) / float(KF - 1);
+                    const float sv = lerp(top, bot, t);
+                    const Vec3 q = onFace(th, sv, 0.0f);
+                    pts.push_back(q);
+                    nrm.push_back(headNormalDir(q));
+                    tk.push_back(thick * endT * (0.12f + 0.88f * smoothstep(0.0f, 0.55f, t)) * (0.75f + 0.25f * front));
+                }
+                // Below the jaw: hang down (and a little forward at the chin), kept off the neck and chest.
+                const float dl = drop * lockVar * (chops ? 0.6f : 1.0f) * (1.0f - 0.70f * std::pow(ax, 1.4f)) / float(KD);
+                Vec3 q = pts.back(), d = normalize(Vec3{0, -1, 0} + Vec3{0, 0, 0.30f * front} + thetaDir(th) * 0.10f);
+                for (int k = 0; k < KD; ++k) {
+                    q = collide(q + d * dl, 0.010f * h + 0.5f * thick);
+                    d = normalize(d * 0.6f + Vec3{0, -1, 0} * 0.4f);
+                    const float t = float(k + 1) / float(KD);
+                    Vec3 n = q - Vec3{hcen.x, q.y, hcen.z - 0.06f * h};
+                    n = normalize(n, Vec3{0, 0, 1});
+                    pts.push_back(q);
+                    nrm.push_back(n);
+                    tk.push_back(thick * endT * (1.0f - 0.55f * t) * (0.75f + 0.25f * front));
+                }
+                S.pts.push_back(pts);
+                S.nrm.push_back(nrm);
+                S.thick.push_back(tk);
+            }
+            emitSheet(S, true);
         }
     }
-    if (fh != FacialHair::ShortBeard) {
-        // Moustache: a bar over the upper lip, parted slightly at the philtrum and
-        // drooping past the mouth corners into soft points.
-        const int NC = 8;
-        const float xMax = 0.112f * mw, thick = 0.022f * h;
-        std::vector<uint32_t> top, bot, mid;
-        for (int c = 0; c <= NC; ++c) {
-            const float x = lerp(-xMax, xMax, float(c) / NC), u = std::fabs(x) / xMax;
-            const float th = std::acos(clamp(x / 0.36f, -1.0f, 1.0f));
-            const float droop = 0.022f * u * u * u;
-            const float sTop = 0.312f - 0.016f * u - droop - 0.006f * bump(x / 0.012f);
-            const float sBot = 0.258f - 0.006f * u - droop * 1.25f;
-            const float t = std::sin(kPi * std::min(1.0f, 0.15f + 0.85f * (1.0f - u)));
-            top.push_back(addV(onFace(th, sTop, 0.002f * h)));
-            mid.push_back(addV(onFace(th, 0.5f * (sTop + sBot), 0.002f * h + thick * t)));
-            bot.push_back(addV(onFace(th, sBot, 0.002f * h)));
-        }
+    if (fh == FacialHair::Mustache || fh == FacialHair::Goatee || full || chops) {
+        // Moustache: locks from under the nose combed down and out; long ends
+        // droop past the mouth corners (and join the chops / the beard).
+        const int NC = lod.sparseRings ? 7 : 11, K = 4;
+        const float xMax = (chops ? 0.135f : 0.105f) * mw, thick = (full ? 0.018f : 0.016f) * h;
+        const float droop = fh == FacialHair::Mustache ? r.range(0.02f, 0.06f) : chops ? 0.07f : 0.03f;
+        Sheet S;
         for (int c = 0; c < NC; ++c) {
-            tri(top[size_t(c)], top[size_t(c + 1)], mid[size_t(c + 1)], col * 1.05f);
-            tri(top[size_t(c)], mid[size_t(c + 1)], mid[size_t(c)], col * 1.05f);
-            tri(mid[size_t(c)], mid[size_t(c + 1)], bot[size_t(c + 1)], col * 0.88f);
-            tri(mid[size_t(c)], bot[size_t(c + 1)], bot[size_t(c)], col * 0.88f);
+            const float x = lerp(-xMax, xMax, float(c) / float(NC - 1)), u = std::fabs(x) / xMax;
+            std::vector<Vec3> pts, nrm;
+            std::vector<float> tk;
+            for (int k = 0; k < K; ++k) {
+                const float t = float(k) / float(K - 1);
+                const float xs = x * (1.0f + 0.10f * t);
+                const float th = std::acos(clamp(xs / 0.36f, -1.0f, 1.0f));
+                const float sv = lerp(0.306f - 0.022f * u * u, 0.258f - 0.010f * u - droop * u * u * u, t);
+                const Vec3 q = onFace(th, sv, 0.002f * h);
+                pts.push_back(q);
+                nrm.push_back(headNormalDir(q));
+                const float prof = (0.55f + 0.45f * (1.0f - u * u)) * (1.0f - 0.35f * bump(x / (0.12f * xMax)));  // parted at the philtrum
+                tk.push_back(thick * prof * (0.25f + 0.75f * std::sin(kPi * std::min(1.0f, 0.2f + 0.9f * t))) * (u > 0.85f ? 0.6f : 1.0f));
+            }
+            S.pts.push_back(pts);
+            S.nrm.push_back(nrm);
+            S.thick.push_back(tk);
         }
+        emitSheet(S, true);
     }
 }
 

@@ -141,7 +141,8 @@ void ToonRenderer::drawCharacter(const Character& c, const std::vector<Vec3>& po
     const Vec2 eyeOff = FaceLayout::eyeUvOffset(face.eyes), mouthOff = FaceLayout::mouthUvOffset(face.mouth);
     for (const Submesh& sm : m.submeshes) {
         const bool decal = sm.kind != SubmeshKind::Body;
-        const Vec2 off = sm.kind == SubmeshKind::FaceEyes ? eyeOff : mouthOff;
+        const bool skinLayer = sm.kind == SubmeshKind::FaceSkin;
+        const Vec2 off = sm.kind == SubmeshKind::FaceEyes ? eyeOff : skinLayer ? Vec2{0, 0} : mouthOff;
         for (uint32_t i = sm.firstIndex; i < sm.firstIndex + sm.indexCount; i += 3) {
             V v[3];
             uint32_t vid[3] = {m.indices[i], m.indices[i + 1], m.indices[i + 2]};
@@ -166,6 +167,10 @@ void ToonRenderer::drawCharacter(const Character& c, const std::vector<Vec3>& po
                 if (decal) {
                     Vec4 t = c.faceAtlas.sample({a[6], a[7]});
                     if (t.w < 0.02f) return;
+                    if (skinLayer) {  // 2x multiply: rgb holds half the multiplier
+                        color_[idx] = color_[idx] * lerp(Vec3{1, 1, 1}, t.xyz() * 2.0f, t.w);
+                        return;
+                    }
                     Vec3 col = t.xyz() * lerp(0.86f, 1.0f, lit);
                     color_[idx] = lerp(color_[idx], col, t.w);
                     return;  // keep depth/id of the head underneath

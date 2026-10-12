@@ -25,13 +25,13 @@ enum class Archetype : uint8_t { Natural, Bombshell, Dorito, Brute, Amazon, Slen
 enum class HairStyle : uint8_t {
     Bald, Buzz, ShortCrop, SidePart, SlickedBack, Messy, Undercut, Pixie,
     Bob, Shoulder, LongStraight, LongWavy, Ponytail, HighPonytail, Braid, Bun, HalfUp, ManBun,
-    CrewCut, Mohawk, Pompadour, Curly, Afro, Mullet, Topknot, Locs, Wolf,
-    Hime, TwinTails, TwinBraids, SideBraid, LowPonytail, SpaceBuns, MessyBun, LongCurly, VeryLong, AsymBob, Count
+    CrewCut, Tonsure, WarriorBraids, Curly, Afro, Mullet, Topknot, Locs, Wolf,
+    Hime, CrownBraid, TwinBraids, SideBraid, LowPonytail, BowlCut, MessyBun, LongCurly, VeryLong, AsymBob, Count
 };
 bool isShortHair(HairStyle h);  // cut close to the head (cap + locks only)
 bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
 enum class Fringe : uint8_t { None, Curtain, SideSwept, Straight, Count };
-enum class FacialHair : uint8_t { None, Mustache, Goatee, ShortBeard, FullBeard, Count };
+enum class FacialHair : uint8_t { None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops, Count };
 enum class EarStyle : uint8_t { Human, Elf, Count };
 enum class PupilStyle : uint8_t { Round, Slit, Count };
 
@@ -78,6 +78,7 @@ struct Anatomy {
 };
 
 struct BodyShape {
+    int build = 0;              // 0 average, 1 lean, 2 heavy, 3 stocky, 4 lanky, 5 strong
     float height = 1.68f;      // metres, crown to floor
     float headsTall = 6.9f;    // stylised-realistic 6.6-7.4, chibi 3-4
     float legRatio = 0.50f;    // crotch height / height
@@ -157,6 +158,25 @@ struct FaceStyle {
     float earSize = 1.0f;
     int marking = 0;           // 0 none, 1 mole, 2 cheek warpaint, 3 under-eye bars, 4 chin stripe, 5 brow slit, 6 forehead mark
     Vec3 markColor{0.45f, 0.12f, 0.12f};
+    // Sculpted nose (a faceted piece of its own, the face's main plane break).
+    float noseLength = 1.0f;   // root-to-tip length
+    float noseProj = 1.0f;     // how far the tip stands off the face
+    float noseWidth = 1.0f;    // bridge and nostril-wing width
+    float noseHump = 0.0f;     // dorsal hump (aquiline/broken) 0..1
+    float noseTip = 0.0f;      // -1 hooked/drooping .. +1 upturned
+    // Skull and soft tissue.
+    float chinWidth = 0.0f;    // -1 pointed .. +1 broad, square chin
+    float cheekHollow = 0.0f;  // gaunt hollows under the cheekbones 0..1
+    float jowl = 0.0f;         // heavy lower face (age, fat) 0..1
+    float eyeDepth = 0.3f;     // deep-set eyes: socket shading and brow overhang 0..1
+    float eyeBags = 0.0f;      // tired, puffy under-eyes 0..1
+    // Skin.
+    float stubble = 0.0f;      // beard shadow on the jaw and upper lip 0..1
+    float ruddy = 0.0f;        // weathered red on nose and cheeks 0..1
+    float grime = 0.0f;        // dirt smudges (survivors, labourers) 0..1
+    int scarType = 0;          // 0 none, 1 brow-to-cheek, 2 across the nose, 3 lip, 4 cheek gash, 5 blinded eye
+    int tattoo = 0;            // 0 none, 1 runic lines, 2 tribal cheek marks, 3 forehead sigil
+    Vec3 tattooColor{0.16f, 0.22f, 0.32f};
 };
 
 struct Palette {
