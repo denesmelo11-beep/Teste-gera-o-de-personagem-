@@ -158,6 +158,28 @@ void Builder::computeMarks() {
         }
     }
     if (b.digitigrade) m.ankleY = m.ankle[0].y;
+    if (b.centaur) {
+        // Horse body: the back runs level just under the human hip line; legs straight
+        // in front, angled (stifle forward, hock back) behind.
+        const float Yb = m.crotchY + 0.08f * h;
+        m.barrelHalfH = 0.82f * h;
+        m.barrelY = Yb - 0.70f * h;
+        m.barrelHalfW = 0.80f * h;
+        m.barrelFront = 0.85f * h;
+        m.barrelBack = -4.1f * h;
+        for (int s = 0; s < 2; ++s) {
+            const float sd = s == 0 ? 1.0f : -1.0f, x = sd * 0.42f * h;
+            m.hipJoint[s] = {x, m.barrelY - 0.35f * h, 0.20f * h};
+            m.knee[s] = {x, 0.36f * Yb, 0.32f * h};
+            m.ankle[s] = {x, 0.11f * Yb, 0.30f * h};
+            m.ball[s] = {x, 0.015f * Yb, 0.42f * h};
+            m.hindHip[s] = {sd * 0.46f * h, m.barrelY - 0.1f * h, -3.35f * h};
+            m.hindKnee[s] = {sd * 0.48f * h, 0.62f * Yb, -2.95f * h};
+            m.hindAnkle[s] = {sd * 0.44f * h, 0.30f * Yb, -3.78f * h};
+            m.hindBall[s] = {sd * 0.42f * h, 0.015f * Yb, -3.50f * h};
+        }
+        m.ankleY = 0.11f * Yb;
+    }
 
     const float S = b.shoulderWidth * h, C = b.chestWidth * h, armR = b.arm * h;
     const float del = armR * (1.12f + 0.45f * mu);
@@ -266,10 +288,11 @@ Vec3 Builder::torsoPoint(float t, float th) const {
         const float pecK = 0.075f * h * std::min(an.pecs, 1.1f) * (1.0f - saturate(B * 1.6f));
         if (pecK > 0) {
             float tlow = 0.715f + 0.075f * u * u;
-            float ft = smoothstep(tlow - 0.012f, tlow + 0.03f, t) * smoothstep(0.995f, 0.86f, t);
+            // A rounded lower edge (a mass, not a ledge).
+            float ft = smoothstep(tlow - 0.025f, tlow + 0.055f, t) * smoothstep(0.995f, 0.86f, t);
             float fu = smoothstep(0.02f, 0.10f, u) * smoothstep(0.86f, 0.62f, u);  // fades before the armpit
             n += pecK * ft * fu * (0.55f + 0.45f * bump((u - 0.45f) / 0.55f));
-            n -= pecK * 0.25f * def * bump((t - (tlow - 0.012f)) / 0.02f) * fu;
+            n -= pecK * 0.12f * def * bump((t - (tlow - 0.02f)) / 0.03f) * fu;
         }
         // Ribcage: the costal arch, an inverted V from the base of the sternum.
         n += 0.016f * h * (0.4f + an.ribcage) * def * smoothstep(-0.02f, 0.03f, t - (0.67f - 0.17f * u)) *
@@ -436,6 +459,19 @@ void Builder::buildSkeleton() {
         l.tip = sk.add("toe" + suf, l.end, m.ball[s]);
         r.legs.push_back(l);
     }
+    if (g.body.centaur)
+        for (int s = 0; s < 2; ++s) {
+            std::string suf = s == 0 ? ".L" : ".R";
+            LimbRig l;
+            l.side = s == 0 ? 1.0f : -1.0f;
+            l.restDir = normalize(m.hindKnee[s] - m.hindHip[s]);
+            l.root = r.hips;
+            l.upper = sk.add("hindthigh" + suf, r.hips, m.hindHip[s]);
+            l.lower = sk.add("hindshin" + suf, l.upper, m.hindKnee[s]);
+            l.end = sk.add("hindfoot" + suf, l.lower, m.hindAnkle[s]);
+            l.tip = sk.add("hindtoe" + suf, l.end, m.hindBall[s]);
+            r.legs.push_back(l);
+        }
     if (g.body.bust > 0.05f) {
         const float bust = std::min(g.body.bust, 1.5f);
         const float tb = 0.735f - 0.035f * bust - 0.05f * g.body.sag, depth = (0.06f + 0.31f * bust) * h;
@@ -638,7 +674,7 @@ void Builder::buildArms() {
             // The opening scales with the arm: from below the armpit to the top of the
             // deltoid, and wider front-to-back for heavy shoulders.
             const float Ra = r * rc(0.02f) * 1.1f;
-            int i0 = nearest(clamp(torsoT(a.shoulder.y - 1.15f * Ra), 0.62f, 0.80f));
+            int i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), 0.52f, 0.80f));
             int i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
             if (lod.sparseRings) { if (i1 <= i0) i1 = i0 + 1; }
             else i0 = std::max(1, std::min(i0, i1 - 3));  // at least three rings tall: no pinched armpit
@@ -806,7 +842,11 @@ void Builder::buildArms() {
                 Vec3 ctr = (bp.pos[tr.a] + bp.pos[tr.b] + bp.pos[tr.c]) / 3.0f;
                 bool nearShoulder = false;
                 for (const ArmMarks& am : m.arms) nearShoulder |= am.pair == 0 && length(ctr - am.shoulder) < 0.6f * m.h;
-                if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) ++folds;
+                if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) {
+                    ++folds;
+                    if (std::getenv("CHARGEN_CHECK")[0] == '2')
+                        std::fprintf(stderr, "  fold t=%.3f x/h=%.2f z/h=%.2f\n", torsoT(ctr.y), ctr.x / m.h, ctr.z / m.h);
+                }
             }
             std::fprintf(stderr, "CHECK open=%d folds=%d\n", open, folds);
         }
@@ -951,6 +991,10 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
 // the thighs ("pants" topology). A few junction rings carry the hip and glute volume
 // down into the thigh. No surfaces intersect, so the hips stay clean in any light.
 void Builder::buildLegs() {
+    if (g.body.centaur) {
+        buildHorseBody();
+        return;
+    }
     const float h = m.h, mu = g.body.muscle;
     const float T = g.body.thigh * h, Cf = g.body.calf * h * (1 + 0.2f * mu);
     // Knee narrower than the calf, slim ankle: the diamond-shaped lower leg.
@@ -1152,6 +1196,7 @@ void Builder::buildLegs() {
 
 // Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
+    if (g.body.centaur) return;  // the horse legs carry their own hooves
     if (g.body.digitigrade) {
         buildDigitigradeFeet();
         return;
@@ -1197,6 +1242,89 @@ void Builder::buildFeet() {
     }
 }
 
+// Centaur: the horse barrel (chest, belly, croup) swallowing the human hips, and four
+// legs: straight forelegs, hind legs with the stifle forward and the hock back, each
+// ending in a fetlock, a short pastern and a hoof.
+void Builder::buildHorseBody() {
+    const float h = m.h;
+    const int hips = ch.rig.hips;
+    const Mat hoofM{Vec3{0.16f, 0.14f, 0.13f}, MaterialClass::Horn};
+    const Vec3 coat = g.palette.skin;
+    // The horse coat: an earthy tone drawn from the hair colour family, darker on the legs.
+    static constexpr Vec3 kCoats[] = {{0.34f, 0.22f, 0.14f}, {0.46f, 0.26f, 0.15f}, {0.13f, 0.12f, 0.12f}, {0.52f, 0.50f, 0.48f},
+                                      {0.62f, 0.50f, 0.32f}, {0.44f, 0.38f, 0.30f}, {0.24f, 0.18f, 0.14f}};  // bay, chestnut, black, grey, palomino, dun, brown
+    const Vec3 horse = kCoats[g.seed % 7], legC = horse * 0.58f;
+    (void)coat;
+    // Barrel.
+    {
+        Loft L;
+        const int N = lod.torsoSeg;
+        const float zs[] = {0.0f, 0.12f, 0.28f, 0.46f, 0.64f, 0.80f, 0.92f, 1.0f};
+        for (float f : zs) {
+            const float z = lerp(m.barrelFront, m.barrelBack, f);
+            // Height profile: tall chest that rises to swallow the human hips, a deep girth,
+            // a tucked flank, a round croup.
+            const float top = m.barrelY + m.barrelHalfH * (1.0f + 0.55f * smoothstep(0.30f, 0.0f, f) - 0.10f * bump((f - 0.6f) / 0.3f) +
+                                                           0.06f * bump((f - 0.85f) / 0.15f));
+            const float bot = m.barrelY - m.barrelHalfH * (0.95f - 0.25f * smoothstep(0.55f, 0.95f, f) - 0.15f * smoothstep(0.25f, 0.0f, f));
+            const float hw = m.barrelHalfW * (0.82f + 0.18f * bump((f - 0.45f) / 0.5f) + 0.08f * bump((f - 0.88f) / 0.15f)) *
+                             (f < 0.02f || f > 0.99f ? 0.55f : 1.0f);
+            const float cy = 0.5f * (top + bot), hh = 0.5f * (top - bot) * (f < 0.02f || f > 0.99f ? 0.6f : 1.0f);
+            L.rings.push_back(makeRing({0, cy, z}, {1, 0, 0}, {0, 1, 0}, SuperRing{hw, 0, hh, hh, 2.3f, 2.3f}, N));
+            L.t.push_back(f);
+        }
+        L.poleStart = true;
+        L.startPole = {0, m.barrelY + 0.3f * m.barrelHalfH, m.barrelFront + 0.25f * h};
+        L.poleEnd = true;
+        L.endPole = {0, m.barrelY + 0.2f * m.barrelHalfH, m.barrelBack - 0.25f * h};
+        Part& bp = newPart();
+        bp.id = bodyGroup_;
+        emitLoft(bp, L, [=](float, float, Vec3) { return one(hips); }, [=](float, float) { return Mat{horse, MaterialClass::Skin}; });
+    }
+    // Legs.
+    auto leg = [&](const LimbRig& rig, Vec3 a, Vec3 b, Vec3 c, Vec3 d, float r0, bool hind) {
+        Loft L;
+        struct K { Vec3 p; float r, t; int seg; };
+        // Muscular forearm / gaskin at the top, then the slender cannon, a knobbly
+        // knee/hock, the fetlock and a short pastern.
+        std::vector<K> ks = {{a + Vec3{0, 0.35f * h, 0}, r0 * 1.10f, 0.0f, 0}, {a, r0 * 1.05f, 0.08f, 0},
+                             {lerp(a, b, 0.45f), r0 * (hind ? 0.95f : 0.80f), 0.25f, 0}, {lerp(a, b, 0.85f), r0 * 0.52f, 0.40f, 0},
+                             {b, r0 * 0.56f, 0.45f, 1}, {lerp(b, c, 0.5f), r0 * 0.38f, 0.62f, 1}, {c, r0 * 0.50f, 0.80f, 2},
+                             {d + Vec3{0, 0.05f * h, 0}, r0 * 0.40f, 0.92f, 2}};
+        for (size_t k = 0; k < ks.size(); ++k) {
+            const Vec3 dd = normalize(ks[std::min(k + 1, ks.size() - 1)].p - ks[k > 0 ? k - 1 : 0].p);
+            const Vec3 v = orthoFront(dd), u = cross(dd, v);
+            L.rings.push_back(makeRing(ks[k].p, u, v, SuperRing{ks[k].r * 0.85f, 0, ks[k].r * 1.05f, ks[k].r, 2.1f, 2.1f}, lod.limbSeg));
+            L.t.push_back(ks[k].t);
+        }
+        const int up = rig.upper, lo = rig.lower, ft = rig.end, tp = rig.tip;
+        Part& lp = newPart();
+        lp.id = bodyGroup_;
+        emitLoft(lp, L, [=](float t, float, Vec3) {
+            return chainWeights({{0.02f, hips}, {0.12f, up}, {0.38f, up}, {0.50f, lo}, {0.74f, lo}, {0.86f, ft}, {0.96f, tp}}, t);
+        }, [=](float t, float) { return Mat{lerp(horse, legC, smoothstep(0.35f, 0.6f, t)), MaterialClass::Skin}; });
+        // Hoof: a short dark cone under the pastern.
+        Loft H;
+        const float R = r0 * 0.62f;
+        const Vec3 base{d.x, 0.0f, d.z + 0.02f * h};
+        H.rings.push_back(makeRing(base + Vec3{0, 0.16f * h, -0.03f * h}, {1, 0, 0}, {0, 0, 1}, SuperRing{R * 0.85f, 0, R * 0.9f, R * 0.85f}, lod.limbSeg));
+        H.t.push_back(0);
+        H.rings.push_back(makeRing(base + Vec3{0, 0.004f, 0}, {1, 0, 0}, {0, 0, 1}, SuperRing{R * 1.08f, 0, R * 1.2f, R * 0.95f}, lod.limbSeg));
+        H.t.push_back(1);
+        H.poleEnd = true;
+        H.endPole = base;
+        H.tEnd = 1;
+        Part& hp = newPart();
+        hp.id = bodyGroup_;
+        emitLoft(hp, H, [=](float, float, Vec3) { return one(tp); }, [=](float, float) { return hoofM; });
+    };
+    const float r0 = 0.34f * h;
+    for (int s = 0; s < 2; ++s) {
+        leg(ch.rig.legs[size_t(s)], m.hipJoint[s], m.knee[s], m.ankle[s], m.ball[s], r0, false);
+        leg(ch.rig.legs[size_t(s + 2)], m.hindHip[s], m.hindKnee[s], m.hindAnkle[s], m.hindBall[s], r0 * 1.12f, true);
+    }
+}
+
 // Digitigrade feet: a long metatarsal from the raised hock down to the toes, then a
 // paw (padded toes with claws) or a cloven hoof on the ground.
 void Builder::buildDigitigradeFeet() {
@@ -1214,8 +1342,9 @@ void Builder::buildDigitigradeFeet() {
             const Vec3 d = normalize(bl - hk);
             const Vec3 v = orthoFront(d), u = cross(d, v);
             Loft L;
-            const float ts[] = {-0.08f, 0.15f, 0.55f, 0.92f};
-            const float rs[] = {0.70f, 0.60f, 0.50f, 0.52f};
+            // Starts back inside the end of the shin, at the shin's ankle radius: no step at the hock.
+            const float ts[] = {-0.22f, 0.10f, 0.55f, 0.92f};
+            const float rs[] = {0.66f, 0.62f, 0.50f, 0.52f};
             for (int k = 0; k < 4; ++k) {
                 const float r0 = rs[k] * Cf;
                 L.rings.push_back(makeRing(lerp(hk, bl, ts[k]), u, v, SuperRing{r0 * 0.85f, 0, r0 * 1.05f, r0 * 1.15f, 2.2f, 2.2f}, lod.limbSeg));
@@ -1296,10 +1425,11 @@ void Builder::buildTail() {
     Skeleton& sk = ch.skeleton;
     RigInfo& r = ch.rig;
     const float h = m.h;
-    const float y0 = m.crotchY + 0.22f * m.torsoLen;
-    const float z0 = torsoRing(torsoT(y0)).backZ(0) - gluteDepth(0.22f) + 0.02f * h;
-    const float len = g.body.tailLength * m.hipJointY * 0.95f;
-    const float r0 = 0.11f * h * (1 + 0.3f * g.body.muscle);
+    float y0 = m.crotchY + 0.22f * m.torsoLen;
+    float z0 = torsoRing(torsoT(y0)).backZ(0) - gluteDepth(0.22f) + 0.02f * h;
+    if (g.body.centaur) y0 = m.barrelY + 0.80f * m.barrelHalfH, z0 = m.barrelBack + 0.05f * h;
+    const float len = g.body.tailLength * (g.body.centaur ? m.barrelY + 0.4f * m.barrelHalfH : m.hipJointY) * 0.95f;
+    const float r0 = 0.11f * h * (1 + 0.3f * g.body.muscle) * (g.body.centaur ? 1.6f : 1.0f);
     constexpr int kPts = 9;
     std::vector<Vec3> pts;
     Vec3 p{0, y0, z0};
@@ -1407,6 +1537,9 @@ void Builder::buildColliders() {
         add(r.arms[i].lower, a.elbow, a.wrist, a.radius * 0.85f);
     }
     for (int s = 0; s < 2; ++s) add(r.legs[size_t(s)].upper, m.hipJoint[s], m.knee[s], g.body.thigh * h * 0.95f);
+    if (g.body.centaur)  // the horse barrel: hair and tails rest on it
+        add(r.hips, Vec3{0, m.barrelY + 0.1f * m.barrelHalfH, m.barrelFront - 0.6f * h}, Vec3{0, m.barrelY + 0.1f * m.barrelHalfH, m.barrelBack + 0.6f * h},
+            0.92f * m.barrelHalfH);
 }
 
 // Exposed bones (undead): torn flesh painted as a dark cavity (a clip on the body
@@ -1415,7 +1548,8 @@ void Builder::buildBones() {
     const int bones = g.body.bones;
     if (!bones) return;
     const float h = m.h, side = float(g.body.boneSide);
-    Part& bp = parts[torsoPart_];
+    // (newPart() may reallocate `parts`: always index the body surface afresh.)
+    auto clipBody = [&](ClipRegion c) { parts[torsoPart_].clips.push_back(std::move(c)); };
     const Mat cavity{{0.17f, 0.09f, 0.09f}, MaterialClass::Dark};
     const Mat bone{{0.84f, 0.80f, 0.68f}, MaterialClass::Horn};
     auto tube = [&](const std::vector<Vec3>& pts, float r0, int boneId) {
@@ -1438,7 +1572,7 @@ void Builder::buildBones() {
     };
     if (bones & 1) {  // ribs through the flank
         const float tc = 0.645f, pc = 1.0f;
-        bp.clips.push_back({[=, this](Vec3 q) {
+        clipBody({[=, this](Vec3 q) {
             const float t = torsoT(q.y);
             if (t < 0.4f || t > 0.9f || q.x * side < 0.0f) return 1.0f;
             if (std::fabs(q.x) > 1.25f * cHw_(clamp(t, -0.06f, 1.1f)) + 0.03f * h) return 1.0f;  // not the arms
@@ -1462,7 +1596,7 @@ void Builder::buildBones() {
     auto limb = [&](Vec3 a, Vec3 b, float r, Vec3 sideDir, int boneId, int count) {
         const Vec3 d = normalize(b - a);
         const float L = length(b - a);
-        bp.clips.push_back({[=](Vec3 q) {
+        clipBody({[=](Vec3 q) {
             const float tt = dot(q - a, d) / L;
             const Vec3 radial = q - (a + d * (tt * L));
             if (length(radial) > 1.8f * r) return 1.0f;
@@ -1524,9 +1658,9 @@ void Builder::applyFur() {
             for (auto& tr : p.tris) {
                 if (tr.m.cls != MaterialClass::Skin || length(tr.m.color - sk) > 0.02f) continue;
                 const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
-                const float n1 = noise(c * (3.0f / m.h)), n2 = noise(c * (7.0f / m.h) + Vec3{9, 3, 5});
-                Vec3 col = lerp(sk, bruise, g.face.rot * smoothstep(0.55f, 0.80f, n1));
-                col = lerp(col, rotC, 0.8f * g.face.rot * smoothstep(0.70f, 0.85f, n2));
+                const float n1 = noise(c * (1.6f / m.h)), n2 = noise(c * (3.2f / m.h) + Vec3{9, 3, 5});
+                Vec3 col = lerp(sk, bruise, g.face.rot * smoothstep(0.42f, 0.85f, n1));
+                col = lerp(col, rotC, 0.6f * g.face.rot * smoothstep(0.55f, 0.90f, n2));
                 tr.m.color = col;
             }
         }
@@ -1567,7 +1701,7 @@ void Builder::buildFurTufts() {
         const SkinW sw = one(bone);
         const uint32_t i0 = uint32_t(p.pos.size());
         const Vec3 pts[4] = {base + side * (0.5f * w) - n * (0.01f * h), base - side * (0.5f * w) - n * (0.01f * h),
-                             base - flow * (0.35f * w) + n * (0.02f * h), base + flow * L + n * (0.42f * L)};
+                             base - flow * (0.35f * w) + n * (0.018f * h), base + flow * L + n * (0.14f * L)};
         for (const Vec3& q : pts) {
             p.pos.push_back(q);
             p.w.push_back(sw);
@@ -1593,7 +1727,7 @@ void Builder::buildFurTufts() {
                 const float ang = cols == 1 ? 0.0f : lerp(-arc, arc, float(j) / float(cols - 1)) + r.range(-0.15f, 0.15f);
                 const Vec3 n = normalize(out * std::cos(ang) + o2 * std::sin(ang));
                 const float rr = lerp(r0, r1, t);
-                tuft(lerp(a, b, t) + n * (0.92f * rr), n, d, 3.0f * size * h * r.range(0.8f, 1.2f), 3.4f * size * h * r.range(0.8f, 1.25f), bone);
+                tuft(lerp(a, b, t) + n * (0.90f * rr), n, d, 3.0f * size * h * r.range(0.8f, 1.2f), 2.4f * size * h * r.range(0.8f, 1.25f), bone);
             }
     };
     for (size_t i = 0; i < m.arms.size(); ++i) {

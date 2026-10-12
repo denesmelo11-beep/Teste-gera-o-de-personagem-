@@ -36,7 +36,7 @@ enum class EarStyle : uint8_t { Human, Elf, Count };
 enum class PupilStyle : uint8_t { Round, Slit, Count };
 // Peoples of the world. Each one reshapes the sampled body and face (proportions,
 // skin, ears, tusks, horns, muzzle, hooves, glowing eyes) and biases hair and beards.
-enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Count };
+enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Count };
 
 std::string_view toString(Sex s);
 std::string_view toString(AgeGroup a);
@@ -134,6 +134,7 @@ struct BodyShape {
     float tuskSize = 1.0f;
     bool hooves = false;
     int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
+    bool centaur = false;       // human torso on a horse body (four legs)
     bool digitigrade = false;   // walks on the toes: high hock behind, long metatarsal (draenei, worgen)
     int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow)
     bool tailFur = false;       // bushy furred tail (hair material)

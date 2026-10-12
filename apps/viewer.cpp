@@ -82,8 +82,8 @@ uniform vec3 skyColor;
 uniform vec3 groundColor;
 uniform int faceted;
 out vec4 finalColor;
-const vec3 shadowTint[7] = vec3[7](vec3(0.84,0.62,0.62), vec3(0.62,0.62,0.78), vec3(0.64,0.58,0.62),
-                                   vec3(0.48,0.50,0.62), vec3(0.58,0.56,0.78), vec3(0.66,0.64,0.72), vec3(0.66,0.62,0.70));
+const vec3 shadowTint[7] = vec3[7](vec3(0.78,0.60,0.60), vec3(0.62,0.64,0.74), vec3(0.62,0.58,0.60),
+                                   vec3(0.50,0.52,0.62), vec3(0.58,0.58,0.72), vec3(0.64,0.64,0.70), vec3(0.64,0.62,0.66));
 void main() {
     vec3 N = normalize(fragNormal);
     if (faceted != 0) {
@@ -101,7 +101,7 @@ void main() {
     wrap = wrap * wrap * (3.0 - 2.0 * wrap);
     float band = smoothstep(0.02, 0.30, ndl);
     float light = mix(wrap, band, 0.45);
-    vec3 shade = base * shadowTint[cls] * 0.56;
+    vec3 shade = base * shadowTint[cls] * 0.44;
     vec3 col = mix(shade, base * 1.06, light);
     // Cool, dim fill from the opposite side keeps shadows readable.
     float fill = clamp(dot(N, normalize(vec3(0.65, 0.15, 0.75))), 0.0, 1.0);
@@ -111,11 +111,15 @@ void main() {
     col += base * mix(groundColor, skyColor, hemi) * 0.07;
     // Rim and sheen.
     float rim = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0) * smoothstep(-0.2, 0.4, N.y + 0.2);
-    col += vec3(1.0, 0.96, 0.92) * rim * 0.14;
+    col += vec3(0.80, 0.86, 1.0) * rim * 0.09;
     vec3 H = normalize(L + V);
     float nh = max(dot(N, H), 0.0);
     if (cls == 4) col += vec3(1.0) * 0.10 * smoothstep(0.80, 0.90, nh) * light;   // hair sheen
     if (cls == 0) col += vec3(1.0, 0.9, 0.85) * 0.04 * pow(nh, 24.0);           // skin
+    // Grade: muted, slightly cool, no candy saturation (grim fantasy).
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(lum), col, 0.80);
+    col *= mix(vec3(0.93, 0.95, 1.02), vec3(1.0), smoothstep(0.15, 0.6, lum));
     finalColor = vec4(col, 1.0);
 }
 )";
@@ -314,7 +318,7 @@ struct Scene {
     int locLight = -1, locView = -1, locSky = -1, locGround = -1, locEye = -1, locMouth = -1, locLightD = -1;
     Model disc{}, plane{};
     cg::Vec3 light = cg::normalize(cg::Vec3{-0.55f, 0.72f, 0.42f});
-    Color skyTop{92, 146, 222, 255}, skyBottom{200, 222, 246, 255};
+    Color skyTop{52, 62, 78, 255}, skyBottom{128, 132, 136, 255};
     bool studio = false, faceted = false;  // studio: neutral grey backdrop, no arena
     int locFaceted = -1;
 };
@@ -355,7 +359,7 @@ void spawn(Scene& s, uint64_t seed, int count, const cg::GenomeOptions& opt, flo
 }
 
 void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
-    if (s.studio) DrawRectangleGradientV(0, 0, w, h, Color{84, 84, 88, 255}, Color{62, 62, 66, 255});
+    if (s.studio) DrawRectangleGradientV(0, 0, w, h, Color{40, 47, 58, 255}, Color{22, 27, 35, 255});
     else DrawRectangleGradientV(0, 0, w, h, s.skyTop, s.skyBottom);
     BeginMode3D(cam);
     if (!s.studio) DrawModel(s.plane, {0, 0, 0}, 1.0f, WHITE);
@@ -371,7 +375,7 @@ void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
     EndBlendMode();
     float lp[3] = {s.light.x, s.light.y, s.light.z};
     float vp[3] = {cam.position.x, cam.position.y, cam.position.z};
-    float sky[3] = {0.55f, 0.66f, 0.90f}, gnd[3] = {0.50f, 0.45f, 0.32f};
+    float sky[3] = {0.45f, 0.52f, 0.66f}, gnd[3] = {0.36f, 0.32f, 0.26f};
     SetShaderValue(s.body, s.locLight, lp, SHADER_UNIFORM_VEC3);
     SetShaderValue(s.body, s.locView, vp, SHADER_UNIFORM_VEC3);
     SetShaderValue(s.body, s.locSky, sky, SHADER_UNIFORM_VEC3);
@@ -721,7 +725,10 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         if (const char* f = std::getenv("CHARGEN_FOCUS")) std::sscanf(f, "%f %f", &fy, &zoom);
         float pitch = 0.02f;
         if (const char* pp = std::getenv("CHARGEN_PITCH")) pitch = float(std::atof(pp));
-        Camera3D cam = makeCam({0, H * fy, 0}, yaws[v % 4], pitch, H * 3.0f / zoom, 21.0f);
+        // Long bodies (centaurs) are framed by their length as well as their height.
+        const float span = a.ch.genome.body.centaur ? 1.45f : 1.0f;
+        const float zc = a.ch.genome.body.centaur ? -0.55f * H / a.ch.genome.body.headsTall * 2.0f : 0.0f;
+        Camera3D cam = makeCam({0, H * fy, zc}, yaws[v % 4], pitch, H * 3.0f * span / zoom, 21.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
         ClearBackground(BLACK);
@@ -992,7 +999,7 @@ int main(int argc, char** argv) {
     s.locLightD = GetShaderLocation(s.decal, "lightDir");
     s.disc = LoadModelFromMesh(GenMeshCylinder(1.0f, 0.001f, 24));
     {   // Stone-and-grass tiles: subtle so characters stay the focus.
-        Image chk = GenImageChecked(512, 512, 32, 32, Color{124, 140, 96, 255}, Color{116, 132, 90, 255});
+        Image chk = GenImageChecked(512, 512, 32, 32, Color{78, 80, 70, 255}, Color{72, 74, 64, 255});
         Texture2D t = LoadTextureFromImage(chk);
         UnloadImage(chk);
         SetTextureFilter(t, TEXTURE_FILTER_POINT);

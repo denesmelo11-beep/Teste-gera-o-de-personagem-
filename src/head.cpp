@@ -45,7 +45,7 @@ SuperRing Builder::headRing(float s) const {
     const bool wolf = g.body.snout == 1;
     const float muz = wolf ? g.body.muzzle * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s))
                            : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
-    const float narrow = wolf ? 0.42f : 0.22f;
+    const float narrow = wolf ? 0.30f : 0.22f;
     return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.44f, 0.32f, s) : smoothstep(0.5f, 0.3f, s))),
             (hZc_(s) + chinFwd + 0.5f * muz) * h,
             std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,

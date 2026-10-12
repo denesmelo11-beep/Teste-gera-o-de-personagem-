@@ -81,7 +81,7 @@ void usage() {
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
         "estilo: padrao low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave; --toon = cel com contorno\n"
         "presets: natural bombshell dorito brute amazon slender chibi monster\n"
-        "especies (--species): human dwarf gnome orc troll undead nightelf highelf draenei tauren goblin worgen | mixed");
+        "especies (--species): human dwarf gnome orc troll undead nightelf highelf draenei tauren goblin worgen ogre centaur | mixed");
 }
 
 RenderSettings style(const Args& a) {

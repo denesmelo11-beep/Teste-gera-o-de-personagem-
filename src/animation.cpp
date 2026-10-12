@@ -192,7 +192,7 @@ Clip makeWalkClip(const Character& c) {
         a.euler(a.r.chest, 0.0f, -0.12f * s, 0);
         a.euler(a.r.head, 0.0f, 0.06f * s, 0);
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
-            float k = i == 0 ? 1.0f : -1.0f;
+            float k = (i % 2 == 0 ? 1.0f : -1.0f) * (i >= 2 ? -1.0f : 1.0f);  // four legs: diagonal pairs (trot)
             float sw = -0.45f * s * k;
             float lift = std::max(0.0f, co * k);
             float knee = 0.12f + 0.75f * std::pow(lift, 1.5f);
@@ -217,7 +217,7 @@ Clip makeRunClip(const Character& c) {
         a.euler(a.r.chest, 0.1f, -0.2f * s, 0);
         a.euler(a.r.head, -0.25f, 0.08f * s, 0);
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
-            float k = i == 0 ? 1.0f : -1.0f;
+            float k = (i % 2 == 0 ? 1.0f : -1.0f) * (i >= 2 ? -1.0f : 1.0f);  // four legs: diagonal pairs (trot)
             float sw = -0.85f * s * k;
             float lift = std::max(0.0f, co * k);
             float knee = 0.3f + 1.5f * std::pow(lift, 1.2f);
@@ -279,7 +279,7 @@ Clip makeDodgeClip(const Character& c) {
         a.euler(a.r.chest, 0.1f * crouch, twist * 0.3f, 0.1f * air);
         a.euler(a.r.head, -0.15f * crouch, -twist * 0.5f, 0);
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
-            float k = i == 0 ? 1.0f : -1.0f;
+            float k = (i % 2 == 0 ? 1.0f : -1.0f) * (i >= 2 ? -1.0f : 1.0f);  // four legs: diagonal pairs (trot)
             a.leg(i, -0.6f * crouch - 0.3f * air, 1.1f * crouch + 0.7f * air, -0.3f * crouch, 0.15f * air * k);
         }
         for (size_t i = 0; i < a.r.arms.size(); ++i) {

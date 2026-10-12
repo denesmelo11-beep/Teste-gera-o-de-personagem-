@@ -22,13 +22,15 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
-| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin, worgen |
+| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin, worgen, ogro, centauro |
 |---|
 | ![povos](docs/povos.png) |
 
 | Worgen (pernas digitígradas, patas com garras, pelagem) | Morto-vivo (ossos expostos, carne manchada) |
 |---|---|
 | ![worgen](docs/folha_worgen.png) | ![morto-vivo](docs/folha_undead.png) |
+| **Centauro** (torso humano sobre corpo equino, quatro pernas, trote) | **Ogro / colosso** (2,6–3 m, cabeça pequena, massa enorme) |
+| ![centauro](docs/folha_centaur.png) | ![ogro](docs/folha_ogre.png) |
 
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|
@@ -96,7 +98,7 @@ chargen_cli export    --seed 42 --lod 0 --out heroi.glb
 chargen_cli stats     --count 300
 ```
 
-Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
+Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|ogre|centaur|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
 `--archetype natural|bombshell|dorito|brute|amazon|slender|chibi|monster` (presets estilizados,
 opcionais) e `--exaggeration 0..2`.
@@ -118,8 +120,8 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
   forte) desloca esses eixos, então uma multidão mistura barrigudos, magrelos, troncudos e braçais. Idade (jovem/adulto/maduro/idoso) mexe em altura, gordura,
   queda de tecidos, postura, linhas do rosto e grisalho; a persona puxa corpo, olhar, sobrancelha
   e boca de repouso.
-- **Proporções** em unidades de cabeça (`h = altura / headsTall`), cânone estilizado de 6,4–6,6
-  cabeças (rosto legível em baixa resolução), cintura de violão nas mulheres, V nos homens, coxas
+- **Proporções** em unidades de cabeça (`h = altura / headsTall`), cânone heroico-realista de ~7
+  cabeças (corpos adultos, robustos, nada de magricelas; o rosto continua legível pelos planos), cintura de violão nas mulheres, V nos homens, coxas
   cheias, joelho alto (canela longa), panturrilha em losango com tornozelo fino e piso de espessura
   para braços.
 - **`Anatomy`**: um bloco de campos 0..1 prontos para sliders — `definition` (quanto a gordura
@@ -147,8 +149,20 @@ costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cort
 - **Mortos-vivos**: carne manchada (hematomas e putrefação por ruído 3D), costelas expostas no
   flanco, rádio e ulna ou tíbia à mostra (a carne é recortada exatamente por campos, com o osso
   dentro da cavidade) e mandíbula descarnada pintada na camada de pele.
+- **Centauro**: o torso humano emerge do peito de um corpo equino (barril com peito alto, cilha
+  funda, flanco recolhido, garupa redonda), patas dianteiras retas e traseiras com soldra à frente e
+  jarrete atrás, boletos, quartelas e cascos, cauda de crina com física e sete pelagens (baio,
+  alazão, preto, tordilho, palomino, lobuno, castanho). O esqueleto ganha duas pernas traseiras e as
+  animações de andar/correr passam a trotar em pares diagonais.
+- **Ogro (colosso)**: gigante de 2,6–3 m, cabeça pequena afundada nos trapézios, braços e mãos
+  enormes, barriga, presas curtas.
 - Paleta sombria: matizes fantásticos (verdes, azuis, lilases) são dessaturados e escurecidos.
 `GenomeOptions::species` escolhe um povo; `mixedSpecies` sorteia a população do mundo inteiro.
+
+### Tom
+Sério e sombrio: fundo de estúdio ardósia-azulado, sombras profundas e frias, gradação que tira a
+saturação ("sem cores de bala"), peles castigadas em vez de porcelana, tons fantásticos apagados,
+cabelos tingidos desbotados.
 
 ### Corpo: uma superfície contínua
 - **Tronco + pescoço** são um único *loft* de anéis superelípticos (largura/profundidade por curvas
@@ -221,9 +235,9 @@ coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equi
 
 | | triângulos | tempo/personagem |
 |---|---|---|
-| LOD0 | ~5.600 | ~44 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
-| LOD1 | ~3.300 | ~42 ms |
-| LOD2 | ~2.700 | ~37 ms |
+| LOD0 | ~5.900 | ~39 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
+| LOD1 | ~3.400 | ~32 ms |
+| LOD2 | ~2.800 | ~32 ms |
 
 A camada de pele reaproveita ~400 triângulos da frente da cabeça (um draw a mais, com blend).
 

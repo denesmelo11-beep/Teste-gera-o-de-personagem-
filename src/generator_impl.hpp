@@ -27,6 +27,9 @@ struct Marks {
     float footLen, footHalfW;
     std::vector<ArmMarks> arms;
     Vec3 neckBase, headPivot, headOrigin;
+    // Centaur: hind legs (hip, stifle, hock, fetlock) and the horse barrel.
+    Vec3 hindHip[2], hindKnee[2], hindAnkle[2], hindBall[2];
+    float barrelY = 0, barrelFront = 0, barrelBack = 0, barrelHalfW = 0, barrelHalfH = 0;
 };
 
 class Builder {
@@ -76,6 +79,7 @@ private:
     void buildArms();
     void buildHand(const ArmMarks& a, const LimbRig& rig);
     void buildLegs();
+    void buildHorseBody();
     void buildFeet();
     void buildDigitigradeFeet();
     void buildBones();

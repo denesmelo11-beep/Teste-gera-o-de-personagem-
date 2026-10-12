@@ -190,8 +190,8 @@ EyeShape eyeShapeFor(const Genome& g) {
         case 6: e = {0.086f, 0.042f, 0.90f, 0.10f, 0.06f, 2.8f, 0.85f, 0.02f}; break;   // small
         default: e = {0.100f, 0.055f, 0.95f, 0.10f, 0.10f, 2.6f, 1.00f, 0.02f}; break;  // standard (reference)
     }
-    e.W *= f.eyeSize;
-    e.Hh *= f.eyeSize * (g.ageGroup == AgeGroup::Young ? 1.06f : g.ageGroup == AgeGroup::Elder ? 0.92f : 1.0f);
+    e.W *= f.eyeSize * 0.92f;  // grounded canon: eyes a touch smaller than the anime reference
+    e.Hh *= 0.92f * f.eyeSize * (g.ageGroup == AgeGroup::Young ? 1.06f : g.ageGroup == AgeGroup::Elder ? 0.92f : 1.0f);
     e.tilt += f.eyeTilt;
     return e;
 }

@@ -20,7 +20,7 @@ constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepar
                                            "longcurly", "verylong", "asymbob"};
 static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops", "tendrils"};
-constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen"};
+constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur"};
 static_assert(std::size(kSpeciesNames) == size_t(cg::Species::Count));
 static_assert(std::size(kBeardNames) == size_t(cg::FacialHair::Count));
 
@@ -52,8 +52,9 @@ constexpr std::array<std::array<float, 3>, 8> kBrowShapeW = {{{2, 1, 1.5f},
                                                                {1.5f, 2, 1}}};
 
 Vec3 pickSkin(Rng& r, bool fantasy) {
-    static constexpr Vec3 human[] = {{0.99f, 0.88f, 0.82f}, {0.97f, 0.82f, 0.71f}, {0.91f, 0.74f, 0.60f},
-                                     {0.80f, 0.60f, 0.45f}, {0.62f, 0.43f, 0.31f}, {0.42f, 0.29f, 0.22f}};
+    // Weathered, sun- and cold-touched tones rather than porcelain.
+    static constexpr Vec3 human[] = {{0.90f, 0.77f, 0.69f}, {0.87f, 0.71f, 0.59f}, {0.79f, 0.61f, 0.48f},
+                                     {0.67f, 0.49f, 0.36f}, {0.51f, 0.36f, 0.26f}, {0.35f, 0.25f, 0.19f}};
     static constexpr Vec3 fantasySkins[] = {{0.52f, 0.62f, 0.44f}, {0.62f, 0.68f, 0.76f}, {0.66f, 0.30f, 0.27f},
                                             {0.58f, 0.52f, 0.66f}, {0.58f, 0.58f, 0.60f}, {0.36f, 0.33f, 0.42f}};
     if (fantasy) return jitter(r, fantasySkins[r.weighted({2, 1, 1.5f, 0.6f, 1.5f, 1.5f})], 0.03f);
@@ -153,9 +154,12 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     Palette& pal = g.palette;
     const float hRel = b.height / (fem ? 1.65f : 1.78f);  // keeps the individual's relative height
     auto height = [&](float lo, float hi) { b.height = lerp(lo, hi, r.uniform()) * clamp(hRel, 0.94f, 1.06f); };
+    // Species factors were authored against a slighter human canon: rebase so peoples
+    // with their own head count keep their intended absolute bulk.
     auto widths = [&](float sh, float ch, float wa, float hp, float limbs) {
-        b.shoulderWidth *= sh; b.chestWidth *= ch; b.waistWidth *= wa; b.hipWidth *= hp;
-        b.thigh *= limbs; b.calf *= limbs; b.arm *= limbs;
+        const float rb2 = 0.88f;
+        b.shoulderWidth *= sh * rb2; b.chestWidth *= ch * rb2; b.waistWidth *= wa * rb2; b.hipWidth *= hp * rb2;
+        b.thigh *= limbs * rb2; b.calf *= limbs * rb2; b.arm *= limbs * rb2; b.neckThick *= 0.9f;
     };
     auto pickC = [&](std::initializer_list<Vec3> cs) {
         std::vector<Vec3> v(cs);
@@ -227,8 +231,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.noseLength = 1.2f; f.noseProj = r.range(1.3f, 1.6f); f.noseWidth = 1.3f; f.noseTip = 0.45f;
             f.roundness = saturate(f.roundness + 0.4f); f.chin = -0.3f; f.jaw = fem ? -0.3f : 0.0f; f.cheekHollow = 0.0f;
             b.ear = {0.30f, 0.11f, 0.25f, 0.35f, 0.0f};
-            hairColor(pickC({{0.95f, 0.45f, 0.70f}, {0.30f, 0.75f, 0.75f}, {0.60f, 0.40f, 0.85f}, {0.60f, 0.85f, 0.35f}, {0.92f, 0.92f, 0.95f},
-                             {0.85f, 0.40f, 0.20f}, {0.95f, 0.85f, 0.45f}}));
+            hairColor(pickC({{0.62f, 0.36f, 0.44f}, {0.30f, 0.50f, 0.50f}, {0.42f, 0.32f, 0.52f}, {0.42f, 0.50f, 0.30f}, {0.80f, 0.80f, 0.80f},
+                             {0.58f, 0.30f, 0.18f}, {0.70f, 0.62f, 0.40f}}));  // dyed, but faded
             hair({{HairStyle::TwinBraids, fem ? 2.0f : 0.0f}, {HairStyle::HighPonytail, fem ? 2.0f : 0.3f}, {HairStyle::Messy, 2},
                   {HairStyle::Bun, fem ? 1.0f : 0.0f}, {HairStyle::BowlCut, 1}, {HairStyle::Curly, 1}, {HairStyle::Topknot, 1}});
             beard({{FacialHair::None, 1}, {FacialHair::Mustache, 2}, {FacialHair::Goatee, 1}, {FacialHair::FullBeard, 1.5f},
@@ -388,7 +392,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             height(fem ? 2.00f : 2.15f, fem ? 2.15f : 2.35f);
             b.headsTall = r.range(6.6f, 6.9f);
             b.legRatio = 0.50f;
-            if (fem) widths(1.18f, 1.14f, 1.12f, 0.90f, 1.15f);
+            if (fem) widths(1.22f, 1.20f, 1.28f, 0.84f, 1.18f);
             else widths(1.45f, 1.40f, 1.15f, 1.0f, 1.40f);
             b.handSize *= 1.35f; b.footSize *= 1.15f; b.neckThick *= 1.4f; b.neckLength *= 0.6f;
             b.muscle = saturate(b.muscle + 0.35f); b.hunch = std::max(b.hunch, fem ? 0.9f : 1.4f); b.belly = 0.0f;
@@ -398,10 +402,10 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.ear = {0.36f, 0.15f, 1.15f, 0.30f, 0.0f, 0.80f, 0.70f};
             glow({1.0f, 0.78f, 0.25f});
             f.restLid = 0.05f; f.browTilt = -0.25f;
-            f.darkNose = true; f.eyeShape = 3; f.eyeSize = 0.92f; f.browRidge = 1.0f; f.eyeDepth = 0.8f; f.noseWidth = 1.1f; f.noseProj = 0.9f;
+            f.darkNose = true; f.eyeShape = 3; f.eyeSize = 0.92f; f.browRidge = 1.0f; f.eyeDepth = 0.8f; f.noseWidth = 1.7f; f.noseProj = 1.0f;
             f.noseLength = 0.8f; f.noseTip = 0.0f; f.noseHump = 0.0f; f.mouthWidth = 1.5f; f.lipFullness = 0.1f; f.stubble = 0.0f;
             const Vec3 fur = pickC({{0.40f, 0.39f, 0.38f}, {0.28f, 0.23f, 0.19f}, {0.15f, 0.14f, 0.14f}, {0.46f, 0.34f, 0.24f},
-                                    {0.70f, 0.69f, 0.66f}, {0.33f, 0.31f, 0.30f}});
+                                    {0.56f, 0.55f, 0.53f}, {0.33f, 0.31f, 0.30f}});
             skinTo(fur);
             pal.lips = fur * 0.35f;
             pal.iris = pickC({{0.95f, 0.70f, 0.15f}, {0.85f, 0.45f, 0.10f}, {0.70f, 0.75f, 0.30f}});
@@ -410,6 +414,43 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             if (!opt.hair) g.hair = r.chance(0.5f) ? HairStyle::Wolf : r.chance(0.5f) ? HairStyle::Shoulder : HairStyle::Messy;
             g.fringe = Fringe::None;
             g.facialHair = FacialHair::MuttonChops;  // the cheek ruff
+            break;
+        }
+        case Species::Ogre: {  // colossus: a towering, top-heavy brute with a small head
+            height(fem ? 2.45f : 2.65f, fem ? 2.70f : 3.05f);
+            b.headsTall = r.range(7.6f, 8.0f);
+            b.legRatio = 0.44f;
+            if (fem) widths(1.70f, 1.70f, 1.85f, 1.35f, 1.70f);
+            else widths(1.85f, 1.80f, 1.75f, 1.30f, 1.80f);
+            b.chestDepth *= 1.45f; b.handSize *= 1.55f; b.footSize *= 1.3f; b.armLength *= 1.10f;
+            b.neckLength *= 0.25f; b.neckThick *= 1.9f; b.muscle = saturate(b.muscle + 0.45f);
+            b.hunch = std::max(b.hunch, 1.2f); b.belly += fem ? 0.10f : 0.30f; b.bust *= 0.8f;
+            b.anat.traps = 1.4f; b.anat.deltoids = 1.3f; b.anat.forearms = 1.4f;
+            f.browRidge = 1.2f; f.eyeDepth = 1.0f; f.eyeSize = 0.80f; f.eyeShape = 6; f.jaw = 1.0f; f.chinWidth = 1.0f; f.chin = 0.6f;
+            f.noseWidth = 1.7f; f.noseProj = 0.9f; f.noseLength = 0.9f; f.noseTip = 0.3f; f.mouthWidth = 1.3f; f.cheekHollow = 0.0f;
+            f.jowl = 0.6f; f.crown = -0.6f;
+            b.tusks = 1; b.tuskSize = fem ? 0.6f : 1.1f;
+            b.ear = {0.13f, 0.09f, 0.10f, 0.25f, 0.0f};
+            skinTo(pickC({{0.55f, 0.50f, 0.42f}, {0.50f, 0.42f, 0.38f}, {0.58f, 0.36f, 0.30f}, {0.46f, 0.50f, 0.44f}, {0.44f, 0.44f, 0.50f}}));
+            pal.iris = pickC({{0.85f, 0.55f, 0.10f}, {0.30f, 0.22f, 0.15f}, {0.75f, 0.20f, 0.10f}});
+            hairColor(pickC({{0.12f, 0.11f, 0.11f}, {0.30f, 0.20f, 0.13f}, {0.45f, 0.18f, 0.10f}}));
+            hair({{HairStyle::Bald, fem ? 0.3f : 3.0f}, {HairStyle::Topknot, 2}, {HairStyle::Ponytail, 1}, {HairStyle::Messy, 1}, {HairStyle::Buzz, 1}});
+            beard({{FacialHair::None, 2}, {FacialHair::Stubble, 2}, {FacialHair::ShortBeard, 1}, {FacialHair::BraidedBeard, 1}});
+            break;
+        }
+        case Species::Centaur: {  // a human torso rising from a horse's chest
+            height(fem ? 2.15f : 2.30f, fem ? 2.30f : 2.50f);
+            b.headsTall = r.range(7.8f, 8.1f);
+            b.legRatio = 0.56f;  // the human hip line rides at the horse's withers
+            widths(fem ? 1.05f : 1.15f, fem ? 1.05f : 1.12f, 1.05f, 1.0f, 1.10f);
+            b.centaur = true; b.hooves = true; b.tail = true; b.tailFur = true; b.tailLength = 0.9f; b.belly = 0.0f;
+            b.muscle = saturate(b.muscle + 0.2f);
+            f.cheek = std::max(f.cheek, 0.3f);
+            b.ear = {0.20f, 0.08f, 0.35f, 0.40f, 0.0f};
+            hairColor(pickC({{0.16f, 0.13f, 0.11f}, {0.36f, 0.24f, 0.15f}, {0.62f, 0.55f, 0.42f}, {0.75f, 0.74f, 0.70f}, {0.45f, 0.20f, 0.12f}}));
+            hair({{HairStyle::LongStraight, 2}, {HairStyle::Braid, 2}, {HairStyle::WarriorBraids, 2}, {HairStyle::Ponytail, 1.5f},
+                  {HairStyle::LongWavy, 1}, {HairStyle::Topknot, fem ? 0.0f : 1.0f}});
+            beard({{FacialHair::None, 2}, {FacialHair::FullBeard, 2}, {FacialHair::LongBeard, 1.5f}, {FacialHair::BraidedBeard, 1}});
             break;
         }
         default: break;
@@ -424,11 +465,11 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     };
     if (sp == Species::Orc || sp == Species::Troll || sp == Species::NightElf || sp == Species::Draenei || sp == Species::Goblin ||
         sp == Species::Undead) {
-        pal.skin = grade(pal.skin, 0.72f, 0.92f);
-        pal.lips = grade(pal.lips, 0.72f, 0.92f);
+        pal.skin = grade(pal.skin, 0.62f, 0.86f);
+        pal.lips = grade(pal.lips, 0.62f, 0.86f);
     }
     if (sp == Species::Gnome || sp == Species::Troll || sp == Species::NightElf) {
-        pal.hair = grade(pal.hair, 0.78f, 0.95f);
+        pal.hair = grade(pal.hair, 0.62f, 0.88f);
         pal.hairTip = pal.hair * 0.88f;
     }
 }
@@ -501,38 +542,39 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.height = (fem ? 1.65f + 0.065f * tz : 1.78f + 0.07f * tz) * ageH;
     // Stylised-heroic canon: a slightly large head (6.4-6.6 heads) keeps faces readable at
     // low resolution; limbs are full, torsos taper cleanly (shoulders > chest > waist).
-    b.headsTall = (fem ? 6.35f : 6.5f) + 0.10f * tz - (young ? 0.12f : 0.0f);
+    // Heroic-realistic canon (~7 heads): a grounded, adult read; faces stay legible via the planes.
+    b.headsTall = (fem ? 6.85f : 7.05f) + 0.10f * tz - (young ? 0.15f : 0.0f);
     b.legRatio = clamp((fem ? 0.505f : 0.50f) + 0.007f * z(rb), 0.48f, 0.53f);
     b.neckLength = clamp((fem ? 0.31f : 0.27f) + 0.022f * z(rb) - 0.02f * std::max(0.0f, mus), 0.14f, 0.38f);
-    b.neckThick = (fem ? 0.125f : 0.172f) + 0.007f * frame + 0.014f * std::max(0.0f, mus) + 0.007f * fat;
+    b.neckThick = (fem ? 0.140f : 0.205f) + 0.008f * frame + 0.016f * std::max(0.0f, mus) + 0.008f * fat;
     if (fem) {
         // Hourglass: waist ~half the hip width, full thighs, arms that read at low res.
-        b.shoulderWidth = 0.61f + 0.025f * frame + 0.02f * mus;
-        b.chestWidth = 0.46f + 0.02f * frame + 0.02f * fat;
-        b.waistWidth = 0.300f + (fat > 0 ? 0.062f : 0.040f) * fat - 0.004f * mus;
-        b.hipWidth = 0.70f + 0.03f * frame + 0.04f * fat;
-        b.chestDepth = 0.34f + 0.018f * fat;
+        b.shoulderWidth = 0.70f + 0.028f * frame + 0.024f * mus;
+        b.chestWidth = 0.53f + 0.022f * frame + 0.024f * fat;
+        b.waistWidth = 0.375f + (fat > 0 ? 0.068f : 0.042f) * fat - 0.004f * mus;
+        b.hipWidth = 0.77f + 0.032f * frame + 0.045f * fat;
+        b.chestDepth = 0.39f + 0.02f * fat;
         b.bust = clamp(0.6f + 0.2f * z(rb) + 0.12f * fat, 0.15f, 1.25f);
         b.butt = clamp(0.62f + 0.15f * z(rb) + 0.10f * fat, 0.25f, 1.25f);
         b.muscle = saturate(0.22f + 0.13f * mus);
-        b.thigh = 0.34f + 0.022f * fat + 0.008f * mus;
-        b.calf = 0.19f + 0.008f * fat + 0.005f * mus;
-        b.arm = std::max(0.115f, 0.127f + 0.007f * fat + 0.005f * mus);  // never noodle arms
-        b.handSize = 0.94f + 0.02f * frame;
+        b.thigh = 0.39f + 0.024f * fat + 0.010f * mus;
+        b.calf = 0.225f + 0.009f * fat + 0.006f * mus;
+        b.arm = std::max(0.160f, 0.172f + 0.009f * fat + 0.008f * mus);  // never noodle arms
+        b.handSize = 1.0f + 0.02f * frame;
         b.posture = 0.6f + 0.1f * z(rb) * 0.5f;
     } else {
-        b.shoulderWidth = 0.80f + 0.03f * frame + 0.04f * mus;
-        b.chestWidth = 0.53f + 0.022f * frame + 0.03f * mus + 0.03f * fat;
-        b.waistWidth = 0.395f + (fat > 0 ? 0.080f : 0.050f) * fat - 0.006f * mus;
-        b.hipWidth = 0.56f + 0.02f * frame + 0.035f * fat;
-        b.chestDepth = 0.42f + 0.018f * mus + 0.018f * fat;
+        b.shoulderWidth = 0.96f + 0.035f * frame + 0.05f * mus;
+        b.chestWidth = 0.66f + 0.026f * frame + 0.035f * mus + 0.035f * fat;
+        b.waistWidth = 0.50f + (fat > 0 ? 0.090f : 0.055f) * fat - 0.006f * mus;
+        b.hipWidth = 0.66f + 0.024f * frame + 0.04f * fat;
+        b.chestDepth = 0.51f + 0.022f * mus + 0.022f * fat;
         b.bust = std::max(0.0f, 0.12f * (fat - 1.0f));  // only heavier men get chest softness
         b.butt = clamp(0.32f + 0.08f * z(rb) + 0.05f * mus, 0.12f, 0.65f);
         b.muscle = saturate(0.50f + 0.17f * mus);
-        b.thigh = 0.34f + 0.014f * fat + 0.016f * mus;
-        b.calf = 0.215f + 0.007f * fat + 0.008f * mus;
-        b.arm = std::max(0.145f, 0.160f + 0.007f * fat + 0.012f * mus);
-        b.handSize = 1.0f + 0.03f * frame;
+        b.thigh = 0.42f + 0.016f * fat + 0.020f * mus;
+        b.calf = 0.285f + 0.008f * fat + 0.012f * mus;
+        b.arm = std::max(0.205f, 0.225f + 0.009f * fat + 0.018f * mus);
+        b.handSize = 1.10f + 0.03f * frame;
         b.posture = 0.45f + 0.05f * z(rb);
     }
     b.belly = std::max(0.0f, 0.24f * (fat - 0.5f)) + (elder ? 0.05f : 0.0f);
@@ -851,7 +893,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     // ---- species: reshape the sampled person into one of the world's peoples ----
     Species sp = opt.species.value_or(Species::Human);
     if (!opt.species && opt.mixedSpecies)
-        sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f}));
+        sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
     return g;
 }
