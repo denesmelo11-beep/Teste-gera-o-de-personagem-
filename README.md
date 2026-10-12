@@ -1,146 +1,167 @@
 # chargen — gerador procedural de personagens low-poly (C++20)
 
-Gerador de personagens para um ARPG de fantasia: corpos com proporções humanas puxadas para o lado
-RPG/anime (violão, *dorito*, *bombshell*, brutamontes, amazona, élfica esguia, monstros de 4 braços),
-rosto 2D reativo (olhos e boca trocáveis em tempo de execução), esqueleto simples com skinning suave,
-animações procedurais com movimento secundário e exportação glTF pronta para engine.
+Gerador de personagens para um ARPG de fantasia sério com um pé no anime: população variada
+(idades, personas heroicas/vilanescas/fofas/sexy..., cortes de cabelo), **corpos base sem roupa**
+(só roupa íntima, como no Skyrim — equipamento vai por cima), anatomia muscular e óssea legível e
+**parametrizável**, rosto 2D expressivo, cabelo e busto com física, e um visualizador
+Raylib/OpenGL com resolução reduzida intencional.
 
-Sem dependências externas: só a biblioteca padrão de C++20 (o encoder PNG e o renderizador de
-preview também foram escritos aqui).
+O núcleo não tem dependências externas (só a biblioteca padrão de C++20; o encoder PNG, o
+exportador glTF e um renderizador de preview em software foram escritos aqui). O visualizador usa
+Raylib 5.5 (opcional).
 
-| Elenco (`lineup`) | Corpos base (`sheet --base`) |
+| Folha de modelo (`chargen_viewer --studio`) | Anatomia (curvatura + vincos) |
 |---|---|
-| ![lineup](docs/lineup.png) | ![corpos](docs/corpos_base.png) |
+| ![folha](docs/folha_modelo.png) | ![anatomia](docs/anatomia.png) |
 
-| Rostos (`portraits`) | Expressões (`faces`) |
+| População natural + presets (`--population`) |
+|---|
+| ![populacao](docs/populacao.png) |
+
+| Visão de jogo (480×270 ampliado) | Retratos |
 |---|---|
-| ![rostos](docs/rostos.png) | ![expressões](docs/expressoes.png) |
+| ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
-![caminhada](docs/walk.png)
+| Os 18 cortes | Expressões |
+|---|---|
+| ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
+
+![física](docs/fisica_corrida.png)
+![esquiva](docs/fisica_esquiva.png)
 
 ## Compilar
 
 ```bash
+# biblioteca, CLI e testes
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/chargen_tests          # determinismo, malha válida, pesos, winding, export
+./build/chargen_tests
+
+# com o visualizador Raylib (usa a raylib do sistema, uma árvore local, ou baixa a 5.5)
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCHARGEN_VIEWER=ON \
+      [-DRAYLIB_SOURCE_DIR=/caminho/para/raylib]
+cmake --build build
 ```
 
-## CLI
+## Visualizador (Raylib / OpenGL 3.3)
 
 ```bash
-chargen_cli lineup    --seed 300 --count 8            # elenco lado a lado
-chargen_cli sheet     --seed 12 --archetype bombshell # turnaround: frente, 3/4, perfil, costas
-chargen_cli sheet     --seed 12 --archetype brute --base   # só roupa íntima (avaliar anatomia)
-chargen_cli portraits --seed 200 --count 12           # variedade de rostos/cabelos
-chargen_cli faces     --seed 301                      # folha de emoções
-chargen_cli anim      --seed 304 --clip walk --frames 6 [--yaw 0.9]
-chargen_cli atlas     --seed 5                        # atlas facial 2D
-chargen_cli export    --seed 42 --lod 0 --out heroi.glb
-chargen_cli stats     --count 300                     # tempo e triângulos por LOD
+chargen_viewer [--seed N] [--count K] [--res 480]      # interativo
+chargen_viewer --shots pasta --seed 21                 # gera a bateria de imagens e sai
+chargen_viewer --studio folha.png --seed 21            # folha de modelo: mulher e homem, 4 vistas
+chargen_viewer --population pop.png --seed 40          # população natural + presets
+# estilo da malha: padrão = suave com vincos; --smooth = totalmente suave; --flat = facetado
 ```
 
-Opções comuns: `--archetype heroine|bombshell|dorito|brute|slender|chibi|amazon|monster`,
-`--exaggeration 0..2` (empurra proporções para o caricato/absurdo), `--smooth` (normais suaves em vez
-de facetado), `--toon` (preview com cel shading e contorno).
+Teclas: `N` novos personagens · `1-5` idle/walk/run/attack/dodge · `R` correr em círculo ·
+`E` expressões · `W` vento · `L` baixa resolução · `Espaço` pausa · arrastar = câmera.
+Headless funciona com `xvfb-run -a chargen_viewer --shots out`.
+
+## CLI (preview em software, export glTF)
+
+```bash
+chargen_cli sheet     --seed 12 --sex female --persona sexy   # turnaround
+chargen_cli lineup    --seed 300 --count 8 [--age elder]
+chargen_cli portraits --seed 200 --count 12
+chargen_cli faces     --seed 301
+chargen_cli anim      --seed 304 --clip run --frames 6        # inclui física secundária
+chargen_cli export    --seed 42 --lod 0 --out heroi.glb
+chargen_cli stats     --count 300
+```
+
+Filtros: `--sex female|male`, `--age young|adult|mature|elder`,
+`--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
+`--archetype natural|bombshell|dorito|brute|amazon|slender|chibi|monster` (presets estilizados,
+opcionais) e `--exaggeration 0..2`.
 
 ## Como funciona
 
 ```
-Genome (DNA)  ──►  Builder  ──►  Character { Skeleton, RigInfo, Mesh, Image faceAtlas }
-                                       │
-             animation.hpp  ◄──────────┤  clips procedurais + skinning CPU
-             gltf.hpp       ◄──────────┤  .glb (skin, animações, atlas embutido)
-             render.hpp     ◄──────────┘  preview em software (PNG)
+Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsRig, Mesh, faceAtlas }
+                                  │
+         animation.hpp ◄──────────┤ clipes procedurais + skinning
+         physics.hpp   ◄──────────┤ cadeias de mola (cabelo, cauda) + jiggle (busto)
+         gltf.hpp      ◄──────────┤ .glb com skin, animações e atlas
+         apps/viewer   ◄──────────┘ Raylib: shaders, resolução baixa, física em tempo real
 ```
 
-### Genoma (`include/chargen/genome.hpp`)
-Todas as medidas do corpo são em **unidades de cabeça** (`h = altura / headsTall`), o que mantém as
-proporções coerentes de chibi a brutamontes. Cada arquétipo define faixas (altura, nº de cabeças,
-razão das pernas, ombro/peito/cintura/quadril, busto, glúteos, músculo, barriga, espessura de
-membros...). `randomGenome(seed)` é determinístico e usa *sub-streams* independentes por aspecto
-(corpo, rosto, cabelo, roupa, paleta): adicionar um parâmetro novo não embaralha os outros.
+### Genoma: população, personas e anatomia (`include/chargen/genome.hpp`)
+- **População comum**: altura, gordura, músculo e ossatura são normais independentes; os extremos
+  ficam nas caudas ou nos presets. Idade (jovem/adulto/maduro/idoso) mexe em altura, gordura,
+  queda de tecidos, postura, linhas do rosto e grisalho; a persona puxa corpo, olhar, sobrancelha
+  e boca de repouso.
+- **Proporções** em unidades de cabeça (`h = altura / headsTall`), cânone estilizado de 6,4–6,6
+  cabeças (rosto legível em baixa resolução), cintura de violão nas mulheres, V nos homens, coxas
+  cheias e piso de espessura para braços.
+- **`Anatomy`**: um bloco de campos 0..1 prontos para sliders — `definition` (quanto a gordura
+  esconde as formas), grupos musculares (`neck, traps, deltoids, pecs, lats, abs, obliques,
+  serratus, biceps, triceps, forearms, glutes, quads, adductors, hamstrings, calves`) e
+  proeminência óssea (`clavicles, ribcage, scapulae, pelvis, knees, elbows, wrists`). O gerador
+  amostra todos a partir dos eixos da população; um editor pode sobrescrever qualquer um.
 
-### Corpo esculpido por lofts
-Cada parte é um *loft* de anéis superelípticos ao longo dos ossos (frente e costas com profundidades e
-expoentes independentes), soldado numa única malha:
+### Corpo: uma superfície contínua
+- **Tronco + pescoço** são um único *loft* de anéis superelípticos (largura/profundidade por curvas
+  monotônicas), da linha do quadril até dentro do crânio. Os anéis ficam sobre os marcos
+  anatômicos (sulcos do abdômen, borda do peitoral, clavículas, inclinação do trapézio).
+- **Pelve e coxas** usam topologia de "calça": o anel inferior do tronco é uma sela (alto no
+  quadril, baixo na virilha) e se divide em duas metades que, fechadas por uma ponte sob a
+  virilha, viram o topo de cada coxa. Anéis de junção carregam o volume de quadril e glúteos.
+  Não há superfícies se interpenetrando no quadril nem no pescoço.
+- **Relevo anatômico** como campos aditivos: clavículas e fúrcula, peitorais com prateleira,
+  arco costal, serrátil, reto abdominal com intersecções, oblíquos e o "V" inguinal, crista
+  ilíaca, escápulas, eretores, trapézio, dorsais, covinhas lombares; nos braços deltoide (três
+  cabeças fechando em V), bíceps, tríceps em ferradura, braquial, olécrano/epicôndilos,
+  braquiorradial, punho achatado; nas pernas vasto lateral/medial, adutores, isquiotibiais,
+  patela, gastrocnêmio (cabeça medial mais baixa), tíbia, Aquiles e maléolos. Mãos com sulcos de
+  dedos, nós e polegar com eminência tenar.
+- **Sombreamento**: normais suaves com detecção de vinco por ângulo (as dobras anatômicas ficam
+  nítidas, as formas continuam lisas) e **cavidade baked na cor do vértice** a partir da curvatura
+  local (sulcos levemente mais escuros e quentes, cristas mais claras) — o equivalente procedural
+  de uma textura pintada à mão, independente da luz.
+- **Roupa íntima** recortada por campos: triângulos são divididos exatamente na borda (com
+  refinamento por bisseção), então as bordas são curvas limpas em qualquer ângulo.
 
-- **Torso** (`Builder::torsoPoint`): uma superfície contínua da virilha ao pescoço com curvas
-  monotônicas (sem overshoot) para largura/profundidade, postura em S, e esculpidos aditivos:
-  seios (calota elíptica com dobra inferior, integrada ao torso, não esferas coladas), glúteos com
-  sulco, peitoral com borda definida, abdômen em placas, dorsais em V, trapézio, sulco da coluna,
-  escápulas e eretores. A amostragem angular é mais densa na frente/costas, onde estão as curvas.
-- **Membros**: o loft do braço dobra no ombro e corre para o pescoço, formando o deltoide como
-  parte do braço (sem "ombro de bola"); bíceps/tríceps, antebraço, quadríceps e panturrilha
-  crescem com o músculo. O topo da coxa é preso por dentro da pelve, então quadril e coxa formam
-  uma linha contínua.
-- **Cabeça**: perfil anime com variação individual de mandíbula, queixo e maçãs do rosto; sempre
-  com sombreamento liso para o rosto 2D não ficar "facetado".
-- **Pesos de skinning** vêm do parâmetro do loft ao longo da cadeia de ossos (blend suave nas
-  articulações), mais influência dos ossos de busto e de clavícula onde faz sentido.
-- Cada quad é dividido pela diagonal mais coplanar, o que reduz lascas no estilo facetado.
+### Rosto 2D e cabeça
+Cabeça esculpida (mandíbula, queixo, maçãs, nariz, arcada) com mandíbula estilizada mais estreita
+e crânio cheio. Olhos, sobrancelhas e boca são pintados com SDF num atlas 1024×512 (8 células de
+olhos × 8 de boca, combináveis); olhos grandes e nítidos — linha de cílios forte com "asa", íris
+alta com um único brilho, pálpebra inferior curta. Expressão = offset de UV. Barbas são pintadas
+na pele com borda exata e ganham volume que afina até zero na borda.
 
-### Rosto 2D reativo
-O rosto é pintado (SDF com anti-aliasing) num atlas 1024×512: 8 células de olhos
-(`neutral, blink, happy, angry, sad, surprised, hurt, smug`) e 8 de boca
-(`neutral, smile, open, grin, frown, shout, oh, smirk`). Dois *decals* finos acompanham a superfície
-da cabeça e apontam para as células `Neutral`; uma expressão é só um offset de UV:
-
-```cpp
-cg::FaceState f = cg::emotionFace(cg::Emotion::Rage);      // {Angry, Shout}
-cg::Vec2 eyeOff   = cg::FaceLayout::eyeUvOffset(f.eyes);   // some aos UVs do material face_eyes
-cg::Vec2 mouthOff = cg::FaceLayout::mouthUvOffset(f.mouth); // some aos UVs do material face_mouth
-```
-
-Olhos e boca combinam livremente (8×8). Cada personagem tem formato de olho próprio (amendoado,
-redondo, encapuzado, puxado, caído), maturidade (de anime jovem a semi-realista), sobrancelhas,
-lábios, nariz, sombra nos olhos, sardas e cicatriz. As animações trazem uma trilha de expressão
-(piscar no idle, raiva no ataque).
+### Cabelo e física
+- Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
+- Cortes médios/longos são **massas contínuas**: folhas grossas ao redor da nuca e das laterais,
+  com mechas esculpidas como sulcos, pontas suaves na barra e duas mechas frontais caindo à frente
+  dos ombros; franjas reta, de lado ou cortina no mesmo sistema. Rabos de cavalo, tranças e coques
+  são tubos/volumes próprios.
+- Cada massa é presa a uma fileira de cadeias de mola (estilo VRM spring bones) com colisores de
+  cápsula (cabeça, pescoço, tronco, braços, coxas); o busto usa molas de jiggle limitadas a um
+  elipsoide. Passo fixo de 120 Hz e inércia relativa ao corpo (cabelo não "voa" só porque o
+  personagem anda).
 
 ### Esqueleto e animação
-`root → hips → spine → chest → neck → head`, clavícula/braço/antebraço/mão por braço (2 ou 4 braços),
-coxa/canela/pé/dedo, ossos opcionais de busto, cauda (4) e rabo de cavalo/trança (3). Rotações de
-repouso são identidade (A-pose), o que simplifica a autoria procedural. Clipes: `idle`, `walk`, `run`,
-`attack`, mais molas amortecidas simuladas em loop para busto, cabelo e cauda.
+`root → hips → spine → chest → neck → head`, clavícula/braço/antebraço/mão (2 ou 4 braços),
+coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equipamento
+(`socket.hand.R/L`, `socket.back`, `socket.hip`). Clipes procedurais: `idle`, `walk`, `run`,
+`attack`, `dodge`, com trilha de expressão.
 
-```cpp
-cg::Character c = cg::generateCharacter(cg::randomGenome(42));
-cg::Clip walk = cg::makeWalkClip(c);
-cg::Pose pose = cg::sampleClip(walk, t);
-std::vector<cg::Mat4> global, skin;
-cg::poseMatrices(c.skeleton, pose, global, skin);   // paleta de matrizes para o shader de skinning
-```
-
-### Exportação glTF
-`exportGlb` grava um `.glb` com 3 primitivas (`body` com cor por vértice, `face_eyes` e `face_mouth`
-com o atlas e `alphaMode: MASK`), skin, as 4 animações e o layout do atlas em `extras`. O alfa de
-`COLOR_0` guarda a classe do material (`pele, tecido, couro, metal, cabelo, escuro, chifre`) para o
-shader escolher tom de sombra/especular sem texturas extras.
-
-## Desempenho (4 núcleos, Release)
+## Desempenho (Release)
 
 | | triângulos | tempo/personagem |
 |---|---|---|
-| LOD0 | ~5.500 | ~34 ms (malha < 1 ms; o resto é pintar o atlas, em paralelo) |
-| LOD1 | ~3.200 | ~30 ms |
-| LOD2 | ~2.400 | ~30 ms |
-
-Num jogo, a malha pode ser gerada no spawn e o atlas pintado em uma *thread* de fundo (ou cacheado
-por personagem). O modo facetado duplica vértices por face; para economizar memória, exporte com
-`--smooth` e faça o facetado no shader (`normalize(cross(dFdx(pos), dFdy(pos)))`).
+| LOD0 | ~8.900 | ~29 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
+| LOD1 | ~3.700 | ~25 ms |
+| LOD2 | ~2.700 | ~24 ms |
 
 ## Estrutura
 
 ```
-include/chargen/  math, rng, genome, character, animation, image, render, gltf
-src/              genome.cpp (arquétipos, paletas), builder.* (lofts, solda, pesos),
-                  generator.cpp (corpo/roupas), hair.cpp (cabelo, chifres, orelhas, barba),
-                  face.cpp (atlas facial), animation.cpp, render.cpp, gltf.cpp, image.cpp
-apps/chargen_cli.cpp   tests/tests.cpp   docs/ (imagens geradas pela CLI)
+include/chargen/  math, rng, genome, character, animation, physics, image, render, gltf
+src/              genome.cpp (população, personas, anatomia, paletas)
+                  builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
+                  generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, colisores)
+                  head.cpp (cabeça esculpida, decals) · hair.cpp (calota, massas, franjas, barba, orelhas)
+                  face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
+apps/             chargen_cli.cpp, viewer.cpp (Raylib)
+tests/tests.cpp   docs/ (imagens geradas pelo visualizador)
 ```
-
-## Próximos passos naturais
-- Bestas e anatomias únicas: pernas digitígradas, asas, quadrúpedes (o `BodyPlan` de membros já é
-  genérico: braços extras e cauda usam o mesmo construtor de loft).
-- Morph targets (respiração, flexão de músculo, volume do busto) exportados no glTF.
-- Mais estilos de cabelo/roupa como dados; LOD automático por distância; viewer em tempo real.

@@ -174,6 +174,7 @@ void Builder::buildHead() {
     Part& hp = newPart();
     hp.smoothAlways = true;  // painted features need clean shading
     headPartId_ = hp.id;
+    headPart_ = parts.size() - 1;
     // Mild forward bend of the face normals: keeps hard shadows off the eyes
     // while the nose and brow still read.
     const Vec3 o = m.headOrigin;

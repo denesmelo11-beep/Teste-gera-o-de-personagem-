@@ -376,11 +376,11 @@ Camera3D makeCam(cg::Vec3 target, float yaw, float pitch, float dist, float fovy
     return c;
 }
 
-void label(Image& img, const Actor& a, int x, int y, int size) {
+void label(Image& img, const Actor& a, int x, int y, int size, Color col = Color{40, 40, 50, 255}) {
     char buf[128];
     std::snprintf(buf, sizeof buf, "%s %s %s", std::string(cg::toString(a.ch.genome.persona)).c_str(),
                   std::string(cg::toString(a.ch.genome.ageGroup)).c_str(), std::string(cg::toString(a.ch.genome.hair)).c_str());
-    ImageDrawText(&img, buf, x, y, size, Color{40, 40, 50, 255});
+    ImageDrawText(&img, buf, x, y, size, col);
 }
 
 void setClip(Actor& a, const char* name) {
@@ -424,6 +424,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
         shoot(hi, back, "04_elenco_costas.png", 1);
     }
     // 2) Portraits: faces as they read at game resolution and up close.
+    s.studio = true;
     {
         Image sheet = GenImageColor(4 * 320, 2 * 360, BLACK);
         for (int i = 0; i < 8; ++i) {
@@ -438,7 +439,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
             drawScene(s, cam, 320, 360);
             EndTextureMode();
             Image img = grab(prt, 1);
-            label(img, a, 6, 340, 12);
+            label(img, a, 6, 340, 12, Color{225, 225, 230, 255});
             ImageDraw(&sheet, img, {0, 0, 320, 360}, {float((i % 4) * 320), float((i / 4) * 360), 320, 360}, WHITE);
             UnloadImage(img);
             UnloadRenderTexture(prt);
@@ -466,7 +467,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
             drawScene(s, cam, 240, 260);
             EndTextureMode();
             Image img = grab(prt, 1);
-            ImageDrawText(&img, names[i], 6, 240, 14, Color{30, 30, 40, 255});
+            ImageDrawText(&img, names[i], 6, 240, 14, Color{225, 225, 230, 255});
             ImageDraw(&sheet, img, {0, 0, 240, 260}, {float((i % 4) * 240), float((i / 4) * 260), 240, 260}, WHITE);
             UnloadImage(img);
             UnloadRenderTexture(prt);
@@ -476,6 +477,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
         UnloadImage(sheet);
         std::printf("%s/06_expressoes.png\n", dir.c_str());
     }
+    s.studio = false;
     // 4) Physics in action: long-haired / busty characters running in a circle, then dodging.
     {
         cg::GenomeOptions o2;
@@ -571,6 +573,7 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
         shoot(rt, cam, "10_personas_lowres.png", scale);
     }
     // 6) Every haircut, 3/4 portraits (hair silhouette is identity at low resolution).
+    s.studio = true;
     {
         const int n = int(cg::HairStyle::Count), cols = 6, cw = 240, chh = 270;
         Image sheet = GenImageColor(cols * cw, ((n + cols - 1) / cols) * chh, BLACK);
@@ -593,18 +596,19 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
             for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
             cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
             float hh = a.ch.height / a.ch.genome.body.headsTall;
-            Camera3D cam = makeCam({head.x, head.y + 0.1f * hh, head.z}, 0.75f, 0.10f, hh * 7.0f, 30.0f);
+            Camera3D cam = makeCam({head.x, head.y + 0.05f * hh, head.z}, 0.75f, 0.08f, hh * 6.2f, 30.0f);
             RenderTexture2D prt = LoadRenderTexture(cw, chh);
             BeginTextureMode(prt);
             ClearBackground(BLACK);
             drawScene(s, cam, cw, chh);
             EndTextureMode();
             Image img = grab(prt, 1);
-            ImageDrawText(&img, std::string(cg::toString(cg::HairStyle(i))).c_str(), 6, chh - 18, 12, Color{20, 20, 30, 255});
+            ImageDrawText(&img, std::string(cg::toString(cg::HairStyle(i))).c_str(), 6, chh - 18, 12, Color{225, 225, 230, 255});
             ImageDraw(&sheet, img, {0, 0, float(cw), float(chh)}, {float((i % cols) * cw), float((i / cols) * chh), float(cw), float(chh)}, WHITE);
             UnloadImage(img);
             UnloadRenderTexture(prt);
         }
+        s.studio = false;
         ExportImage(sheet, (dir + "/11_cortes.png").c_str());
         UnloadImage(sheet);
         std::printf("%s/11_cortes.png\n", dir.c_str());

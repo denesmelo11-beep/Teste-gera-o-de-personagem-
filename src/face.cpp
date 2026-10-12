@@ -362,7 +362,7 @@ void paintMouth(CellPainter& cp, const Genome& g, MouthExpr e) {
     const Vec3 line = lerp(skin * 0.35f, Vec3{0.28f, 0.10f, 0.10f}, 0.5f);
     const Vec3 inner{0.30f, 0.08f, 0.10f}, teeth{0.92f, 0.90f, 0.86f}, tongue{0.75f, 0.40f, 0.42f};
     const Vec3 skinDark = skin * Vec3{0.72f, 0.58f, 0.56f};
-    const float my = 0.235f, mw = 0.052f * f.mouthWidth;
+    const float my = 0.235f, mw = 0.060f * f.mouthWidth;
     const Vec2 lo{-0.155f, 0.12f}, hi{0.155f, 0.35f};
 
     // Age: nasolabial folds from the nostril wings towards the mouth corners.

@@ -62,7 +62,7 @@ Vec3 pickSkin(Rng& r, bool fantasy) {
 Vec3 pickHair(Rng& r, Persona p) {
     const bool dark = p == Persona::Villainous || p == Persona::Noble;
     switch (r.weighted({3, 3, 2.5f, 1, 0.7f, 2, 0.6f, dark ? 0.9f : 0.3f, 0.2f, 0.3f})) {
-        case 0: return hsv(r.range(0.05f, 0.08f), r.range(0.2f, 0.4f), r.range(0.10f, 0.16f));  // black
+        case 0: return hsv(r.range(0.05f, 0.08f), r.range(0.2f, 0.4f), r.range(0.15f, 0.21f));  // black (lifted so its form still reads)
         case 1: return hsv(r.range(0.06f, 0.08f), r.range(0.45f, 0.6f), r.range(0.20f, 0.30f)); // dark brown
         case 2: return hsv(r.range(0.07f, 0.09f), r.range(0.45f, 0.6f), r.range(0.35f, 0.50f)); // brown
         case 3: return hsv(r.range(0.03f, 0.05f), r.range(0.6f, 0.75f), r.range(0.38f, 0.52f)); // auburn

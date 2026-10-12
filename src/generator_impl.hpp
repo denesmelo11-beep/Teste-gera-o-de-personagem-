@@ -87,6 +87,7 @@ private:
 
     void addUnderwear(Part& p, bool chestBand) const;
     size_t torsoPart_ = 0;               // index into parts: torso + legs share one surface
+    size_t headPart_ = 0;
     std::vector<uint32_t> torsoRing0_;   // bottom ring of the torso (hip line), split by the legs
 
     uint16_t headPartId_ = 0, bodyGroup_ = 0, armGroup_ = 0;
