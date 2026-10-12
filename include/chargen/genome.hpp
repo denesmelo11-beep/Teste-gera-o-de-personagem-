@@ -31,9 +31,12 @@ enum class HairStyle : uint8_t {
 bool isShortHair(HairStyle h);  // cut close to the head (cap + locks only)
 bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
 enum class Fringe : uint8_t { None, Curtain, SideSwept, Straight, Count };
-enum class FacialHair : uint8_t { None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops, Count };
+enum class FacialHair : uint8_t { None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops, Tendrils, Count };
 enum class EarStyle : uint8_t { Human, Elf, Count };
 enum class PupilStyle : uint8_t { Round, Slit, Count };
+// Peoples of the world. Each one reshapes the sampled body and face (proportions,
+// skin, ears, tusks, horns, muzzle, hooves, glowing eyes) and biases hair and beards.
+enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Count };
 
 std::string_view toString(Sex s);
 std::string_view toString(AgeGroup a);
@@ -41,6 +44,8 @@ std::string_view toString(Persona p);
 std::string_view toString(Archetype a);
 std::string_view toString(HairStyle h);
 std::string_view toString(FacialHair f);
+std::string_view toString(Species s);
+std::optional<Species> speciesFromString(std::string_view s);
 std::optional<Archetype> archetypeFromString(std::string_view s);
 std::optional<Persona> personaFromString(std::string_view s);
 std::optional<AgeGroup> ageFromString(std::string_view s);
@@ -75,6 +80,14 @@ struct Anatomy {
     float knees = 0.5f;
     float elbows = 0.5f;
     float wrists = 0.5f;      // and ankles
+};
+
+// Ear blade: length and width in head units, angles in radians.
+struct EarShape {
+    float length = 0.11f, width = 0.085f;
+    float up = 0.15f;     // tilt above horizontal
+    float back = 0.30f;   // sweep towards the back
+    float droop = 0.0f;   // the tip bends down (bovine, long troll ears)
 };
 
 struct BodyShape {
@@ -113,6 +126,12 @@ struct BodyShape {
     int horns = 0;
     float hornSize = 1.0f;
     EarStyle ears = EarStyle::Human;
+    EarShape ear;
+    float muzzle = 0.0f;        // 0 flat face .. 1 bovine snout
+    int tusks = 0;              // 0 none, 1 short lower tusks, 2 long upswept tusks
+    float tuskSize = 1.0f;
+    bool hooves = false;
+    int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
     Anatomy anat;
 };
 
@@ -176,6 +195,9 @@ struct FaceStyle {
     float grime = 0.0f;        // dirt smudges (survivors, labourers) 0..1
     int scarType = 0;          // 0 none, 1 brow-to-cheek, 2 across the nose, 3 lip, 4 cheek gash, 5 blinded eye
     int tattoo = 0;            // 0 none, 1 runic lines, 2 tribal cheek marks, 3 forehead sigil
+    bool glowEyes = false;     // luminous eyes without pupils (elves, draenei, undead)
+    Vec3 glow{0.8f, 0.9f, 1.0f};
+    float rot = 0.0f;          // undead decay: dark patches and stitches 0..1
     Vec3 tattooColor{0.16f, 0.22f, 0.32f};
 };
 
@@ -193,6 +215,7 @@ struct Palette {
 struct Genome {
     uint64_t seed = 0;
     Archetype archetype = Archetype::Natural;
+    Species species = Species::Human;
     Sex sex = Sex::Female;
     float femininity = 1.0f;   // continuous dimorphism used by face/body details
     float age = 28.0f;
@@ -217,6 +240,8 @@ struct GenomeOptions {
     std::optional<AgeGroup> age;
     std::optional<Persona> persona;
     std::optional<HairStyle> hair;
+    std::optional<Species> species;      // Human when empty (unless mixedSpecies)
+    bool mixedSpecies = false;           // draw the people from the whole world
     float exaggeration = 0.0f;           // pushes proportions towards stylised extremes
 };
 

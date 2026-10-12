@@ -25,6 +25,7 @@ struct LockSpec {
     bool tube = false;       // round tube (ponytail / braid) instead of a lens-shaped slab
     bool braid = false;
     bool faceFront = false;  // flat side faces forward (face-framing locks)
+    bool skin = false;       // flesh, not hair (draenei tendrils): skin colour, no tie
     int bones = 3;
     // Runtime physics.
     float pStiff = 1.0f, pDrag = 0.4f, pGrav = 0.05f;
@@ -132,7 +133,7 @@ void Builder::buildHair() {
 
     const bool tied = isTiedHair(style);
     const bool elderBald = style == HairStyle::Bald && g.age > 45;
-    if (style == HairStyle::Bald && !elderBald && g.facialHair != FacialHair::BraidedBeard) return;
+    if (style == HairStyle::Bald && !elderBald && g.facialHair != FacialHair::BraidedBeard && g.facialHair != FacialHair::Tendrils) return;
 
     // ---- scalp cap ----
     struct CapSpec {
@@ -889,6 +890,16 @@ void Builder::buildHair() {
             tail(kPi / 2 + off, 0.035f, normalize(down + fwd * 0.12f), 0.60f * std::max(0.8f, g.hairLength), two ? 0.055f : 0.068f, true);
     }
 
+    // Draenei tendrils: fleshy tails hanging from the jaw and chin.
+    if (g.facialHair == FacialHair::Tendrils)
+        for (float off : {-0.62f, -0.30f, 0.30f, 0.62f}) {
+            LockSpec L{kPi / 2 + off, 0.10f, normalize(down + fwd * 0.10f + thetaDir(kPi / 2 + off) * 0.15f),
+                       (std::fabs(off) < 0.4f ? 0.55f : 0.42f) * h, 0.075f * h, 0.075f * h};
+            L.gravity = 1.0f; L.stiffness = 0.5f; L.curl = 0.0f; L.tipWidth = 0.25f; L.sides = 6; L.tube = true; L.skin = true;
+            L.bones = 3; L.pStiff = 1.2f; L.pDrag = 0.3f; L.pGrav = 0.15f;
+            add(L);
+        }
+
     // ---- grow (styling pass with head/body collision), rig and mesh ----
     const int baseSteps = lod.lockSteps;
     for (LockSpec& L : locks) {
@@ -973,7 +984,8 @@ void Builder::buildHair() {
         lf.poleEnd = true;
         lf.endPole = pts.back() + normalize(pts.back() - pts[size_t(n - 2)]) * (L.width * 0.22f * L.tipWidth);
         lf.tEnd = 1.02f;
-        const bool tube = L.tube;
+        const bool tube = L.tube && !L.skin, fleshy = L.skin;
+        const Vec3 skinC = g.palette.skin;
         const float tieT = 1.0f / (n - 1);
         const Vec3 tieCol = lerp(c0 * 0.3f, Vec3{0.12f, 0.08f, 0.07f}, 0.5f);
         Part& lp = newPart();
@@ -984,6 +996,7 @@ void Builder::buildHair() {
             if (i0 >= nb - 1) return one(bones[size_t(nb - 1)]);
             return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.0f, 1.0f, f - i0));
         }, [=](float t, float) {
+            if (fleshy) return Mat{skinC * (1.0f - 0.18f * t), MaterialClass::Skin};
             if (tube && t > 0.0f && t < tieT * 1.5f) return Mat{tieCol, MaterialClass::Leather};
             return Mat{lerp(c0, c1, smoothstep(0.4f, 1.0f, t)), MaterialClass::Hair};
         });
@@ -998,7 +1011,8 @@ void Builder::buildHair() {
 // down and out over the lip.
 void Builder::buildFacialHair() {
     const FacialHair fh = g.facialHair;
-    if (fh == FacialHair::None || fh == FacialHair::Stubble) return;
+    if (fh == FacialHair::None || fh == FacialHair::Stubble || fh == FacialHair::Tendrils) return;
+    if (g.body.muzzle > 0.5f) return;  // snouted peoples wear only the chin braid
     const float h = m.h;
     const int head = ch.rig.head;
     Rng r = Rng(g.seed).fork(58);
@@ -1074,7 +1088,7 @@ void Builder::buildFacialHair() {
     if (full || chops || goatee || shortB) {
         // Beard line: under the lower lip at the front, up past the mouth corners, along the cheek to the sideburn.
         auto sTop = [&](float ax) {
-            return 0.185f + 0.075f * smoothstep(0.10f, 0.25f, ax) + 0.21f * smoothstep(0.30f, 0.95f, ax);
+            return 0.172f + 0.085f * smoothstep(0.10f, 0.25f, ax) + 0.21f * smoothstep(0.30f, 0.95f, ax);
         };
         auto sJaw = [&](float ax) { return 0.03f + 0.09f * smoothstep(0.45f, 0.95f, ax); };
         const float thick = (fh == FacialHair::LongBeard ? 0.034f : full ? 0.030f : chops ? 0.024f : shortB ? 0.013f : 0.022f) * h;
@@ -1096,7 +1110,7 @@ void Builder::buildFacialHair() {
                 const float lockVar = r.range(0.9f, 1.1f) * (c % 2 == 0 ? 1.08f : 0.94f);
                 std::vector<Vec3> pts, nrm;
                 std::vector<float> tk;
-                float top = goatee ? 0.185f + 0.02f * smoothstep(0.1f, 0.4f, ax) : sTop(ax);
+                float top = goatee ? 0.172f + 0.02f * smoothstep(0.1f, 0.4f, ax) : sTop(ax);
                 const float bot = goatee ? 0.03f : sJaw(ax);
                 // Goatee / mutton chops: taper the thickness at the open ends.
                 const float endT = goatee || chops ? std::min(1.0f, std::min(float(c), float(nc - 1 - c)) / 1.5f) : 1.0f;
@@ -1144,7 +1158,7 @@ void Builder::buildFacialHair() {
                 const float t = float(k) / float(K - 1);
                 const float xs = x * (1.0f + 0.10f * t);
                 const float th = std::acos(clamp(xs / 0.36f, -1.0f, 1.0f));
-                const float sv = lerp(0.306f - 0.022f * u * u, 0.258f - 0.010f * u - droop * u * u * u, t);
+                const float sv = lerp(0.300f - 0.022f * u * u, 0.246f - 0.010f * u - droop * u * u * u, t);
                 const Vec3 q = onFace(th, sv, 0.002f * h);
                 pts.push_back(q);
                 nrm.push_back(headNormalDir(q));
@@ -1165,16 +1179,19 @@ void Builder::buildHorns() {
     const float h = m.h, size = g.body.hornSize;
     const int head = ch.rig.head;
     Rng r = Rng(g.seed).fork(57);
-    const int kind = r.rangeInt(0, 2);  // 0 swept back, 1 curled ram, 2 straight up
+    const int rk = r.rangeInt(0, 2);
+    const int kind = g.body.hornKind >= 0 ? g.body.hornKind : rk;  // 0 swept back, 1 curled ram, 2 straight up, 3 bovine
     for (float sd : {1.0f, -1.0f}) {
-        float th = sd > 0 ? 62 * kPi / 180 : 118 * kPi / 180;
-        Vec3 p = headSurface(th, 0.86f, -0.01f * h);
-        Vec3 dir = kind == 2 ? normalize(Vec3{sd * 0.3f, 1, 0.1f}) : normalize(Vec3{sd * 0.5f, 0.7f, -0.3f});
+        const bool bov = kind == 3;
+        float th = bov ? (sd > 0 ? 28 * kPi / 180 : 152 * kPi / 180) : sd > 0 ? 62 * kPi / 180 : 118 * kPi / 180;
+        Vec3 p = headSurface(th, bov ? 0.80f : 0.86f, -0.01f * h);
+        Vec3 dir = bov ? normalize(Vec3{sd * 1.0f, 0.10f, 0.15f}) : kind == 2 ? normalize(Vec3{sd * 0.3f, 1, 0.1f}) : normalize(Vec3{sd * 0.5f, 0.7f, -0.3f});
         const int n = 6;
         float seg = 0.55f * h * size / n;
         std::vector<Vec3> pts{p};
         for (int k = 0; k < n; ++k) {
-            Quat bend = kind == 1 ? Quat::axisAngle({sd, 0, 0}, -0.55f) : Quat::axisAngle({1, 0, 0}, kind == 0 ? -0.18f : 0.05f);
+            Quat bend = bov ? Quat::axisAngle({0, 0, 1}, sd * 0.30f) * Quat::axisAngle({1, 0, 0}, -0.05f)
+                      : kind == 1 ? Quat::axisAngle({sd, 0, 0}, -0.55f) : Quat::axisAngle({1, 0, 0}, kind == 0 ? -0.18f : 0.05f);
             dir = normalize(rotate(bend, dir));
             p = p + dir * seg;
             pts.push_back(p);
@@ -1201,25 +1218,74 @@ void Builder::buildHorns() {
 void Builder::buildEars() {
     const float h = m.h;
     const int head = ch.rig.head;
-    const bool elf = g.body.ears == EarStyle::Elf;
+    const EarShape& E = g.body.ear;
+    const float es = g.face.earSize;
+    // An ear is a flattened blade (a leaf in section) swept out from the side of the
+    // head: short and round for humans, long blades for elves and trolls, broad fans
+    // for goblins, drooping leaves for the bovine peoples.
     for (float sd : {1.0f, -1.0f}) {
-        float th = sd > 0 ? 0.08f : kPi - 0.08f;
-        Vec3 base = headSurface(th, 0.45f, -0.03f * h) + Vec3{0, 0, -0.05f * h};
-        Vec3 dir = elf ? normalize(Vec3{sd * 1.0f, 0.40f, -0.40f}) : normalize(Vec3{sd * 1.0f, 0.15f, -0.30f});
-        float len = (elf ? 0.40f * h : 0.11f * h) * g.face.earSize;
-        Vec3 v = normalize(Vec3{0, 1, 0} - dir * dir.y), u = cross(dir, v);
+        const float th = sd > 0 ? 0.08f : kPi - 0.08f;
+        const Vec3 base = headSurface(th, 0.45f, -0.03f * h) + Vec3{0, 0, -0.05f * h};
+        const Vec3 dir = normalize(Vec3{sd * std::cos(E.up) * std::cos(E.back), std::sin(E.up), -std::cos(E.up) * std::sin(E.back)});
+        const float len = E.length * h * es, wid = E.width * h * std::sqrt(es);
+        Vec3 bladeUp = normalize(Vec3{0, 1, 0} - dir * dir.y, Vec3{0, 0, 1});
+        const Vec3 thin = normalize(cross(dir, bladeUp));
         Loft L;
-        float rr = (elf ? 0.075f * h : 0.085f * h) * std::sqrt(g.face.earSize);
-        L.rings.push_back(makeRing(base, u, v, SuperRing{0.03f * h, 0, rr, rr, 2, 2}, 8));
-        L.t.push_back(0);
-        L.rings.push_back(makeRing(base + dir * (len * 0.45f), u, v, SuperRing{0.022f * h, 0, rr * 0.9f, rr * 0.75f, 2, 2}, 8));
-        L.t.push_back(0.5f);
+        const float ts[] = {0.0f, 0.28f, 0.58f, 0.82f};
+        const float ws[] = {0.95f, 1.0f, 0.72f, 0.38f};
+        const float tk[] = {0.034f, 0.026f, 0.020f, 0.014f};
+        auto at = [&](float t) { return base + dir * (len * t) + Vec3{0, -1, 0} * (E.droop * len * t * t); };
+        for (int k = 0; k < 4; ++k) {
+            const Vec3 c = at(ts[k]);
+            const Vec3 tan = normalize(at(std::min(1.0f, ts[k] + 0.05f)) - c, dir);
+            const Vec3 up2 = normalize(bladeUp - tan * dot(bladeUp, tan), bladeUp), th2 = normalize(cross(tan, up2));
+            L.rings.push_back(makeRing(c, th2, up2, SuperRing{tk[k] * h * std::sqrt(es), 0, wid * ws[k], wid * ws[k], 2, 2}, 8));
+            L.t.push_back(ts[k]);
+        }
+        (void)thin;
         L.poleEnd = true;
-        L.endPole = base + dir * len;
+        L.endPole = at(1.0f);
         L.tEnd = 1;
         Part& p = newPart();
         p.smoothAlways = true;
         emitLoft(p, L, [=](float, float, Vec3) { return one(head); }, [&](float, float) { return skin(); });
+    }
+}
+
+// Tusks: short lower tusks from the jaw (1) or long upswept ones curving out (2).
+void Builder::buildTusks() {
+    if (g.body.tusks == 0) return;
+    const float h = m.h, sz = g.body.tuskSize;
+    const int head = ch.rig.head;
+    const bool big = g.body.tusks == 2;
+    const Mat ivory{{0.93f, 0.89f, 0.78f}, MaterialClass::Horn};
+    for (float sd : {1.0f, -1.0f}) {
+        const float x = sd * 0.070f * g.face.mouthWidth;
+        const float th = std::acos(clamp(x / 0.30f, -1.0f, 1.0f));
+        Vec3 p = headPoint(th, 0.175f);
+        p = p - headNormalDir(p) * (0.008f * h);
+        Vec3 dir = big ? normalize(Vec3{sd * 0.55f, 0.55f, 0.6f}) : normalize(Vec3{sd * 0.25f, 1.0f, 0.35f});
+        const int n = big ? 6 : 3;
+        const float seg = (big ? 0.30f : 0.080f) * h * sz / n;
+        std::vector<Vec3> pts{p};
+        for (int k = 0; k < n; ++k) {
+            if (big) dir = normalize(rotate(Quat::axisAngle({0, 0, 1}, -sd * 0.10f) * Quat::axisAngle({1, 0, 0}, -0.16f), dir));
+            p = p + dir * seg;
+            pts.push_back(p);
+        }
+        Loft L;
+        const float r0 = (big ? 0.036f : 0.022f) * h * std::sqrt(sz);
+        for (int k = 0; k < n; ++k) {
+            const float t = float(k) / n;
+            const Vec3 d = normalize(pts[size_t(k + 1)] - pts[size_t(k)]);
+            const Vec3 v = normalize(cross(d, {1, 0, 0}), {0, 0, 1}), u = cross(d, v);
+            const float rr = r0 * (1 - 0.8f * t);
+            L.rings.push_back(makeRing(pts[size_t(k)], u, v, SuperRing{rr, 0, rr, rr}, 6));
+            L.t.push_back(t);
+        }
+        L.poleEnd = true;
+        L.endPole = pts.back();
+        emitLoft(newPart(), L, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return ivory; });
     }
 }
 

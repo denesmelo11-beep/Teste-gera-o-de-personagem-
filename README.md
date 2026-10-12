@@ -22,6 +22,14 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
+| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin |
+|---|
+| ![povos](docs/povos.png) |
+
+| Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
+|---|
+| ![rostos dos povos](docs/povos_rostos.png) |
+
 | Identidade: rostos aleatórios (homens em cima, mulheres embaixo) |
 |---|
 | ![rostos](docs/rostos.png) |
@@ -61,8 +69,10 @@ chargen_viewer --population pop.png --seed 40          # população natural + p
 chargen_viewer --heads cabecas.png --seed 60            # retratos masculinos: tour de barbas
 chargen_viewer --cuts cortes.png --seed 21              # todos os cortes (CHARGEN_CUTYAW=2.4 mostra as costas)
 chargen_viewer --faces rostos.png --seed 100            # rostos da população
+chargen_viewer --races povos.png --seed 5               # cada povo, homem e mulher lado a lado
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
-# CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele)
+# CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
+# CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -82,7 +92,7 @@ chargen_cli export    --seed 42 --lod 0 --out heroi.glb
 chargen_cli stats     --count 300
 ```
 
-Filtros: `--sex female|male`, `--age young|adult|mature|elder`,
+Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
 `--archetype natural|bombshell|dorito|brute|amazon|slender|chibi|monster` (presets estilizados,
 opcionais) e `--exaggeration 0..2`.
@@ -113,6 +123,16 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
   serratus, biceps, triceps, forearms, glutes, quads, adductors, hamstrings, calves`) e
   proeminência óssea (`clavicles, ribcage, scapulae, pelvis, knees, elbows, wrists`). O gerador
   amostra todos a partir dos eixos da população; um editor pode sobrescrever qualquer um.
+
+### Povos (`Species`)
+Uma passada depois do sorteio remodela a pessoa no cânone do seu povo, mantendo a variação
+individual (altura relativa, tipo de corpo, rosto): proporções (cabeças de altura, pernas, larguras
+em unidades de cabeça, então um cânone baixo fica atarracado sozinho), corcunda real (o tronco e a
+cabeça avançam), pele, orelhas (lâmina com comprimento, largura, ângulos e caída), presas curtas
+(orc) ou longas e curvas (troll), focinho bovino (tauren), chifres (para trás, carneiro, eretos,
+bovinos), cascos, cauda, olhos luminosos sem pupila (elfos, draenei, mortos-vivos), decomposição com
+costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cortes, cores e barbas.
+`GenomeOptions::species` escolhe um povo; `mixedSpecies` sorteia a população do mundo inteiro.
 
 ### Corpo: uma superfície contínua
 - **Tronco + pescoço** são um único *loft* de anéis superelípticos (largura/profundidade por curvas

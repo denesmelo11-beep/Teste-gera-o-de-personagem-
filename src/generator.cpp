@@ -83,6 +83,8 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
     const float h = m.h, S = b.shoulderWidth * h, C = b.chestWidth * h, W = b.waistWidth * h, P = b.hipWidth * h;
     const float D = b.chestDepth * h, post = b.posture, lat = 0.10f * h * b.anat.lats * b.anat.lats * (1.0f - 0.6f * g.femininity), nR = b.neckThick * h;
     const float hunch = b.hunch * h;
+    // Strong hunch (trolls, tauren, orcs): a real stoop, the upper torso leaning forward.
+    const float stoop = std::max(0.0f, b.hunch - 0.4f) * h;
     // Below the hip line (t < kTorsoBase) these curves only guide the hip and glute
     // volume of the thigh junction; the thighs carry the surface there.
     // Ribcage: men keep the chest wide down to the lats and taper in a straight V;
@@ -112,8 +114,8 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
                  {0.975f, 0.72f * D + 0.05f * hunch}, {1.0f, 0.64f * D + 0.05f * hunch + 0.3f * trap},
                  {1.03f, lerp(0.64f * D, nR, 0.45f) + 0.04f * hunch + 0.6f * trap}, {1.06f, 1.08f * nR + 0.3f * trap}, {1.10f, nR}};
     cZc_ = Curve{{-0.06f, -0.01f * h * post}, {0.10f, -0.035f * h * post}, {0.20f, -0.035f * h * post},
-                 {0.42f, 0.0f}, {0.66f, 0.02f * h * post}, {0.80f, 0.025f * h * post}, {1.0f, -0.01f * h + 0.06f * hunch},
-                 {1.10f, -0.02f * h + 0.10f * hunch}};
+                 {0.42f, 0.0f}, {0.66f, 0.02f * h * post + 0.05f * stoop}, {0.80f, 0.025f * h * post + 0.12f * stoop},
+                 {1.0f, -0.01f * h + 0.06f * hunch + 0.20f * stoop}, {1.10f, -0.02f * h + 0.10f * hunch + 0.28f * stoop}};
     initHead();
 }
 
@@ -122,7 +124,8 @@ void Builder::computeMarks() {
     m.H = b.height;
     m.h = m.H / b.headsTall;
     const float h = m.h, mu = b.muscle;
-    m.chinY = m.H - h - 0.04f * b.hunch * h;
+    const float stoop = std::max(0.0f, b.hunch - 0.4f);
+    m.chinY = m.H - h - 0.04f * b.hunch * h - 0.30f * stoop * h;
     m.shoulderY = m.chinY - b.neckLength * h;
     m.crotchY = m.H * b.legRatio;
     if (m.shoulderY - m.crotchY < 0.9f * h) m.crotchY = m.shoulderY - 0.9f * h;
@@ -159,8 +162,8 @@ void Builder::computeMarks() {
             float angle, fwd;
             if (pair == 0) {
                 a.shoulder = {a.side * std::max(S - 0.55f * del, 0.5f * S), m.shoulderY - 0.05f * h - 0.9f * del - 0.10f * mu * h,
-                              -0.02f * h + 0.05f * b.hunch * h};
-                a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h + 0.03f * b.hunch * h};
+                              -0.02f * h + 0.05f * b.hunch * h + 0.20f * stoop * h};
+                a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h + 0.03f * b.hunch * h + 0.20f * stoop * h};
                 angle = 46.0f;
                 fwd = 0.0f;
             } else {
@@ -179,8 +182,8 @@ void Builder::computeMarks() {
             m.arms.push_back(a);
         }
 
-    m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h + 0.06f * b.hunch * h};
-    m.headOrigin = {0, m.chinY, 0.05f * h + 0.12f * b.hunch * h};
+    m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h + 0.06f * b.hunch * h + 0.24f * stoop * h};
+    m.headOrigin = {0, m.chinY, 0.05f * h + 0.12f * b.hunch * h + 0.45f * stoop * h};
     m.headPivot = m.headOrigin + Vec3{0, 0.14f * h, -0.10f * h};
 }
 
@@ -1067,9 +1070,14 @@ void Builder::buildLegs() {
 
 // Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
-    const float A = m.ankleY, Lf = m.footLen, Wf = m.footHalfW;
-    Curve cw{{0, 0.62f}, {0.10f, 0.76f}, {0.35f, 0.78f}, {0.60f, 0.95f}, {0.80f, 1.05f}, {0.93f, 0.98f}, {1.0f, 0.82f}};
-    Curve chh{{0, 0.60f}, {0.08f, 0.90f}, {0.30f, 1.10f}, {0.50f, 0.80f}, {0.72f, 0.46f}, {0.88f, 0.34f}, {1.0f, 0.28f}};
+    const bool hoof = g.body.hooves;
+    const float A = m.ankleY, Lf = m.footLen * (hoof ? 0.62f : 1.0f), Wf = m.footHalfW * (hoof ? 1.05f : 1.0f);
+    // Hooves: a short, blocky, dark keratin foot with a cleft front.
+    Curve cw = hoof ? Curve{{0, 0.80f}, {0.3f, 0.95f}, {0.7f, 1.0f}, {1.0f, 0.90f}}
+                    : Curve{{0, 0.62f}, {0.10f, 0.76f}, {0.35f, 0.78f}, {0.60f, 0.95f}, {0.80f, 1.05f}, {0.93f, 0.98f}, {1.0f, 0.82f}};
+    Curve chh = hoof ? Curve{{0, 0.85f}, {0.3f, 1.05f}, {0.7f, 0.85f}, {1.0f, 0.55f}}
+                     : Curve{{0, 0.60f}, {0.08f, 0.90f}, {0.30f, 1.10f}, {0.50f, 0.80f}, {0.72f, 0.46f}, {0.88f, 0.34f}, {1.0f, 0.28f}};
+    const Mat hoofM{g.palette.horn * 0.35f + Vec3{0.05f, 0.04f, 0.04f}, MaterialClass::Horn};
     for (int s = 0; s < 2; ++s) {
         const LimbRig& rig = ch.rig.legs[size_t(s)];
         const float sd = s == 0 ? 1.0f : -1.0f;
@@ -1099,7 +1107,7 @@ void Builder::buildFeet() {
         L.tEnd = 1;
         int foot = rig.end, toe = rig.tip;
         emitLoft(newPart(), L, [=](float t, float, Vec3) { return blend(foot, toe, smoothstep(0.62f, 0.80f, t)); },
-                 [&](float, float) { return skin(); });
+                 [&](float, float) { return hoof ? hoofM : skin(); });
     }
 }
 
@@ -1225,6 +1233,7 @@ Character Builder::build() {
     buildTail();
     buildEars();
     buildHorns();
+    buildTusks();
     buildColliders();
     buildHair();
     buildFacialHair();

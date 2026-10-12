@@ -92,6 +92,7 @@ private:
     void emitClump(Part& p, float theta, float s, float off, float len, float width, float thick, float lift,
                    const std::function<Vec3(Vec3)>& flow, Vec3 color, int bone) const;
     void buildHorns();
+    void buildTusks();
     void buildEars();
 
     void addUnderwear(Part& p, bool chestBand) const;

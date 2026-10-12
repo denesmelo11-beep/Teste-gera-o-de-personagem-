@@ -33,12 +33,19 @@ SuperRing Builder::headRing(float s) const {
                  f.cheek * 0.08f * bump((s - 0.38f) / 0.11f) - f.cheekHollow * 0.07f * bump((s - 0.25f) / 0.08f) +
                  f.jowl * 0.11f * bump((s - 0.13f) / 0.13f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f) +
                  f.faceWidth * 0.10f * bump((s - 0.30f) / 0.32f) + f.crown * 0.06f * bump((s - 0.78f) / 0.22f);
+    // Masculine jaw: a defined angle and a broad, flat-bottomed chin (no long V).
+    const float masc = 1.0f - g.femininity;
+    wMul += masc * (0.10f * bump((s - 0.11f) / 0.09f) + 0.14f * bump(s / 0.06f));
     const float crownBack = f.crown * 0.05f * bump((s - 0.75f) / 0.25f);
-    const float chinFwd = f.chin * 0.04f * bump(s / 0.14f);
-    const float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
+    const float chinFwd = f.chin * 0.03f * bump(s / 0.14f);
+    const float chinDrop = f.chin * 0.02f * bump(s / 0.1f);
     const float full = (0.02f * f.roundness + 0.015f * f.jowl) * bump((s - 0.22f) / 0.15f);
-    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul, (hZc_(s) + chinFwd) * h,
-            std::max(hDf_(s) + chinDrop * 0.5f + full, 0.01f) * h, std::max(hDb_(s) + crownBack, 0.01f) * h, hNf_(s), hNb_(s)};
+    // Muzzle (bovine/beast peoples): the lower face pushed forward below the eyes.
+    const float muz = g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - 0.22f * g.body.muzzle * smoothstep(0.5f, 0.3f, s)),
+            (hZc_(s) + chinFwd + 0.5f * muz) * h,
+            std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,
+            hNf_(s), hNb_(s)};
 }
 
 // Forward relief of the face in head units; xn is the horizontal position in
@@ -57,9 +64,9 @@ float Builder::faceRelief(float xn, float s) const {
     r -= 0.016f * f.cheekHollow * bump((s - 0.27f) / 0.06f) * bump((ax - 0.22f) / 0.08f);
     // Lips, the dip below them, and the chin.
     const float mw = f.mouthWidth;
-    r += (0.003f + 0.004f * f.lipFullness) * bump((s - 0.252f) / 0.024f) * bump(xn / (0.075f * mw));
-    r += (0.004f + 0.005f * f.lipFullness) * bump((s - 0.218f) / 0.024f) * bump(xn / (0.068f * mw));
-    r -= 0.007f * bump((s - 0.188f) / 0.018f) * bump(xn / 0.07f);
+    r += (0.003f + 0.004f * f.lipFullness) * bump((s - 0.239f) / 0.024f) * bump(xn / (0.075f * mw));
+    r += (0.004f + 0.005f * f.lipFullness) * bump((s - 0.205f) / 0.024f) * bump(xn / (0.068f * mw));
+    r -= 0.007f * bump((s - 0.176f) / 0.018f) * bump(xn / 0.07f);
     r += (0.010f + 0.014f * f.chin) * bump((s - 0.09f) / 0.06f) * bump(xn / (0.11f * (1.0f + 0.4f * f.chinWidth)));
     return r;
 }

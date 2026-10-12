@@ -690,6 +690,7 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         o.age = cg::AgeGroup::Adult;
         o.persona = cg::Persona::Heroic;
         if (std::getenv("CHARGEN_RAW")) o = cg::GenomeOptions{};  // debug: the plain genome of this seed
+        if (const char* se = std::getenv("CHARGEN_SPECIES")) o.species = cg::speciesFromString(se);
         if (const char* ar = std::getenv("CHARGEN_ARCH")) {  // debug: studio sheet of a preset
             o.archetype = cg::archetypeFromString(ar);
             o.sex.reset();
@@ -740,6 +741,62 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
 
 // Population sheet: a row of natural characters (mixed sex, age, persona) and a row
 // of the stylised presets, front view in studio light.
+// Every people of the world, male and female side by side (each pair framed to its own height).
+int runRaces(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int n = int(cg::Species::Count), cols = 4, pw = 420, ph = 500;
+    const int rows = (n + cols - 1) / cols;
+    Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
+    const char* yawEnv = std::getenv("CHARGEN_RACEYAW");
+    const float yaw = yawEnv ? float(std::atof(yawEnv)) : 0.30f;
+    for (int i = 0; i < n; ++i) {
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        float Hmax = 0;
+        for (int sx = 0; sx < 2; ++sx) {
+            cg::GenomeOptions o;
+            o.species = cg::Species(i);
+            o.sex = sx == 0 ? cg::Sex::Male : cg::Sex::Female;
+            o.age = cg::AgeGroup::Adult;
+            s.actors.emplace_back();
+            Actor& a = s.actors.back();
+            a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i * 7 + sx), o), gGen);
+            Hmax = std::max(Hmax, a.ch.height);
+        }
+        for (int sx = 0; sx < 2; ++sx) {
+            Actor& a = s.actors[size_t(sx)];
+            a.worldPos = {(sx == 0 ? -0.24f : 0.24f) * Hmax, 0, 0};
+            a.clips = cg::makeDefaultClips(a.ch);
+            a.sim = new cg::SecondaryMotion(a.ch);
+            a.posed = true;
+            a.fixed = showcasePose(a.ch);
+            buildMeshes(a, s.body, s.decal);
+            a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+            for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        }
+        const float H = Hmax * 1.06f;
+        Camera3D cam = makeCam({0, H * 0.5f, 0}, yaw, 0.03f, H * 2.55f, 26.0f);
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(i))).c_str(), s.actors[0].ch.height,
+                      s.actors[1].ch.height);
+        ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 int runPopulation(Scene& s, const std::string& path, uint64_t seed) {
     s.studio = true;
     const int n = 8, pw = 220, ph = 560;
@@ -810,6 +867,11 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
             o = cg::GenomeOptions{};
             o.sex = hr[0] == 'f' ? cg::Sex::Female : cg::Sex::Male;
         }
+        // CHARGEN_SPECIES=name (or "all": one people per portrait).
+        if (const char* se = std::getenv("CHARGEN_SPECIES")) {
+            if (std::string(se) == "all") o.species = cg::Species((i + int(seed)) % int(cg::Species::Count));
+            else o.species = cg::speciesFromString(se);
+        }
         cg::Genome g = cg::randomGenome(seed + uint64_t(i), o);
         if (!hr) g.facialHair = cg::FacialHair(i % int(cg::FacialHair::Count));
         s.actors.emplace_back();
@@ -834,7 +896,8 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         char buf[96];
-        std::snprintf(buf, sizeof buf, "%s %s", std::string(cg::toString(g.hair)).c_str(), std::string(cg::toString(g.facialHair)).c_str());
+        std::snprintf(buf, sizeof buf, "%s %s %s", std::string(cg::toString(g.species)).c_str(), std::string(cg::toString(g.hair)).c_str(),
+                      std::string(cg::toString(g.facialHair)).c_str());
         ImageDrawText(&img, buf, 6, ph - 16, 10, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % 4) * pw), float((i / 4) * ph), float(pw), float(ph)}, WHITE);
         UnloadImage(img);
@@ -892,7 +955,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts;
+    std::string shots, studio, population, heads, faces, cuts, races;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -903,6 +966,7 @@ int main(int argc, char** argv) {
         else if (a == "--population" && i + 1 < argc) population = argv[++i];
         else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
+        else if (a == "--races" && i + 1 < argc) races = argv[++i];
         else if (a == "--faces" && i + 1 < argc) faces = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
@@ -939,6 +1003,12 @@ int main(int argc, char** argv) {
     s.faceted = faceted;
     if (!faces.empty()) {
         int rc = runFaces(s, faces, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!races.empty()) {
+        int rc = runRaces(s, races, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

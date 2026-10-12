@@ -52,6 +52,10 @@ GenomeOptions genomeOpts(const Args& a) {
     if (a.flag("sex")) o.sex = a.get("sex", "") == "male" ? Sex::Male : Sex::Female;
     if (a.flag("age")) o.age = ageFromString(a.get("age", ""));
     if (a.flag("persona")) o.persona = personaFromString(a.get("persona", ""));
+    if (a.flag("species")) {
+        if (a.get("species", "") == "mixed") o.mixedSpecies = true;
+        else if (!(o.species = speciesFromString(a.get("species", "")))) std::fprintf(stderr, "especie desconhecida: %s\n", a.get("species", "").c_str());
+    }
     return o;
 }
 
@@ -76,7 +80,8 @@ void usage() {
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
         "estilo: padrao low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave; --toon = cel com contorno\n"
-        "presets: natural bombshell dorito brute amazon slender chibi monster");
+        "presets: natural bombshell dorito brute amazon slender chibi monster\n"
+        "especies (--species): human dwarf gnome orc troll undead nightelf highelf draenei tauren goblin | mixed");
 }
 
 RenderSettings style(const Args& a) {
