@@ -144,6 +144,15 @@ struct FaceStyle {
     bool scar = false;
     bool fang = false;
     bool blush = false;
+    // Identity extras.
+    float crown = 0.0f;        // -1 small, flat cranium .. +1 tall, round cranium
+    float faceWidth = 0.0f;    // -1 narrow, long face .. +1 broad face (cheeks and jaw)
+    float browLength = 1.0f;
+    float irisSize = 1.0f;
+    int noseShape = 1;         // 0 button, 1 straight, 2 aquiline, 3 broad
+    float earSize = 1.0f;
+    int marking = 0;           // 0 none, 1 mole, 2 cheek warpaint, 3 under-eye bars, 4 chin stripe, 5 brow slit, 6 forehead mark
+    Vec3 markColor{0.45f, 0.12f, 0.12f};
 };
 
 struct Palette {

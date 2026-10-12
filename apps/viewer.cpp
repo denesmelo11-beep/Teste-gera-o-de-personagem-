@@ -630,6 +630,10 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         o.sex = i == 0 ? cg::Sex::Female : cg::Sex::Male;
         o.age = cg::AgeGroup::Adult;
         o.persona = cg::Persona::Heroic;
+        if (const char* ar = std::getenv("CHARGEN_ARCH")) {  // debug: studio sheet of a preset
+            o.archetype = cg::archetypeFromString(ar);
+            o.sex.reset();
+        }
         s.actors.emplace_back();
         Actor& a = s.actors.back();
         a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i), o), gGen);

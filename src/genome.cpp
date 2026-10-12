@@ -33,14 +33,15 @@ constexpr float kBrowTilt[] = {-0.10f, -0.30f, 0.18f, -0.05f, -0.22f, 0.15f, -0.
 constexpr float kRestLid[] = {0.02f, 0.18f, 0.0f, 0.14f, 0.10f, 0.03f, 0.08f, 0.06f};
 constexpr float kMouthRest[] = {0.0f, 0.0f, 0.004f, 0.002f, -0.005f, 0.006f, 0.0f, -0.002f};
 constexpr float kMouthAsym[] = {0.0f, 0.006f, 0.0f, 0.002f, 0.0f, 0.0f, 0.005f, 0.0f};
-constexpr std::array<std::array<float, 5>, 8> kEyeShapeW = {{{3, 1, 1, 1, 0.5f},
-                                                              {1, 0.2f, 3, 2.5f, 0.3f},
-                                                              {1, 3, 0.2f, 0.6f, 1.5f},
-                                                              {2.5f, 0.5f, 1.5f, 2.5f, 0.5f},
-                                                              {2, 0.3f, 3, 1, 0.5f},
-                                                              {2, 1.5f, 0.5f, 0.5f, 2.5f},
-                                                              {2.5f, 0.5f, 1, 2, 0.5f},
-                                                              {3, 0.6f, 1.5f, 1.2f, 0.6f}}};
+// Eye families: 0 standard (reference), 1 big/round, 2 narrow, 3 sharp, 4 droopy.
+constexpr std::array<std::array<float, 5>, 8> kEyeShapeW = {{{4, 1.2f, 1, 1, 0.6f},
+                                                              {1.5f, 0.2f, 2.5f, 3, 0.3f},
+                                                              {2, 4, 0.2f, 0.5f, 1.5f},
+                                                              {3, 1, 0.8f, 2.5f, 0.8f},
+                                                              {3, 0.4f, 2.5f, 1, 0.5f},
+                                                              {3, 2, 0.4f, 0.4f, 2.5f},
+                                                              {3, 0.6f, 1, 2, 0.6f},
+                                                              {4, 0.8f, 1.5f, 1.2f, 0.6f}}};
 constexpr std::array<std::array<float, 3>, 8> kBrowShapeW = {{{2, 1, 1.5f},
                                                                {0.5f, 0.5f, 3},
                                                                {1, 3, 0.2f},
@@ -207,7 +208,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     }
     b.belly = std::max(0.0f, 0.18f * (fat - 0.6f)) + (elder ? 0.05f : 0.0f);
     b.footSize = b.handSize;
-    b.headWidth = 1.0f + 0.025f * z(rb);
+    b.headWidth = 1.0f + 0.040f * z(rb);
     b.armLength = 1.0f + 0.015f * z(rb);
     b.sag = elder ? rb.range(0.6f, 0.9f) : mature ? rb.range(0.2f, 0.4f) : rb.range(0.0f, 0.1f);
     b.hunch = elder ? rb.range(0.4f, 0.8f) : mature ? rb.range(0.0f, 0.15f) : 0.0f;
@@ -331,18 +332,18 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     Rng rf = root.fork(6);
     FaceStyle& f = g.face;
     f.eyeShape = rf.weighted(std::span<const float>(kEyeShapeW[P]));
-    f.eyeSize = 1.0f + 0.06f * z(rf) + (per == Persona::Cute ? 0.12f : 0.0f) - (per == Persona::Villainous ? 0.08f : 0.0f) +
+    f.eyeSize = 1.0f + 0.08f * z(rf) + (per == Persona::Cute ? 0.12f : 0.0f) - (per == Persona::Villainous ? 0.08f : 0.0f) +
                 (young ? 0.06f : 0.0f) - (elder ? 0.06f : 0.0f) - (fem ? 0.0f : 0.05f);
-    f.eyeSpacing = 1.0f + 0.04f * z(rf);
-    f.eyeTilt = 0.05f * z(rf) + (per == Persona::Villainous ? 0.06f : 0.0f) - (per == Persona::Gentle ? 0.05f : 0.0f);
+    f.eyeSpacing = 1.0f + 0.06f * z(rf);
+    f.eyeTilt = 0.07f * z(rf) + (per == Persona::Villainous ? 0.06f : 0.0f) - (per == Persona::Gentle ? 0.05f : 0.0f);
     f.restLid = clamp(kRestLid[P] + (elder ? 0.08f : 0.0f) + 0.03f * z(rf), 0.0f, 0.32f);
     f.lashWeight = saturate(fem ? 0.55f + 0.15f * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) : 0.25f + 0.1f * z(rf));
     f.pupil = fantasy && per == Persona::Villainous && rf.chance(0.5f) ? PupilStyle::Slit : PupilStyle::Round;
     f.browShape = rf.weighted(std::span<const float>(kBrowShapeW[P]));
-    f.browThick = saturate((fem ? 0.40f : 0.65f) + 0.12f * z(rf) + (elder && !fem ? 0.1f : 0.0f));
-    f.browTilt = kBrowTilt[P] + 0.05f * z(rf);
+    f.browThick = saturate((fem ? 0.35f : 0.62f) + 0.22f * z(rf) + (elder && !fem ? 0.15f : 0.0f));
+    f.browTilt = kBrowTilt[P] + 0.08f * z(rf);
     f.browHeight = per == Persona::Noble ? 0.005f : per == Persona::Stern ? -0.006f : per == Persona::Cute ? 0.006f : 0.0f;
-    f.mouthWidth = 1.0f + 0.06f * z(rf) + (fem ? 0.0f : 0.05f);
+    f.mouthWidth = 1.0f + 0.09f * z(rf) + (fem ? 0.0f : 0.05f);
     f.lipFullness = saturate((fem ? 0.55f : 0.30f) + (fem ? 0.15f : 0.10f) * z(rf) + (per == Persona::Sexy ? 0.2f : 0.0f) -
                              (elder ? 0.15f : 0.0f));
     f.mouthRest = kMouthRest[P];
@@ -350,13 +351,13 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.noseSize = (fem ? 0.92f : 1.10f) + 0.08f * z(rf) - (per == Persona::Cute ? 0.1f : 0.0f) + (elder ? 0.06f : 0.0f);
     f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
                             (per == Persona::Cute ? 0.25f : 0.0f));
-    f.jaw = clamp(fem ? -0.10f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
-                      : 0.75f + 0.18f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
+    f.jaw = clamp(fem ? -0.10f + 0.30f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
+                      : 0.70f + 0.28f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
                   -1.0f, 1.0f);
-    f.chin = clamp(0.2f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
+    f.chin = clamp(0.35f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
                        (per == Persona::Cute ? 0.3f : 0.0f),
                    -1.0f, 1.0f);
-    f.cheek = clamp(0.25f * z(rf) + (per == Persona::Villainous ? 0.45f : 0.0f) + (per == Persona::Noble ? 0.25f : 0.0f) +
+    f.cheek = clamp(0.40f * z(rf) + (per == Persona::Villainous ? 0.45f : 0.0f) + (per == Persona::Noble ? 0.25f : 0.0f) +
                         (per == Persona::Sexy ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.2f : 0.0f),
                     -1.0f, 1.0f);
     f.browRidge = saturate(fem ? 0.2f + 0.1f * z(rf) : 0.7f + 0.15f * z(rf)) + (per == Persona::Villainous ? 0.15f : 0.0f);
@@ -366,6 +367,19 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.scar = rf.chance(per == Persona::Rogue ? 0.30f : per == Persona::Heroic ? 0.10f : fem ? 0.03f : 0.06f);
     f.fang = fantasy && per == Persona::Villainous && rf.chance(0.3f);
     f.blush = per == Persona::Cute && rf.chance(0.3f);
+    f.crown = clamp(0.40f * z(rf), -1.0f, 1.0f);
+    f.faceWidth = clamp(0.38f * z(rf) + 0.25f * std::max(0.0f, fat) - (per == Persona::Noble ? 0.15f : 0.0f), -1.0f, 1.0f);
+    f.browLength = 1.0f + 0.10f * z(rf);
+    f.irisSize = 1.0f + 0.05f * z(rf) + (per == Persona::Cute ? 0.06f : 0.0f) - (per == Persona::Villainous ? 0.06f : 0.0f);
+    f.noseShape = rf.weighted({fem ? 2.0f : 0.8f, 3.0f, per == Persona::Noble || per == Persona::Villainous ? 2.0f : 0.8f, fem ? 0.6f : 1.4f});
+    f.earSize = 1.0f + 0.10f * z(rf);
+    {
+        const float pm = per == Persona::Rogue || per == Persona::Villainous ? 0.30f : per == Persona::Heroic ? 0.16f : 0.10f;
+        if (rf.chance(pm)) f.marking = rf.weighted({1.5f, fantasy ? 1.5f : 0.7f, 1.0f, 0.6f, fem ? 0.4f : 1.0f, 0.5f});
+        if (f.marking == 0 && rf.chance(0.10f)) f.marking = 1;  // moles are common
+        static constexpr Vec3 kPaint[] = {{0.55f, 0.10f, 0.10f}, {0.12f, 0.14f, 0.18f}, {0.85f, 0.85f, 0.80f}, {0.20f, 0.30f, 0.55f}, {0.70f, 0.50f, 0.15f}};
+        f.markColor = kPaint[rf.rangeInt(0, 4)];
+    }
 
     // ---- hair ----
     Rng rh = root.fork(7);

@@ -54,6 +54,7 @@ public:
     float gluteDepth(float t) const;
     Vec3 torsoPoint(float t, float th) const;   // sculpted torso surface
     Vec3 insideTorso(Vec3 p, float k) const;    // clamp a point inside the torso
+    Vec3 outsideTorso(Vec3 p) const;            // push a point out onto the torso surface
     Vec3 torsoSurfaceToward(Vec3 p, float* theta = nullptr) const;  // torso surface on the ray from its axis through p
 
     // Head (head.cpp). x in head units (unscaled by headWidth), s from chin.
@@ -94,6 +95,11 @@ private:
     void addUnderwear(Part& p, bool chestBand) const;
     size_t torsoPart_ = 0;               // index into parts: torso + legs share one surface
     size_t headPart_ = 0;
+    size_t torsoTriStart_ = 0;           // first torso-loft triangle in the torso part
+    uint32_t torsoFirst_ = 0;            // first torso-loft vertex
+    int torsoN_ = 0;                     // vertices per torso ring
+    std::vector<float> torsoRingT_;      // t of each torso ring
+    std::vector<size_t> torsoHoles_;     // torso triangles replaced by the arms
     std::vector<uint32_t> torsoRing0_;   // bottom ring of the torso (hip line), split by the legs
 
     uint16_t headPartId_ = 0, bodyGroup_ = 0, armGroup_ = 0;

@@ -29,12 +29,16 @@ SuperRing Builder::headRing(float s) const {
     // Individual structure: jaw width, chin, cheekbones, fullness.
     // Jaw: widens the lower face and flattens the chin into a square front.
     float wMul = 1.0f + f.jaw * 0.14f * bump((s - 0.17f) / 0.17f) + f.jaw * 0.30f * bump(s / 0.10f) +
-                 f.cheek * 0.05f * bump((s - 0.37f) / 0.12f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f);
+                 f.cheek * 0.07f * bump((s - 0.37f) / 0.12f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f) +
+                 f.faceWidth * 0.08f * bump((s - 0.28f) / 0.30f) +
+                 f.crown * 0.05f * bump((s - 0.78f) / 0.22f);
+    // Cranium: taller/rounder or flatter at the back and top.
+    const float crownBack = f.crown * 0.04f * bump((s - 0.75f) / 0.25f);
     float chinFwd = f.chin * 0.03f * bump(s / 0.14f);
     float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
     float full = f.roundness * 0.02f * bump((s - 0.25f) / 0.15f);
     return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul, (hZc_(s) + chinFwd) * h,
-            std::max(hDf_(s) + chinDrop * 0.5f + full, 0.01f) * h, std::max(hDb_(s), 0.01f) * h, hNf_(s), hNb_(s)};
+            std::max(hDf_(s) + chinDrop * 0.5f + full, 0.01f) * h, std::max(hDb_(s) + crownBack, 0.01f) * h, hNf_(s), hNb_(s)};
 }
 
 // Forward relief of the face in head units; xn is the horizontal position in
@@ -44,17 +48,20 @@ float Builder::faceRelief(float xn, float s) const {
     const float ns = f.noseSize, ax = std::fabs(xn);
     float r = 0;
     // Nose: bridge between the eyes down to the tip, then under to the base.
+    // Nose types: button (short, upturned), straight, aquiline (long, humped), broad.
+    const float nLen = f.noseShape == 0 ? 0.82f : f.noseShape == 2 ? 1.12f : 1.0f;
+    const float nWid = f.noseShape == 3 ? 1.35f : f.noseShape == 0 ? 0.85f : 1.0f;
     if (s > 0.28f && s < 0.55f) {
-        const float tip = 0.335f;
+        const float tip = 0.335f + (1.0f - nLen) * 0.04f;
         float depth, width;
         if (s > tip) {
             float k = smoothstep(tip, 0.53f, s);
             float bridge = 0.010f + 0.016f * f.noseBridge;
-            depth = lerp(0.032f * ns, bridge, k) + 0.006f * f.noseBridge * bump((k - 0.5f) / 0.5f);  // aquiline hump
-            width = lerp(0.040f, 0.022f, k) * std::sqrt(ns);
+            depth = lerp(0.026f * ns * nLen, bridge, k) + (f.noseShape == 2 ? 0.010f : 0.004f) * f.noseBridge * bump((k - 0.5f) / 0.5f);  // hump
+            width = lerp(0.040f, 0.022f, k) * std::sqrt(ns) * nWid;
         } else {
-            depth = 0.032f * ns * smoothstep(0.295f, tip, s);
-            width = 0.044f * std::sqrt(ns);
+            depth = 0.026f * ns * nLen * smoothstep(0.295f, tip, s);
+            width = 0.044f * std::sqrt(ns) * nWid;
         }
         r += depth * bump(xn / (width * 1.7f));
         r += 0.006f * ns * bump((s - 0.315f) / 0.022f) * bump((ax - 0.045f * ns) / 0.028f);  // nostril wings

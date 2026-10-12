@@ -859,10 +859,10 @@ void Builder::buildEars() {
         float th = sd > 0 ? 0.08f : kPi - 0.08f;
         Vec3 base = headSurface(th, 0.45f, -0.03f * h) + Vec3{0, 0, -0.05f * h};
         Vec3 dir = elf ? normalize(Vec3{sd * 1.0f, 0.40f, -0.40f}) : normalize(Vec3{sd * 1.0f, 0.15f, -0.30f});
-        float len = elf ? 0.40f * h : 0.11f * h;
+        float len = (elf ? 0.40f * h : 0.11f * h) * g.face.earSize;
         Vec3 v = normalize(Vec3{0, 1, 0} - dir * dir.y), u = cross(dir, v);
         Loft L;
-        float rr = elf ? 0.075f * h : 0.085f * h;
+        float rr = (elf ? 0.075f * h : 0.085f * h) * std::sqrt(g.face.earSize);
         L.rings.push_back(makeRing(base, u, v, SuperRing{0.03f * h, 0, rr, rr, 2, 2}, 8));
         L.t.push_back(0);
         L.rings.push_back(makeRing(base + dir * (len * 0.45f), u, v, SuperRing{0.022f * h, 0, rr * 0.9f, rr * 0.75f, 2, 2}, 8));

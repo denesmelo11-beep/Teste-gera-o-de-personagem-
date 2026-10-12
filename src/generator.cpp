@@ -326,6 +326,17 @@ Vec3 Builder::torsoSurfaceToward(Vec3 p, float* theta) const {
     return sp;
 }
 
+Vec3 Builder::outsideTorso(Vec3 p) const {
+    float t = torsoT(p.y);
+    if (t < -0.06f || t > 1.05f) return p;
+    float zc = cZc_(t);
+    Vec3 sp = torsoSurfaceToward(p);
+    Vec2 d{p.x, p.z - zc};
+    float rs = length(Vec2{sp.x, sp.z - zc}), rp = length(d);
+    if (rp >= rs || rp < 1e-6f) return p;
+    return {d.x / rp * rs, p.y, zc + d.y / rp * rs};
+}
+
 Vec3 Builder::insideTorso(Vec3 p, float k) const {
     float t = torsoT(p.y);
     if (t < -0.06f || t > 1.05f) return p;
@@ -351,12 +362,14 @@ void Builder::addUnderwear(Part& p, bool chestBand) const {
         const Curve hole{{0.0f, -0.12f * h}, {0.30f, -0.01f * h}, {0.75f, 0.07f * tl}, {1.5708f, 0.15f * tl}, {2.05f, 0.10f * tl},
                          {2.45f, 0.01f * tl}, {2.80f, -0.04f * h}, {3.1416f, -0.06f * h}};
         p.clips.push_back({[=, this](Vec3 q) {
+            if (std::fabs(q.x) > 1.15f * cHw_(0.13f) + 0.02f * h) return 1.0f;  // not the hands/forearms
             float phi = std::atan2(std::fabs(q.x), q.z - cZc_(clamp(torsoT(q.y), -0.06f, 1.1f)));
             float top = cy + tl * (0.15f + 0.05f * std::sin(phi) + 0.02f * smoothstep(1.6f, 3.0f, phi));
             return std::max(q.y - top, cy + hole(phi) - q.y);
         }, uw});
     } else {
         p.clips.push_back({[=, this](Vec3 q) {
+            if (std::fabs(q.x) > 1.15f * cHw_(0.13f) + 0.02f * h) return 1.0f;  // not the hands/forearms
             float z = q.z - cZc_(clamp(torsoT(q.y), -0.06f, 1.1f));
             float top = cy + tl * 0.13f - 0.01f * h * smoothstep(0.0f, 0.3f * h, z);
             float hole = cy - 0.15f * h + 0.02f * h * smoothstep(0.0f, 0.2f * h, z);
@@ -368,6 +381,8 @@ void Builder::addUnderwear(Part& p, bool chestBand) const {
         const float tb = 0.735f - 0.035f * B - 0.05f * g.body.sag;
         const float y0 = cy + tl * (tb - 0.085f - 0.035f * B), y1 = cy + tl * (tb + 0.065f);
         p.clips.push_back({[=, this](Vec3 q) {
+            // Torso only: the arms share this surface.
+            if (std::fabs(q.x) > 1.04f * cHw_(clamp(torsoT(q.y), -0.06f, 1.1f)) + 0.02f * h) return 1.0f;
             float front = smoothstep(0.0f, 0.2f * h, q.z - cZc_(clamp(torsoT(q.y), -0.06f, 1.1f)));
             float top = y1 + 0.015f * h * smoothstep(0.0f, 0.3f * h, std::fabs(q.x)) - 0.035f * h * front * bump(q.x / (0.10f * h));
             return std::max(y0 - q.y, q.y - top);
@@ -520,6 +535,10 @@ void Builder::buildTorso() {
             return bustField(t, th) > 0.0f || bustField(t + 0.03f, th) > 0.0f || bustField(t - 0.03f, th) > 0.0f;
         };
     const uint32_t first = uint32_t(tp.pos.size());
+    torsoTriStart_ = tp.tris.size();
+    torsoFirst_ = first;
+    torsoN_ = N;
+    torsoRingT_ = L.t;
     emitLoft(tp, L, wf, [&](float, float) { return skin(); });
     torsoRing0_.clear();
     for (int j = 0; j < N; ++j) torsoRing0_.push_back(first + uint32_t(j));
@@ -578,71 +597,175 @@ void Builder::buildArms() {
             o -= rr * 0.06f * win(0.0f, 0.8f) * bump((t - 0.10f) / 0.18f);
             return o;
         };
-        std::vector<float> ts{-0.21f, -0.15f, -0.08f, 0.0f, 0.07f, 0.18f, 0.27f, 0.36f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
-        if (lod.sparseRings) ts = mergeRings(ts, {}, true);
-        Loft L;
-        // Above the joint the cap climbs along the trapezius slope towards the neck,
-        // so the shoulder is a rounded deltoid on a sloped trapezius, not a shelf.
-        const Vec3 dirIn = normalize(Vec3{-a.side, 0.25f, 0.0f});
-        const int n = lod.limbSeg;
-        for (float t : ts) {
-            float rr = r * rc(t);
-            // Above the joint the loft bends towards the neck so the shoulder cap
-            // sits on the trapezius instead of rising above it.
-            // Above the joint the loft closes into a dome along the arm axis: a round
-            // deltoid cap; its medial side is then pulled onto the torso (below).
-            Vec3 dd = d;
-            Vec3 vv = orthoFront(dd), uu = cross(dd, vv);
-            Vec3 c = a.shoulder + d * (t * Ltot * (t >= 0 ? 1.0f : 0.17f));
-            std::vector<Vec3> ring(static_cast<size_t>(n));
-            for (int j = 0; j < n; ++j) {
-                float al = kTau * float(j) / float(n);
-                Vec3 radial = uu * (rr * std::cos(al)) + vv * (rr * std::sin(al));
-                float beta = a.side > 0 ? al : kPi - al;
-                ring[size_t(j)] = c + radial + normalize(radial, vv) * relief(beta, t, rr);
-            }
-            // The medial half of the cap (towards the neck and chest) lies on the torso
-            // surface, so the deltoid grows out of the trapezius and pectoral without a seam.
-            if (t < 0.10f && a.pair == 0) {
-                const Vec3 dirTop = normalize(dirIn * 0.6f + Vec3{0, 1.0f, 0});
-                for (Vec3& p : ring) {
-                    Vec3 rd = normalize(p - c, dirIn);
-                    // Top: fully onto the trapezius (no peak). Front/medial: partly, leaving a
-                    // crisp emergence edge between deltoid and pectoral.
-                    float top = saturate(dot(rd, dirTop) * 2.0f + 0.2f), med = saturate(dot(rd, dirIn) * 1.4f);
-                    float k = std::max(top * smoothstep(0.12f, -0.04f, t), 0.7f * med * smoothstep(0.06f, -0.12f, t));
-                    p = lerp(p, insideTorso(p, 0.96f), k);
-                }
-            }
-            L.rings.push_back(ring);
-            L.t.push_back(t);
-        }
-        L.poleStart = true;
-        L.startPole = a.shoulder - d * (0.25f * Ltot * 0.17f);
-        L.tStart = -0.26f;
         int clav = rig.root, up = rig.upper, lo = rig.lower, hand = rig.end;
-        Part& ap = newPart();
-        armGroup_ = ap.id;
-        ap.cavity = (0.18f + 0.30f * an.definition) * (1.0f - 0.35f * g.femininity);
-        // Normal transfer: where the shoulder cap runs into the torso it takes the
-        // torso's normal, so the join reads as one surface (only the silhouette remains).
-        if (a.pair == 0)
-            ap.normalFn = [this](Vec3 p, Vec3 n) {
-                float t = torsoT(p.y);
-                if (t < 0.6f || t > 1.08f) return n;
-                float th;
-                Vec3 sp = torsoSurfaceToward(p, &th);
-                float zc = cZc_(t), rp = length(Vec2{p.x, p.z - zc}), rs = length(Vec2{sp.x, sp.z - zc});
-                float w = smoothstep(1.10f, 1.0f, rp / std::max(rs, 1e-5f));
-                if (w <= 0) return n;
-                Vec3 pt = torsoPoint(t + 0.005f, th) - torsoPoint(t - 0.005f, th), pth = torsoPoint(t, th + 0.01f) - torsoPoint(t, th - 0.01f);
-                Vec3 tn = normalize(cross(pt, pth), n);
-                return normalize(lerp(n, tn, w), n);
-            };
-        emitLoft(ap, L, [=](float t, float, Vec3) {
+        auto armWeights = [=](float t) {
             return chainWeights({{-0.18f, clav}, {0.0f, up}, {te - 0.07f, up}, {te + 0.07f, lo}, {0.94f, lo}, {1.04f, hand}}, t);
-        }, [&](float, float) { return skin(); });
+        };
+        const Vec3 vv = orthoFront(d), uu = cross(d, vv);
+        auto ringPoint = [&](float t, float al) {
+            const float rr = r * rc(t);
+            Vec3 radial = uu * (rr * std::cos(al)) + vv * (rr * std::sin(al));
+            float beta = a.side > 0 ? al : kPi - al;
+            return a.shoulder + d * (t * Ltot) + radial + normalize(radial, vv) * relief(beta, t, rr);
+        };
+        if (a.pair == 0) {
+            // The arm grows out of the torso surface: a patch on the side of the chest
+            // (armpit to shoulder top, front to back) is opened and its boundary becomes
+            // the first ring of the arm. Junction rings in between form the deltoid as a
+            // soft union of a ball around the shoulder joint and the torso, so torso and
+            // arm are one continuous surface.
+            Part& bp = parts[torsoPart_];
+            const int N = torsoN_;
+            auto nearest = [&](float t) {
+                int best = 0;
+                for (size_t i = 0; i < torsoRingT_.size(); ++i)
+                    if (std::fabs(torsoRingT_[i] - t) < std::fabs(torsoRingT_[size_t(best)] - t)) best = int(i);
+                return best;
+            };
+            // The opening scales with the arm: from below the armpit to the top of the
+            // deltoid, and wider front-to-back for heavy shoulders.
+            const float Ra = r * rc(0.02f) * 1.1f;
+            int i0 = nearest(clamp(torsoT(a.shoulder.y - 1.15f * Ra), 0.62f, 0.80f));
+            int i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
+            if (i1 <= i0) i1 = i0 + 1;
+            const float dF = torsoRing(torsoT(a.shoulder.y)).dF;
+            const int jw = Ra > 0.62f * dF && N >= 12 ? 2 : 1;
+            const int jc = a.side > 0 ? 0 : N / 2, jL = jc - jw, jR = jc + jw;
+            auto vid = [&](int i, int j) { return torsoFirst_ + uint32_t(i * N + ((j % N) + N) % N); };
+            for (int i = i0; i < i1; ++i)
+                for (int j = jL; j < jR; ++j) {
+                    size_t q = torsoTriStart_ + 2 * size_t(i * N + ((j % N) + N) % N);
+                    torsoHoles_.push_back(q);
+                    torsoHoles_.push_back(q + 1);
+                }
+            std::vector<uint32_t> loop;
+            for (int j = jL; j <= jR; ++j) loop.push_back(vid(i0, j));
+            for (int i = i0 + 1; i <= i1; ++i) loop.push_back(vid(i, jR));
+            for (int j = jR - 1; j >= jL; --j) loop.push_back(vid(i1, j));
+            for (int i = i1 - 1; i > i0; --i) loop.push_back(vid(i, jL));
+            const size_t M = loop.size();
+            auto angleOf = [&](Vec3 p) { Vec3 rel = p - a.shoulder; return std::atan2(dot(rel, vv), dot(rel, uu)); };
+            // Orient the loop like the arm rings (angle increasing).
+            float turn = 0;
+            for (size_t j = 0; j < M; ++j) turn += std::remainder(angleOf(bp.pos[loop[(j + 1) % M]]) - angleOf(bp.pos[loop[j]]), kTau);
+            if (turn < 0) std::reverse(loop.begin(), loop.end());
+            std::vector<float> alpha(M);
+            {
+                float total = 0;
+                std::vector<float> acc(M);
+                for (size_t j = 0; j < M; ++j) {
+                    acc[j] = total;
+                    total += length(bp.pos[loop[(j + 1) % M]] - bp.pos[loop[j]]);
+                }
+                const float a0 = angleOf(bp.pos[loop[0]]);
+                for (size_t j = 0; j < M; ++j) alpha[j] = a0 + kTau * acc[j] / std::max(total, 1e-6f);
+            }
+            auto addV = [&](Vec3 pnt, const SkinW& w) {
+                bp.pos.push_back(pnt);
+                bp.w.push_back(w);
+                bp.uv.push_back({});
+                return uint32_t(bp.pos.size() - 1);
+            };
+            const float t1 = 0.10f;
+            auto armRing = [&](float t) {
+                const float w = smoothstep(t1, t1 + 0.30f, t);
+                std::vector<Vec3> rg(M);
+                for (size_t j = 0; j < M; ++j) rg[j] = ringPoint(t, lerp(alpha[j], alpha[0] + kTau * float(j) / float(M), w));
+                return rg;
+            };
+            const std::vector<Vec3> ring1 = armRing(t1);
+            // Junction: a Hermite fillet per column, leaving the torso tangent to its
+            // surface and arriving along the arm, plus the deltoid's mass on the outer and
+            // upper side (none in the armpit). No creases, no shelf.
+            const int K = lod.sparseRings ? 2 : 3;
+            std::vector<Vec3> m0(M), m1(M), P0(M);
+            std::vector<float> delt(M);
+            for (size_t j = 0; j < M; ++j) {
+                const Vec3 p0 = bp.pos[loop[j]], p1 = ring1[j];
+                const float Lj = length(p1 - p0);
+                float th;
+                Vec3 sp = torsoSurfaceToward(p0, &th);
+                (void)sp;
+                const float tt = clamp(torsoT(p0.y), -0.05f, 1.05f), e = 0.01f;
+                Vec3 n0 = normalize(cross(torsoPoint(tt + e, th) - torsoPoint(tt - e, th), torsoPoint(tt, th + e) - torsoPoint(tt, th - e)),
+                                    Vec3{a.side, 0, 0});
+                if (dot(n0, Vec3{p0.x, 0, p0.z - cZc_(tt)}) < 0) n0 = n0 * -1.0f;
+                Vec3 tan0 = (p1 - p0) - n0 * dot(p1 - p0, n0);
+                m0[j] = normalize(tan0 + n0 * 0.35f * length(tan0), d) * (1.1f * Lj);
+                m1[j] = d * (1.1f * Lj);
+                P0[j] = p0;
+                // Deltoid mass: lateral and top of the arm (relative to the arm axis).
+                Vec3 rad = p1 - (a.shoulder + d * dot(p1 - a.shoulder, d));
+                Vec3 radN = normalize(rad, Vec3{a.side, 0, 0});
+                float lateral = saturate(dot(radN, normalize(Vec3{a.side, 0.6f, 0})) * 1.2f + 0.2f);
+                delt[j] = lateral * r * 0.30f * (0.5f + 0.5f * an.deltoids);
+            }
+            std::vector<uint32_t> prev = loop;
+            for (int kq = 1; kq <= K; ++kq) {
+                const float f = float(kq) / float(K + 1);
+                const float h00 = 2 * f * f * f - 3 * f * f + 1, h10 = f * f * f - 2 * f * f + f, h01 = -2 * f * f * f + 3 * f * f,
+                            h11 = f * f * f - f * f;
+                std::vector<uint32_t> cur(M);
+                for (size_t j = 0; j < M; ++j) {
+                    Vec3 pnt = P0[j] * h00 + m0[j] * h10 + ring1[j] * h01 + m1[j] * h11;
+                    Vec3 rad = pnt - (a.shoulder + d * dot(pnt - a.shoulder, d));
+                    pnt += normalize(rad, Vec3{a.side, 0, 0}) * (delt[j] * std::sin(kPi * std::min(1.0f, f * 1.15f)));
+                    pnt = lerp(pnt, outsideTorso(pnt), 1.0f - f);
+                    SkinW w;
+                    const SkinW& wl = bp.w[loop[j]];
+                    for (int qq = 0; qq < 4; ++qq) w.add(wl.j[qq], wl.w[qq] * (1.0f - f));
+                    w.add(up, f);
+                    w.normalize();
+                    cur[j] = addV(pnt, w);
+                }
+                emitStrip(bp, prev, cur, skin());
+                prev = cur;
+            }
+            std::vector<float> ts{t1, 0.18f, 0.27f, 0.36f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
+            if (lod.sparseRings) ts = mergeRings(ts, {}, true);
+            for (float t : ts) {
+                std::vector<Vec3> rg = armRing(t);
+                std::vector<uint32_t> cur(M);
+                for (size_t j = 0; j < M; ++j) cur[j] = addV(rg[j], armWeights(t));
+                emitStrip(bp, prev, cur, skin());
+                prev = cur;
+            }
+            armGroup_ = bodyGroup_;
+        } else {
+            // Extra arm pairs (fantasy anatomy): a separate loft with a closed cap.
+            std::vector<float> ts{-0.15f, -0.07f, 0.0f, 0.10f, 0.20f, 0.30f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
+            Loft L;
+            const int n = lod.limbSeg;
+            for (float t : ts) {
+                std::vector<Vec3> ring(static_cast<size_t>(n));
+                for (int j = 0; j < n; ++j) ring[size_t(j)] = t >= 0 ? ringPoint(t, kTau * float(j) / float(n))
+                                                                       : a.shoulder + d * (t * Ltot * 0.3f) +
+                                                                             (uu * std::cos(kTau * j / n) + vv * std::sin(kTau * j / n)) * (r * rc(t));
+                L.rings.push_back(ring);
+                L.t.push_back(t);
+            }
+            L.poleStart = true;
+            L.startPole = a.shoulder - d * (0.22f * Ltot * 0.3f);
+            L.tStart = -0.2f;
+            Part& ap = newPart();
+            armGroup_ = ap.id;
+            emitLoft(ap, L, [=](float t, float, Vec3) { return armWeights(t); }, [&](float, float) { return skin(); });
+        }
         buildHand(a, rig);
+    }
+    if (!torsoHoles_.empty()) {  // remove the torso faces replaced by the arms
+        Part& bp = parts[torsoPart_];
+        std::sort(torsoHoles_.begin(), torsoHoles_.end());
+        std::vector<Part::Tri> kept;
+        kept.reserve(bp.tris.size());
+        size_t h = 0;
+        for (size_t t = 0; t < bp.tris.size(); ++t) {
+            while (h < torsoHoles_.size() && torsoHoles_[h] < t) ++h;
+            if (h < torsoHoles_.size() && torsoHoles_[h] == t) continue;
+            kept.push_back(bp.tris[t]);
+        }
+        bp.tris.swap(kept);
+        torsoHoles_.clear();
     }
 }
 
