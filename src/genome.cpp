@@ -1,6 +1,7 @@
 #include "chargen/genome.hpp"
 
 #include <array>
+#include <iterator>
 
 #include "chargen/rng.hpp"
 
@@ -12,7 +13,11 @@ constexpr std::string_view kArchNames[] = {"natural", "bombshell", "dorito", "br
 constexpr std::string_view kPersonaNames[] = {"heroic", "villainous", "cute", "sexy", "stern", "gentle", "rogue", "noble"};
 constexpr std::string_view kAgeNames[] = {"young", "adult", "mature", "elder"};
 constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepart", "slickedback", "messy", "undercut", "pixie", "bob",
-                                           "shoulder", "longstraight", "longwavy", "ponytail", "highponytail", "braid", "bun", "halfup", "manbun"};
+                                           "shoulder", "longstraight", "longwavy", "ponytail", "highponytail", "braid", "bun", "halfup", "manbun",
+                                           "crewcut", "mohawk", "pompadour", "curly", "afro", "mullet", "topknot", "locs", "wolf",
+                                           "hime", "twintails", "twinbraids", "sidebraid", "lowponytail", "spacebuns", "messybun",
+                                           "longcurly", "verylong", "asymbob"};
+static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "mustache", "goatee", "shortbeard", "fullbeard"};
 
 template <size_t N>
@@ -99,6 +104,23 @@ AgeGroup groupOf(float age) {
 }
 
 }  // namespace
+
+bool isShortHair(HairStyle h) {
+    using H = HairStyle;
+    switch (h) {
+        case H::Bald: case H::Buzz: case H::ShortCrop: case H::SidePart: case H::SlickedBack: case H::Messy: case H::Undercut:
+        case H::Pixie: case H::CrewCut: case H::Mohawk: case H::Pompadour: case H::Curly: case H::Afro: return true;
+        default: return false;
+    }
+}
+bool isTiedHair(HairStyle h) {
+    using H = HairStyle;
+    switch (h) {
+        case H::Ponytail: case H::HighPonytail: case H::Braid: case H::Bun: case H::ManBun: case H::Topknot: case H::TwinTails:
+        case H::TwinBraids: case H::SideBraid: case H::LowPonytail: case H::SpaceBuns: case H::MessyBun: return true;
+        default: return false;
+    }
+}
 
 std::string_view toString(Sex s) { return s == Sex::Female ? "female" : "male"; }
 std::string_view toString(AgeGroup a) { return a < AgeGroup::Count ? kAgeNames[size_t(a)] : "?"; }
@@ -390,18 +412,26 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         W(H::Buzz) = 0.1f; W(H::ShortCrop) = 0.2f; W(H::SidePart) = 0.3f; W(H::SlickedBack) = 0.2f; W(H::Messy) = 0.5f;
         W(H::Undercut) = 0.4f; W(H::Pixie) = 1.2f; W(H::Bob) = 2.0f; W(H::Shoulder) = 2.5f; W(H::LongStraight) = 3.0f;
         W(H::LongWavy) = 2.5f; W(H::Ponytail) = 2.0f; W(H::HighPonytail) = 1.2f; W(H::Braid) = 1.5f; W(H::Bun) = 1.2f;
-        W(H::HalfUp) = 1.5f;
-        if (elder) { W(H::Bun) += 2; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f; W(H::LongWavy) *= 0.5f; }
+        W(H::HalfUp) = 1.5f; W(H::Curly) = 0.4f; W(H::Afro) = 0.6f; W(H::Wolf) = 1.0f; W(H::Hime) = 1.2f;
+        W(H::TwinTails) = 0.9f; W(H::TwinBraids) = 1.0f; W(H::SideBraid) = 1.2f; W(H::LowPonytail) = 1.4f; W(H::SpaceBuns) = 0.5f;
+        W(H::MessyBun) = 1.3f; W(H::LongCurly) = 1.3f; W(H::VeryLong) = 0.9f; W(H::AsymBob) = 1.0f; W(H::Locs) = 0.5f;
+        W(H::Mohawk) = 0.1f; W(H::Mullet) = 0.2f;
+        if (elder) { W(H::Bun) += 2; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f; W(H::LongWavy) *= 0.5f; W(H::TwinTails) *= 0.1f;
+                     W(H::SpaceBuns) *= 0.1f; W(H::VeryLong) *= 0.3f; W(H::Wolf) *= 0.3f; }
     } else {
         W(H::Bald) = elder ? 2.3f : mature ? 0.6f : 0.15f; W(H::Buzz) = 1.2f; W(H::ShortCrop) = 3.0f; W(H::SidePart) = 2.5f;
         W(H::SlickedBack) = 1.5f; W(H::Messy) = 2.5f; W(H::Undercut) = 1.5f; W(H::Shoulder) = 1.0f; W(H::LongStraight) = 0.6f;
         W(H::LongWavy) = 0.5f; W(H::Ponytail) = 0.8f; W(H::Braid) = 0.3f; W(H::HalfUp) = 0.3f; W(H::ManBun) = 0.8f;
-        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; }
+        W(H::CrewCut) = 2.0f; W(H::Mohawk) = 0.5f; W(H::Pompadour) = 1.0f; W(H::Curly) = 1.2f; W(H::Afro) = 0.6f; W(H::Mullet) = 0.6f;
+        W(H::Topknot) = 0.7f; W(H::Locs) = 0.6f; W(H::Wolf) = 1.0f; W(H::LowPonytail) = 0.6f; W(H::SideBraid) = 0.2f;
+        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; W(H::Mohawk) *= 0.1f; W(H::Pompadour) *= 0.5f; W(H::Wolf) *= 0.2f; }
     }
     switch (per) {
-        case Persona::Rogue: W(H::Messy) += 2; W(H::Undercut) += 1; break;
-        case Persona::Noble: (fem ? W(H::LongStraight) : W(H::SlickedBack)) += 1.5f; W(H::Bun) += fem ? 1.0f : 0.0f; break;
-        case Persona::Cute: W(H::Bob) += fem ? 1.0f : 0.0f; W(H::HighPonytail) += fem ? 1.0f : 0.0f; W(H::Pixie) += fem ? 1.0f : 0.0f; break;
+        case Persona::Rogue: W(H::Messy) += 2; W(H::Undercut) += 1; W(H::Wolf) += 1; W(H::Mohawk) += fem ? 0.2f : 0.8f; W(H::Locs) += 0.5f; break;
+        case Persona::Noble: (fem ? W(H::LongStraight) : W(H::SlickedBack)) += 1.5f; W(H::Bun) += fem ? 1.0f : 0.0f;
+                             W(H::Hime) += fem ? 1.0f : 0.0f; W(H::VeryLong) += fem ? 0.6f : 0.0f; W(H::Topknot) += fem ? 0.0f : 0.6f; break;
+        case Persona::Cute: W(H::Bob) += fem ? 1.0f : 0.0f; W(H::HighPonytail) += fem ? 1.0f : 0.0f; W(H::Pixie) += fem ? 1.0f : 0.0f;
+                            W(H::TwinTails) += fem ? 1.5f : 0.0f; W(H::SpaceBuns) += fem ? 1.0f : 0.0f; W(H::Curly) += 0.5f; break;
         case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Undercut) += 1; break;
         case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::SidePart) += 1; W(H::Ponytail) += 1; break;
         case Persona::Sexy: W(H::LongWavy) += fem ? 1.5f : 0.3f; W(H::HalfUp) += 1; break;
@@ -409,12 +439,17 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     }
     if (arch == Archetype::Brute || arch == Archetype::Monster) { W(H::Bald) += 1.5f; W(H::Buzz) += 1; }
     g.hair = opt.hair ? *opt.hair : HairStyle(rh.weighted(std::span<const float>(w)));
-    const bool shortHair = g.hair <= HairStyle::Undercut;
+    const bool shortHair = isShortHair(g.hair) && g.hair != HairStyle::Pixie;
     g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.2f}));
-    if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz) g.fringe = Fringe::None;
+    if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz || g.hair == HairStyle::CrewCut ||
+        g.hair == HairStyle::Mohawk || g.hair == HairStyle::Pompadour || g.hair == HairStyle::Afro || g.hair == HairStyle::Topknot ||
+        g.hair == HairStyle::Locs)
+        g.fringe = Fringe::None;
+    if (g.hair == HairStyle::Hime) g.fringe = Fringe::Straight;
     g.hairVolume = clamp(1.0f + 0.1f * z(rh), 0.8f, 1.25f);
     g.hairLength = clamp(1.0f + 0.12f * z(rh), 0.75f, 1.3f);
-    g.hairWave = g.hair == HairStyle::LongWavy ? rh.range(0.6f, 1.0f) : rh.range(0.0f, 0.2f);
+    g.hairWave = g.hair == HairStyle::LongWavy ? rh.range(0.6f, 1.0f) : g.hair == HairStyle::LongCurly ? 1.0f
+               : g.hair == HairStyle::Hime ? 0.0f : rh.range(0.0f, 0.2f);
     g.partSide = rh.chance(0.5f) ? 1.0f : -1.0f;
     if (!fem && g.age >= 19)
         g.facialHair = FacialHair(rh.weighted({young ? 10.0f : 4.0f, 0.25f, 0.9f,

@@ -4,6 +4,7 @@
 // Bodies are base meshes: only a modesty layer (underwear), equipment is
 // layered on top by the game.
 #include <algorithm>
+#include <unordered_map>
 #include <cstdio>
 #include <cstdlib>
 
@@ -254,7 +255,7 @@ Vec3 Builder::torsoPoint(float t, float th) const {
         if (pecK > 0) {
             float tlow = 0.715f + 0.075f * u * u;
             float ft = smoothstep(tlow - 0.012f, tlow + 0.03f, t) * smoothstep(0.995f, 0.86f, t);
-            float fu = smoothstep(0.02f, 0.10f, u) * smoothstep(0.98f, 0.72f, u);
+            float fu = smoothstep(0.02f, 0.10f, u) * smoothstep(0.86f, 0.62f, u);  // fades before the armpit
             n += pecK * ft * fu * (0.55f + 0.45f * bump((u - 0.45f) / 0.55f));
             n -= pecK * 0.25f * def * bump((t - (tlow - 0.012f)) / 0.02f) * fu;
         }
@@ -382,7 +383,7 @@ void Builder::addUnderwear(Part& p, bool chestBand) const {
         const float y0 = cy + tl * (tb - 0.085f - 0.035f * B), y1 = cy + tl * (tb + 0.065f);
         p.clips.push_back({[=, this](Vec3 q) {
             // Torso only: the arms share this surface.
-            if (std::fabs(q.x) > 1.04f * cHw_(clamp(torsoT(q.y), -0.06f, 1.1f)) + 0.02f * h) return 1.0f;
+            if (std::fabs(q.x) > 1.30f * cHw_(clamp(torsoT(q.y), -0.06f, 1.1f)) + 0.03f * h) return 1.0f;
             float front = smoothstep(0.0f, 0.2f * h, q.z - cZc_(clamp(torsoT(q.y), -0.06f, 1.1f)));
             float top = y1 + 0.015f * h * smoothstep(0.0f, 0.3f * h, std::fabs(q.x)) - 0.035f * h * front * bump(q.x / (0.10f * h));
             return std::max(y0 - q.y, q.y - top);
@@ -627,7 +628,8 @@ void Builder::buildArms() {
             const float Ra = r * rc(0.02f) * 1.1f;
             int i0 = nearest(clamp(torsoT(a.shoulder.y - 1.15f * Ra), 0.62f, 0.80f));
             int i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
-            if (i1 <= i0) i1 = i0 + 1;
+            if (lod.sparseRings) { if (i1 <= i0) i1 = i0 + 1; }
+            else i0 = std::max(1, std::min(i0, i1 - 3));  // at least three rings tall: no pinched armpit
             const float dF = torsoRing(torsoT(a.shoulder.y)).dF;
             const int jw = Ra > 0.62f * dF && N >= 12 ? 2 : 1;
             const int jc = a.side > 0 ? 0 : N / 2, jL = jc - jw, jR = jc + jw;
@@ -644,11 +646,15 @@ void Builder::buildArms() {
             for (int j = jR - 1; j >= jL; --j) loop.push_back(vid(i1, j));
             for (int i = i1 - 1; i > i0; --i) loop.push_back(vid(i, jL));
             const size_t M = loop.size();
-            auto angleOf = [&](Vec3 p) { Vec3 rel = p - a.shoulder; return std::atan2(dot(rel, vv), dot(rel, uu)); };
-            // Orient the loop like the arm rings (angle increasing).
-            float turn = 0;
-            for (size_t j = 0; j < M; ++j) turn += std::remainder(angleOf(bp.pos[loop[(j + 1) % M]]) - angleOf(bp.pos[loop[j]]), kTau);
-            if (turn < 0) std::reverse(loop.begin(), loop.end());
+            // Orient the loop like the arm rings: its Newell normal must point the way the
+            // rings turn (cross(uu, vv)). Robust even when the joint lies outside the loop.
+            Vec3 cen{};
+            for (uint32_t v : loop) cen += bp.pos[v];
+            cen = cen / float(M);
+            Vec3 newell{};
+            for (size_t j = 0; j < M; ++j) newell += cross(bp.pos[loop[j]] - cen, bp.pos[loop[(j + 1) % M]] - cen);
+            if (dot(newell, cross(uu, vv)) < 0) std::reverse(loop.begin(), loop.end());
+            auto angleOf = [&](Vec3 p) { Vec3 rel = p - cen; return std::atan2(dot(rel, vv), dot(rel, uu)); };
             std::vector<float> alpha(M);
             {
                 float total = 0;
@@ -691,8 +697,8 @@ void Builder::buildArms() {
                                     Vec3{a.side, 0, 0});
                 if (dot(n0, Vec3{p0.x, 0, p0.z - cZc_(tt)}) < 0) n0 = n0 * -1.0f;
                 Vec3 tan0 = (p1 - p0) - n0 * dot(p1 - p0, n0);
-                m0[j] = normalize(tan0 + n0 * 0.35f * length(tan0), d) * (1.1f * Lj);
-                m1[j] = d * (1.1f * Lj);
+                m0[j] = normalize(tan0 + n0 * 0.25f * length(tan0), d) * (0.9f * Lj);
+                m1[j] = d * (0.9f * Lj);
                 P0[j] = p0;
                 // Deltoid mass: lateral and top of the arm (relative to the arm axis).
                 Vec3 rad = p1 - (a.shoulder + d * dot(p1 - a.shoulder, d));
@@ -766,6 +772,32 @@ void Builder::buildArms() {
         }
         bp.tris.swap(kept);
         torsoHoles_.clear();
+        if (std::getenv("CHARGEN_CHECK")) {  // debug: open edges and folds (adjacent faces nearly opposite) near the shoulders
+            std::unordered_map<uint64_t, std::vector<size_t>> edges;
+            for (size_t t = 0; t < bp.tris.size(); ++t) {
+                const auto& tr = bp.tris[t];
+                const uint32_t v[3] = {tr.a, tr.b, tr.c};
+                for (int e = 0; e < 3; ++e) {
+                    uint32_t x = v[e], y = v[(e + 1) % 3];
+                    edges[x < y ? (uint64_t(x) << 32 | y) : (uint64_t(y) << 32 | x)].push_back(t);
+                }
+            }
+            auto nrm = [&](size_t t) {
+                const auto& tr = bp.tris[t];
+                return normalize(cross(bp.pos[tr.b] - bp.pos[tr.a], bp.pos[tr.c] - bp.pos[tr.a]), Vec3{0, 0, 0});
+            };
+            int open = 0, folds = 0;
+            for (auto& e : edges) {
+                if (e.second.size() == 1) ++open;
+                if (e.second.size() != 2) continue;
+                const auto& tr = bp.tris[e.second[0]];
+                Vec3 ctr = (bp.pos[tr.a] + bp.pos[tr.b] + bp.pos[tr.c]) / 3.0f;
+                bool nearShoulder = false;
+                for (const ArmMarks& am : m.arms) nearShoulder |= am.pair == 0 && length(ctr - am.shoulder) < 0.6f * m.h;
+                if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) ++folds;
+            }
+            std::fprintf(stderr, "CHECK open=%d folds=%d\n", open, folds);
+        }
     }
 }
 

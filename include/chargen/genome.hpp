@@ -24,8 +24,12 @@ enum class Archetype : uint8_t { Natural, Bombshell, Dorito, Brute, Amazon, Slen
 
 enum class HairStyle : uint8_t {
     Bald, Buzz, ShortCrop, SidePart, SlickedBack, Messy, Undercut, Pixie,
-    Bob, Shoulder, LongStraight, LongWavy, Ponytail, HighPonytail, Braid, Bun, HalfUp, ManBun, Count
+    Bob, Shoulder, LongStraight, LongWavy, Ponytail, HighPonytail, Braid, Bun, HalfUp, ManBun,
+    CrewCut, Mohawk, Pompadour, Curly, Afro, Mullet, Topknot, Locs, Wolf,
+    Hime, TwinTails, TwinBraids, SideBraid, LowPonytail, SpaceBuns, MessyBun, LongCurly, VeryLong, AsymBob, Count
 };
+bool isShortHair(HairStyle h);  // cut close to the head (cap + locks only)
+bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
 enum class Fringe : uint8_t { None, Curtain, SideSwept, Straight, Count };
 enum class FacialHair : uint8_t { None, Mustache, Goatee, ShortBeard, FullBeard, Count };
 enum class EarStyle : uint8_t { Human, Elf, Count };
