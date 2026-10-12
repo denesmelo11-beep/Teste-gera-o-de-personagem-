@@ -362,6 +362,9 @@ void Builder::buildFaceDecals() {
             const float sc = (c.y - o.y) / h, xc = (c.x - o.x) / (h * g.body.headWidth);
             if (c.z - o.z < hZc_(clamp(sc, 0.0f, 1.0f)) * h - 0.02f * h) continue;  // front half only
             if (sc < FaceLayout::kSkinS0 + 0.01f || sc > FaceLayout::kSkinS1 - 0.01f || std::fabs(xc) > FaceLayout::kSkinX1 - 0.01f) continue;
+            bool torn = false;  // no skin paint over decay holes
+            for (const Hole& ho : holes_) torn |= ho.head && length(c - ho.c) < ho.R + 0.01f * h;
+            if (torn) continue;
             uint32_t ids[3];
             const uint32_t vs[3] = {tr.a, tr.b, tr.c};
             for (int k = 0; k < 3; ++k) {

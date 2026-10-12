@@ -304,7 +304,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                         Vec2 l = toLocal(p) - ic;
                         float k = length(Vec2{l.x / ir.x, l.y / ir.y});
                         float v = saturate(0.5f - 0.5f * l.y / ir.y);  // 0 top .. 1 bottom
-                        const Vec3 irc = blind ? lerp(pal.iris, Vec3{0.80f, 0.84f, 0.86f}, 0.78f) : pal.iris;
+                        const Vec3 irc = lerp(blind ? lerp(pal.iris, Vec3{0.80f, 0.84f, 0.86f}, 0.78f) : pal.iris, Vec3{0.74f, 0.76f, 0.76f}, f.milky);
                         Vec3 col = lerp(irc * 0.22f, irc * 0.95f, smoothstep(0.16f, 0.60f, v));
                         col = lerp(col, irc * 1.45f + Vec3{0.06f, 0.06f, 0.06f}, smoothstep(0.62f, 0.95f, v) * 0.8f);
                         col = lerp(col, irc * 0.30f, smoothstep(0.86f, 1.0f, k) * 0.8f);  // rim
@@ -314,14 +314,21 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             Sdf pupil = g.face.pupil == PupilStyle::Slit
                             ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{0.12f * ir.x, 0.72f * ir.y}); })
                             : Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.10f * ir.y}, Vec2{0.26f * ir.x, 0.30f * ir.y}); });
-            if (!blind && !f.glowEyes) cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.10f, 0.55f), ilo, ihi);
+            if (!blind && !f.glowEyes) cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.10f, 0.55f * (1.0f - f.milky)), ilo, ihi);
+            if (f.hollowEyes)  // rotted away: the opening is a dark socket
+                cp.fill(openSdf, [&](Vec2 p) {
+                    const Vec2 l = toLocal(p);
+                    const float k = saturate(length(Vec2{l.x / W, (l.y + 0.1f * Hh) / Hh}));
+                    return Vec4(lerp(Vec3{0.04f, 0.03f, 0.03f}, Vec3{0.20f, 0.10f, 0.09f}, k), 1.0f);
+                }, lo, hi);
             // Highlights: a crisp spot up in the iris and a soft glint at the bottom.
             const Vec2 hl = ic + Vec2{-0.28f * ir.x, 0.22f * ir.y};
-            cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.16f * ir.x, 0.12f * ir.y})); },
-                    Vec4(1, 1, 1, 0.90f), ilo, ihi);
+            if (!f.hollowEyes)
+                cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.16f * ir.x, 0.12f * ir.y})); },
+                        Vec4(1, 1, 1, 0.90f * (1.0f - 0.7f * f.milky)), ilo, ihi);
             // Soft vertical glint in the lower iris (as in the reference).
             const Vec2 hl2 = ic + Vec2{0.08f * ir.x, -0.40f * ir.y};
-            if (!f.glowEyes)
+            if (!f.glowEyes && !f.hollowEyes)
                 cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl2, Vec2{0.12f * ir.x, 0.26f * ir.y})); },
                         Vec4(lerp(pal.iris, Vec3{1, 1, 1}, 0.5f), 0.35f), ilo, ihi);
             // Upper lash: a heavy band along the lid, thin at the inner corner, thick
@@ -638,8 +645,8 @@ void paintSkin(CellPainter& cp, const Genome& g) {
                  {0.62f, 0.66f, 0.56f}, 0.65f * f.rot, 0.7f);
         for (float sd : {1.0f, -1.0f}) soft({sd * ex, ey}, {0.13f, 0.08f}, {0.55f, 0.50f, 0.58f}, 0.6f * f.rot, 0.6f);
         const float y0 = rr.range(0.08f, 0.30f), x0 = rr.range(0.10f, 0.25f) * (rr.chance(0.5f) ? 1.0f : -1.0f);
-        line({{x0, y0}, {x0 + 0.10f * (x0 > 0 ? 1.0f : -1.0f), y0 + 0.08f}}, {0.003f, 0.003f}, {0.55f, 0.45f, 0.45f}, 0.8f);
-        for (int k = 0; k < 4; ++k) {
+        if (g.species == Species::Undead) line({{x0, y0}, {x0 + 0.10f * (x0 > 0 ? 1.0f : -1.0f), y0 + 0.08f}}, {0.003f, 0.003f}, {0.55f, 0.45f, 0.45f}, 0.8f);
+        for (int k = 0; k < (g.species == Species::Undead ? 4 : 0); ++k) {
             const float t = (float(k) + 0.5f) / 4.0f;
             const Vec2 c{x0 + 0.10f * t * (x0 > 0 ? 1.0f : -1.0f), y0 + 0.08f * t};
             line({c + Vec2{-0.008f, 0.010f}, c + Vec2{0.008f, -0.010f}}, {0.0022f, 0.0022f}, {0.40f, 0.35f, 0.35f}, 0.85f);

@@ -11,6 +11,7 @@ endif()
 add_library(chargen
   src/genome.cpp
   src/builder.cpp
+  src/bones.cpp
   src/generator.cpp
   src/hair.cpp
   src/head.cpp

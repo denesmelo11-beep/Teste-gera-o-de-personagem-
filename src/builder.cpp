@@ -565,6 +565,7 @@ void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float cre
                 const auto& tr = part.tris[t];
                 const Vec3 fn = faceN[src[t]];
                 if (fn.x == 0 && fn.y == 0 && fn.z == 0) continue;  // degenerate
+                if (tr.m.cls == MaterialClass::Count) continue;     // torn away (decay holes)
                 const uint32_t pm = packMat(tr.m);
                 const uint8_t alpha = kind == SubmeshKind::Body ? uint8_t(uint32_t(tr.m.cls) * 32 + 16) : uint8_t(255);
                 const uint32_t lis[3] = {tr.a, tr.b, tr.c};

@@ -42,6 +42,7 @@ LodSpec lodSpec(int lod) {
 namespace {
 
 // Piecewise weights along a chain: keys {t, bone}.
+}  // namespace
 SkinW chainWeights(std::initializer_list<std::pair<float, int>> keys, float t) {
     const auto* k = keys.begin();
     size_t n = keys.size();
@@ -74,10 +75,13 @@ std::vector<float> mergeRings(std::vector<float> base, const std::vector<float>&
 }
 
 Vec3 orthoFront(Vec3 d) { return normalize(Vec3{0, 0, 1} - d * d.z, {1, 0, 0}); }
+namespace {
 
 }  // namespace
 
 Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o), lod(lodSpec(o.lod)) {
+    decay_ = std::max(o.decay, genome.body.skeletal ? 1.0f : 0.0f);
+    bonesOnly_ = decay_ >= 0.97f;
     computeMarks();
     const BodyShape& b = g.body;
     const float h = m.h, S = b.shoulderWidth * h, C = b.chestWidth * h, W = b.waistWidth * h, P = b.hipWidth * h;
@@ -1445,6 +1449,24 @@ void Builder::buildTail() {
         parent = sk.add("tail" + std::to_string(b), parent, pts[size_t(b * (kPts - 1) / nb)]);
         r.tail.push_back(parent);
     }
+    std::vector<int> bones = r.tail;
+    if (bonesOnly_) {  // a chain of shrinking vertebrae
+        Part& vp = newPart();
+        const Mat bone{{0.80f, 0.76f, 0.63f}, MaterialClass::Horn};
+        for (int i = 0; i + 1 < kPts; ++i) {
+            const float u = float(i) / (kPts - 1);
+            Ellipsoid e;
+            e.center = lerp(pts[size_t(i)], pts[size_t(i + 1)], 0.5f);
+            e.axis = normalize(pts[size_t(i + 1)] - pts[size_t(i)]);
+            e.up = {0, 1, 0};
+            e.rAxis = 0.4f * step;
+            e.rU = e.rV = 0.35f * r0 * (1.0f - 0.6f * u);
+            e.lat = 3;
+            e.lon = 5;
+            const int bi = r.tail[size_t(std::min(int(u * nb), nb - 1))];
+            emitEllipsoid(vp, e, [=](float, float, Vec3) { return one(bi); }, [=](float, float) { return bone; });
+        }
+    } else {
     Loft L;
     for (int i = 0; i < kPts; ++i) {
         float u = float(i) / (kPts - 1);
@@ -1463,7 +1485,6 @@ void Builder::buildTail() {
     L.poleEnd = true;
     L.endPole = pts.back() + normalize(pts.back() - pts[pts.size() - 2]) * (0.6f * r0);
     L.tEnd = 1;
-    std::vector<int> bones = r.tail;
     int hips = r.hips;
     Vec3 base = g.palette.skin;
     const bool fur = g.body.tailFur, tuft = g.body.hooves && !fur;
@@ -1479,6 +1500,7 @@ void Builder::buildTail() {
         if (tuft && t > 0.8f) return Mat{hairC, MaterialClass::Hair};
         return Mat{base * (1.0f - 0.15f * t), MaterialClass::Skin};
     });
+    }
     SpringChain sc;
     sc.name = "tail";
     sc.bones = bones;
@@ -1758,6 +1780,17 @@ void Builder::buildFurTufts() {
 Character Builder::build() {
     ch.genome = g;
     ch.height = m.H;
+    if (bonesOnly_) {  // bare bones: the same rig, nothing but the skeleton (and horns, tusks, hooves' bones)
+        buildSkeleton();
+        buildTail();
+        buildHorns();
+        buildTusks();
+        buildColliders();
+        buildBoneSkeleton();
+        finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
+        ch.faceAtlas = paintFaceAtlas(g);
+        return std::move(ch);
+    }
     buildSkeleton();
     buildTorso();
     buildHead();
@@ -1775,6 +1808,11 @@ Character Builder::build() {
     buildBones();
     applyFur();
     buildFurTufts();
+    if (decay_ >= 0.55f) {  // torn open onto the real skeleton
+        buildBoneSkeleton();
+        addDecayHoles();
+        buildCavityShells();
+    }
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
     ch.faceAtlas = paintFaceAtlas(g);
@@ -1784,7 +1822,14 @@ Character Builder::build() {
 }  // namespace detail
 
 Character generateCharacter(const Genome& g, const GenOptions& opt) {
-    detail::Builder b(g, opt);
+    const float decay = std::max(opt.decay, g.body.skeletal ? 1.0f : 0.0f);
+    if (decay <= 0.0f) {
+        detail::Builder b(g, opt);
+        return b.build();
+    }
+    Genome dead = g;
+    detail::applyDecay(dead, decay);
+    detail::Builder b(dead, opt);
     return b.build();
 }
 

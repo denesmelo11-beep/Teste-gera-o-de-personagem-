@@ -64,6 +64,7 @@ GenOptions genOpts(const Args& a) {
     o.lod = int(a.num("lod", 0));
     o.faceted = !(a.flag("smooth") || a.flag("crease"));
     if (a.flag("smooth")) o.creaseAngle = 180.0f;
+    o.decay = a.flt("decay", 0.0f);
     return o;
 }
 
@@ -79,9 +80,10 @@ void usage() {
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
+        "morte: --decay 0..1 (0 vivo, 0.15 recem-morto, 0.4 apodrecendo, 0.7 putrefato, 1 ossada)\n"
         "estilo: padrao low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave; --toon = cel com contorno\n"
         "presets: natural bombshell dorito brute amazon slender chibi monster\n"
-        "especies (--species): human dwarf gnome orc troll undead nightelf highelf draenei tauren goblin worgen ogre centaur | mixed");
+        "especies (--species): human dwarf gnome orc troll undead nightelf highelf draenei tauren goblin worgen ogre centaur skeleton | mixed");
 }
 
 RenderSettings style(const Args& a) {

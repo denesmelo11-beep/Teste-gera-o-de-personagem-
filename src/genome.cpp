@@ -20,7 +20,7 @@ constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepar
                                            "longcurly", "verylong", "asymbob"};
 static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops", "tendrils"};
-constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur"};
+constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur", "skeleton"};
 static_assert(std::size(kSpeciesNames) == size_t(cg::Species::Count));
 static_assert(std::size(kBeardNames) == size_t(cg::FacialHair::Count));
 
@@ -453,6 +453,12 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 2}, {FacialHair::FullBeard, 2}, {FacialHair::LongBeard, 1.5f}, {FacialHair::BraidedBeard, 1}});
             break;
         }
+        case Species::Skeleton:  // risen bones: any human frame, eyes burning in the sockets
+            b.skeletal = true; b.belly = 0.0f;
+            glow(r.chance(0.6f) ? Vec3{0.45f, 0.85f, 1.0f} : r.chance(0.5f) ? Vec3{1.0f, 0.45f, 0.15f} : Vec3{0.55f, 1.0f, 0.45f});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
         default: break;
     }
     if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Topknot || g.hair == HairStyle::WarriorBraids)
@@ -893,7 +899,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     // ---- species: reshape the sampled person into one of the world's peoples ----
     Species sp = opt.species.value_or(Species::Human);
     if (!opt.species && opt.mixedSpecies)
-        sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f}));
+        sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f, 0.6f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
     return g;
 }

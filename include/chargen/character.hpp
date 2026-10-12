@@ -168,6 +168,10 @@ struct GenOptions {
     int lod = 0;            // 0 full, 1 reduced, 2 low
     bool faceted = true;        // flat facets on every surface (planes carry the anatomy); decals stay smooth
     float creaseAngle = 34.0f;  // when not faceted: smooth shading split at sharper edges; 180 = fully smooth
+    // Death and decay, 0..1: 0 alive; ~0.15 fresh corpse (pallor, clouded eyes); ~0.4 rotting
+    // (mottled flesh, bared ribs/jaw); ~0.7 putrefied (flesh torn open on the real skeleton
+    // inside); 1 bare bones. The game regenerates the corpse as it advances.
+    float decay = 0.0f;
 };
 
 Character generateCharacter(const Genome& g, const GenOptions& opt = {});

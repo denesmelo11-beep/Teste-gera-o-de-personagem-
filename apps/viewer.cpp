@@ -804,6 +804,59 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
     return 0;
 }
 
+// Death and decay: columns from alive to bare bones, one row per character.
+int runDecay(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const float stages[] = {0.0f, 0.15f, 0.40f, 0.70f, 0.88f, 1.0f};
+    const char* labels[] = {"vivo", "recem-morto", "apodrecendo", "putrefato", "quase ossada", "ossada"};
+    struct Row { cg::Species sp; cg::Sex sex; };
+    const Row rows[] = {{cg::Species::Human, cg::Sex::Male}, {cg::Species::Human, cg::Sex::Female}, {cg::Species::Orc, cg::Sex::Male},
+                        {cg::Species::Worgen, cg::Sex::Male}};
+    const int cols = 6, nr = 4, pw = 260, ph = 470;
+    Image sheet = GenImageColor(cols * pw, nr * ph, BLACK);
+    const char* yawEnv = std::getenv("CHARGEN_RACEYAW");
+    const float yaw = yawEnv ? float(std::atof(yawEnv)) : 0.45f;
+    for (int ri = 0; ri < nr; ++ri)
+        for (int c = 0; c < cols; ++c) {
+            for (auto& a : s.actors) unload(a);
+            s.actors.clear();
+            cg::GenomeOptions o;
+            o.species = rows[ri].sp;
+            o.sex = rows[ri].sex;
+            o.age = cg::AgeGroup::Adult;
+            cg::GenOptions go = gGen;
+            go.decay = stages[c];
+            s.actors.emplace_back();
+            Actor& a = s.actors.back();
+            a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(ri), o), go);
+            a.clips = cg::makeDefaultClips(a.ch);
+            a.sim = new cg::SecondaryMotion(a.ch);
+            a.posed = true;
+            a.fixed = showcasePose(a.ch);
+            buildMeshes(a, s.body, s.decal);
+            a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+            for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+            const float H = a.ch.height * 1.04f;
+            Camera3D cam = makeCam({0, H * 0.5f, 0}, yaw, 0.03f, H * 3.1f, 22.0f);
+            RenderTexture2D prt = LoadRenderTexture(pw, ph);
+            BeginTextureMode(prt);
+            ClearBackground(BLACK);
+            drawScene(s, cam, pw, ph);
+            EndTextureMode();
+            Image img = grab(prt, 1);
+            if (ri == 0) ImageDrawText(&img, labels[c], 8, 8, 12, Color{225, 225, 230, 255});
+            if (c == 0) ImageDrawText(&img, std::string(cg::toString(a.ch.genome.species)).c_str(), 8, ph - 18, 12, Color{225, 225, 230, 255});
+            ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float(c * pw), float(ri * ph), float(pw), float(ph)}, WHITE);
+            UnloadImage(img);
+            UnloadRenderTexture(prt);
+        }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 int runPopulation(Scene& s, const std::string& path, uint64_t seed) {
     s.studio = true;
     const int n = 8, pw = 220, ph = 560;
@@ -962,7 +1015,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races;
+    std::string shots, studio, population, heads, faces, cuts, races, decayOut;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -974,10 +1027,12 @@ int main(int argc, char** argv) {
         else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
+        else if (a == "--decay" && i + 1 < argc) decayOut = argv[++i];
         else if (a == "--faces" && i + 1 < argc) faces = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
         else if (a == "--crease") gGen.faceted = false;
+        else if (a == "--decaylevel" && i + 1 < argc) gGen.decay = float(std::atof(argv[++i]));
         else if (a == "--seed" && i + 1 < argc) seed = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--count" && i + 1 < argc) count = std::atoi(argv[++i]);
         else if (a == "--res" && i + 1 < argc) res = std::atoi(argv[++i]);
@@ -1010,6 +1065,12 @@ int main(int argc, char** argv) {
     s.faceted = faceted;
     if (!faces.empty()) {
         int rc = runFaces(s, faces, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!decayOut.empty()) {
+        int rc = runDecay(s, decayOut, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

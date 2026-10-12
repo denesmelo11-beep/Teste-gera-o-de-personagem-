@@ -12,6 +12,9 @@ struct LodSpec {
     bool sparseRings;
 };
 LodSpec lodSpec(int lod);
+void applyDecay(Genome& g, float decay);
+SkinW chainWeights(std::initializer_list<std::pair<float, int>> keys, float t);  // weights along a bone chain
+Vec3 orthoFront(Vec3 d);                                                       // perpendicular to d, facing +z  // bones.cpp: the corpse's genome at a decay stage
 
 struct ArmMarks {
     Vec3 clav, shoulder, elbow, wrist, handTip;
@@ -100,6 +103,9 @@ private:
     void emitClump(Part& p, float theta, float s, float off, float len, float width, float thick, float lift,
                    const std::function<Vec3(Vec3)>& flow, Vec3 color, int bone) const;
     void buildHorns();
+    void buildBoneSkeleton();
+    void addDecayHoles();
+    void buildCavityShells();
     void buildTusks();
     void buildEars();
 
@@ -107,6 +113,15 @@ private:
     size_t torsoPart_ = 0;               // index into parts: torso + legs share one surface
     size_t headPart_ = 0;
     size_t nosePart_ = SIZE_MAX;
+    float decay_ = 0.0f;
+    bool bonesOnly_ = false;             // full decay / risen skeleton: no flesh at all
+    struct Hole {
+        Vec3 c;
+        float R, depth;
+        bool head;
+        std::function<bool(Vec3)> gate;
+    };
+    std::vector<Hole> holes_;
     size_t torsoTriStart_ = 0;           // first torso-loft triangle in the torso part
     uint32_t torsoFirst_ = 0;            // first torso-loft vertex
     int torsoN_ = 0;                     // vertices per torso ring

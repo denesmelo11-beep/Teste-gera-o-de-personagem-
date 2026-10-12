@@ -36,7 +36,7 @@ enum class EarStyle : uint8_t { Human, Elf, Count };
 enum class PupilStyle : uint8_t { Round, Slit, Count };
 // Peoples of the world. Each one reshapes the sampled body and face (proportions,
 // skin, ears, tusks, horns, muzzle, hooves, glowing eyes) and biases hair and beards.
-enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Count };
+enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Skeleton, Count };
 
 std::string_view toString(Sex s);
 std::string_view toString(AgeGroup a);
@@ -135,6 +135,7 @@ struct BodyShape {
     bool hooves = false;
     int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
     bool centaur = false;       // human torso on a horse body (four legs)
+    bool skeletal = false;      // nothing but bones (risen skeletons): always built at full decay
     bool digitigrade = false;   // walks on the toes: high hock behind, long metatarsal (draenei, worgen)
     int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow)
     bool tailFur = false;       // bushy furred tail (hair material)
@@ -207,6 +208,8 @@ struct FaceStyle {
     int tattoo = 0;            // 0 none, 1 runic lines, 2 tribal cheek marks, 3 forehead sigil
     bool glowEyes = false;     // luminous eyes without pupils (elves, draenei, undead)
     bool darkNose = false;     // a dark, wet animal nose (worgen)
+    float milky = 0.0f;        // clouded, dead eyes 0..1
+    bool hollowEyes = false;   // eyes rotted away: dark sockets
     Vec3 glow{0.8f, 0.9f, 1.0f};
     float rot = 0.0f;          // undead decay: dark patches and stitches 0..1
     Vec3 tattooColor{0.16f, 0.22f, 0.32f};

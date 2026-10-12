@@ -22,7 +22,7 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![lowres](docs/elenco_lowres.png) | ![retratos](docs/retratos.png) |
 
-| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin, worgen, ogro, centauro |
+| Povos (`--races`): humano, anão, gnomo, orc, troll, morto-vivo, elfo noturno, alto-elfo, draenei, tauren, goblin, worgen, ogro, centauro, esqueleto |
 |---|
 | ![povos](docs/povos.png) |
 
@@ -31,6 +31,14 @@ Raylib 5.5 (opcional).
 | ![worgen](docs/folha_worgen.png) | ![morto-vivo](docs/folha_undead.png) |
 | **Centauro** (torso humano sobre corpo equino, quatro pernas, trote) | **Ogro / colosso** (2,6–3 m, cabeça pequena, massa enorme) |
 | ![centauro](docs/folha_centaur.png) | ![ogro](docs/folha_ogre.png) |
+
+| Morte e decomposição (`--decay`): vivo → recém-morto → apodrecendo → putrefato → quase ossada → ossada |
+|---|
+| ![decomposição](docs/decomposicao.png) |
+
+| Esqueleto (povo `skeleton`, olhos em brasa) | Esqueleto correndo (mesmo rig, todas as animações) |
+|---|---|
+| ![esqueleto](docs/folha_esqueleto.png) | ![corrida](docs/esqueleto_corrida.png) |
 
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|
@@ -76,6 +84,8 @@ chargen_viewer --heads cabecas.png --seed 60            # retratos masculinos: t
 chargen_viewer --cuts cortes.png --seed 21              # todos os cortes (CHARGEN_CUTYAW=2.4 mostra as costas)
 chargen_viewer --faces rostos.png --seed 100            # rostos da população
 chargen_viewer --races povos.png --seed 5               # cada povo, homem e mulher lado a lado
+chargen_viewer --decay morte.png --seed 12              # estágios de decomposição até a ossada
+chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
@@ -98,10 +108,10 @@ chargen_cli export    --seed 42 --lod 0 --out heroi.glb
 chargen_cli stats     --count 300
 ```
 
-Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|ogre|centaur|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
+Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|ogre|centaur|skeleton|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
 `--archetype natural|bombshell|dorito|brute|amazon|slender|chibi|monster` (presets estilizados,
-opcionais) e `--exaggeration 0..2`.
+opcionais), `--exaggeration 0..2` e `--decay 0..1` (morte e decomposição).
 
 ## Como funciona
 
@@ -163,6 +173,24 @@ costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cort
 Sério e sombrio: fundo de estúdio ardósia-azulado, sombras profundas e frias, gradação que tira a
 saturação ("sem cores de bala"), peles castigadas em vez de porcelana, tons fantásticos apagados,
 cabelos tingidos desbotados.
+
+### Morte, decomposição e esqueletos
+No jogo os personagens apodrecem e viram ossada ao morrer. `GenOptions::decay` (0..1, ou
+`--decay` na CLI) gera o cadáver em qualquer estágio; o jogo só regenera o personagem conforme o
+tempo passa (mesma semente, mesmo rig, mesmas animações):
+- **0,15 recém-morto**: palidez acinzentada, olhos leitosos, pálpebras caídas.
+- **0,4 apodrecendo**: carne manchada (hematomas, putrefação esverdeada), definhamento sobre os
+  ossos, costelas e mandíbula aparecendo pela pele, cabelo desbotado.
+- **0,7 putrefato**: couro escuro, órbitas vazias, e a carne se rasga em buracos recortados
+  exatamente (campos de recorte) mostrando o **esqueleto real** dentro: costelas, coluna, fêmur,
+  úmero, rádio e ulna; atrás dos ossos, a parede interna escura da cavidade.
+- **1 ossada**: só o esqueleto. Ele é construído a partir dos marcos do próprio corpo (crânio
+  com órbitas e abertura nasal recortadas, dentes, mandíbula, coluna com processos espinhosos,
+  caixa torácica com esterno e costelas flutuantes, clavículas, escápulas, pelve com ílios e
+  sacro, ossos longos com epífises, mãos e pés com dedos), então cada povo vira a sua ossada:
+  crânio de lobo no worgen, pernas digitígradas e cascos, o esqueleto equino do centauro, chifres e
+  presas que ficam, cauda em vértebras.
+- **Povo `skeleton`**: esqueletos que se levantam, com brasas frias nas órbitas.
 
 ### Corpo: uma superfície contínua
 - **Tronco + pescoço** são um único *loft* de anéis superelípticos (largura/profundidade por curvas
@@ -253,6 +281,7 @@ src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
                   generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, colisores)
                   head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
+                  bones.cpp (esqueleto real, decomposição, buracos na carne, esqueletos)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
 apps/             chargen_cli.cpp, viewer.cpp (Raylib)
 tests/tests.cpp   docs/ (imagens geradas pelo visualizador)
