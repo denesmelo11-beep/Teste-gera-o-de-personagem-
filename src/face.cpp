@@ -172,14 +172,15 @@ EyeShape eyeShapeFor(const Genome& g) {
     const FaceStyle& f = g.face;
     EyeShape e{};
     // Large, sharp anime eyes: they must read as shapes at low resolution.
-    // Reference proportions: large eyes about two thirds as tall as they are wide.
+    // Reference proportions: a sharp almond about half as tall as it is wide; the
+    // large round iris is cropped by both lids.
     e.W = 0.098f * f.eyeSize;
     switch (f.eyeShape) {
-        case 1: e.Hh = 0.068f; e.peak = 0.0f; e.lowK = 0.80f; e.tilt = 0.0f; break;     // round
-        case 2: e.Hh = 0.054f; e.peak = 0.15f; e.lowK = 0.70f; e.tilt = 0.03f; break;   // hooded
-        case 3: e.Hh = 0.058f; e.peak = 0.25f; e.lowK = 0.68f; e.tilt = 0.10f; break;   // upturned
-        case 4: e.Hh = 0.060f; e.peak = -0.15f; e.lowK = 0.75f; e.tilt = -0.08f; break; // downturned
-        default: e.Hh = 0.062f; e.peak = 0.12f; e.lowK = 0.74f; e.tilt = 0.04f; break;  // almond
+        case 1: e.Hh = 0.054f; e.peak = 0.0f; e.lowK = 0.72f; e.tilt = 0.02f; break;    // round
+        case 2: e.Hh = 0.040f; e.peak = 0.15f; e.lowK = 0.62f; e.tilt = 0.05f; break;   // hooded
+        case 3: e.Hh = 0.044f; e.peak = 0.25f; e.lowK = 0.60f; e.tilt = 0.14f; break;   // upturned
+        case 4: e.Hh = 0.046f; e.peak = -0.15f; e.lowK = 0.68f; e.tilt = -0.06f; break; // downturned
+        default: e.Hh = 0.047f; e.peak = 0.10f; e.lowK = 0.66f; e.tilt = 0.08f; break;  // almond
     }
     e.Hh *= f.eyeSize * (g.ageGroup == AgeGroup::Young ? 1.08f : 1.0f);
     e.tilt += f.eyeTilt;
@@ -201,12 +202,12 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     // Reference style: a broad upper arc whose peak sits a little towards the outer
     // half, inner corner slightly lower than the outer one; a softer, shallower
     // lower lid.
-    const float yIn = -0.20f * Hh, yOut = 0.05f * Hh;
+    const float yIn = -0.30f * Hh, yOut = -0.02f * Hh;
     auto corner = [&](float x) { return lerp(yIn, yOut, saturate((x + W) / (2.0f * W))); };
     auto yUp = [&](float x) {
         const float xp = S.peak * W;
         float u = clamp(x < xp ? (x - xp) / (W + xp) : (x - xp) / (W - xp), -1.0f, 1.0f);
-        float k = std::pow(std::max(0.0f, 1.0f - u * u), 0.55f);
+        float k = std::pow(std::max(0.0f, 1.0f - u * u), 0.40f);  // flat top, sharp corners
         float y = corner(x) + (Hh * P.open - corner(x)) * k;
         y -= Hh * P.lidTilt * (0.5f - 0.5f * x / W) * 0.9f;
         return std::min(y, Hh * (1.0f - lidDrop));
@@ -241,7 +242,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             float tiltB = f.browTilt + P.browAngle;
             Stroke st = curveStroke(
                 [&](float t) {
-                    float x = lerp(-0.95f * W + P.browPinch, 1.10f * W, t);
+                    float x = lerp(-0.70f * W + P.browPinch, 0.95f * W, t);
                     float y = by - tiltB * 0.045f * (t - 0.35f);
                     if (f.browShape == 1) y += 0.012f * bump((t - 0.55f) / 0.6f) - 0.006f * t;
                     else if (f.browShape == 2) y += 0.016f * std::min(t / 0.62f, 1.0f) - 0.03f * std::max(0.0f, (t - 0.62f) / 0.38f);
@@ -249,7 +250,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                     return Vec2{x, y};
                 },
                 [&](float t) { return (0.0024f + 0.0040f * f.browThick) * (1.0f - 0.55f * t) + 0.0012f; });
-            strokeLocal(st, Vec4(lerp(pal.brow, pal.skin * 0.6f, 0.25f), 0.9f));
+            strokeLocal(st, Vec4(lerp(pal.brow, pal.skin * 0.6f, 0.40f), 0.85f));
         }
 
         if (P.closed) {
@@ -279,9 +280,9 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             }, lo, hi);
             // Iris: large, nearly the full opening; dark under the lid, luminous below,
             // a darker rim; small pupil; one white highlight.
-            const Vec2 ic{0.04f * W, -0.04f * Hh};
-            const float irR = std::max(0.60f * W, 1.0f * Hh) * P.irisScale;
-            const Vec2 ir{0.62f * W * P.irisScale, irR};
+            const Vec2 ic{0.04f * W, 0.06f * Hh};
+            const float irR = 0.56f * W * P.irisScale;  // round iris cropped by the lids
+            const Vec2 ir{0.92f * irR, irR};
             const Vec2 icF = toFace(ic);
             const Vec2 ilo = icF - Vec2{irR * 1.2f, irR * 1.2f}, ihi = icF + Vec2{irR * 1.2f, irR * 1.2f};
             cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir)); },
@@ -309,7 +310,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             }, [&](float t) { return 0.0045f + (0.0045f + 0.004f * lw) * smoothstep(0.1f, 0.8f, t); }, 28);
             {
                 Vec2 end = up.pts.back();
-                up.pts.push_back(end + Vec2{0.012f + 0.008f * lw, -0.004f});
+                up.pts.push_back(end + Vec2{0.012f + 0.008f * lw, -0.008f});  // wing down and out to a point
                 up.w.push_back(0.0012f);
             }
             strokeLocal(up, Vec4(lash, 1));

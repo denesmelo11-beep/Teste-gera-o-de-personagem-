@@ -27,7 +27,8 @@ SuperRing Builder::headRing(float s) const {
     const float h = m.h;
     const FaceStyle& f = g.face;
     // Individual structure: jaw width, chin, cheekbones, fullness.
-    float wMul = 1.0f + f.jaw * 0.12f * bump((s - 0.17f) / 0.17f) + f.jaw * 0.22f * bump(s / 0.10f) +
+    // Jaw: widens the lower face and flattens the chin into a square front.
+    float wMul = 1.0f + f.jaw * 0.14f * bump((s - 0.17f) / 0.17f) + f.jaw * 0.30f * bump(s / 0.10f) +
                  f.cheek * 0.05f * bump((s - 0.37f) / 0.12f) + f.roundness * 0.07f * bump((s - 0.25f) / 0.16f);
     float chinFwd = f.chin * 0.03f * bump(s / 0.14f);
     float chinDrop = f.chin * 0.03f * bump(s / 0.1f);
@@ -49,14 +50,14 @@ float Builder::faceRelief(float xn, float s) const {
         if (s > tip) {
             float k = smoothstep(tip, 0.53f, s);
             float bridge = 0.010f + 0.016f * f.noseBridge;
-            depth = lerp(0.050f * ns, bridge, k) + 0.006f * f.noseBridge * bump((k - 0.5f) / 0.5f);  // aquiline hump
+            depth = lerp(0.032f * ns, bridge, k) + 0.006f * f.noseBridge * bump((k - 0.5f) / 0.5f);  // aquiline hump
             width = lerp(0.040f, 0.022f, k) * std::sqrt(ns);
         } else {
-            depth = 0.050f * ns * smoothstep(0.295f, tip, s);
+            depth = 0.032f * ns * smoothstep(0.295f, tip, s);
             width = 0.044f * std::sqrt(ns);
         }
         r += depth * bump(xn / (width * 1.7f));
-        r += 0.014f * ns * bump((s - 0.315f) / 0.022f) * bump((ax - 0.045f * ns) / 0.028f);  // nostril wings
+        r += 0.006f * ns * bump((s - 0.315f) / 0.022f) * bump((ax - 0.045f * ns) / 0.028f);  // nostril wings
     }
     // Brow ridge and the eye sockets beneath it.
     r += (0.006f + 0.020f * f.browRidge) * bump((s - 0.555f) / 0.045f) * bump(xn / 0.34f);

@@ -716,67 +716,101 @@ void Builder::buildHair() {
 }
 
 // Beards and moustaches: shells over the jaw following the sculpted face.
+// Facial hair as solid low-poly masses (faceted like the rest of the head):
+//  * beard: a shell around the jaw from ear to ear, its upper line running from
+//    the sideburn down the cheek to under the lower lip, thickest at the chin,
+//    with a hem of a few large points;
+//  * moustache: one bar over the upper lip that droops past the mouth corners.
 void Builder::buildFacialHair() {
     const FacialHair fh = g.facialHair;
     if (fh == FacialHair::None) return;
     const float h = m.h;
     const int head = ch.rig.head;
-    const Mat mat{lerp(g.palette.hair, g.palette.skin * 0.45f, 0.18f), MaterialClass::Hair};  // beards read a touch lighter than scalp hair
-    // Signed region in face coordinates (theta around the head, s above the chin),
-    // negative inside: jaw below the cheek line, minus the mouth, plus the moustache.
-    const float mw = g.face.mouthWidth;
-    auto field = [fh, mw](float th, float s) -> float {
-        const float sn = std::sin(th), ax = std::fabs(std::cos(th)) * 0.38f;
-        auto box = [](float a, float b, float c) { return std::max(a, std::max(b, c)); };
-        const float mouth = box(ax - 0.075f * mw, 0.19f - s, s - 0.268f);
-        // Moustache: a band that thins and droops towards the mouth corners, with a gap at the philtrum.
-        const float stache = box(ax - 0.088f, (0.266f - 0.10f * ax) - s, s - (0.292f - 0.22f * ax)) + std::max(0.0f, -sn) +
-                             std::max(0.0f, 0.010f - ax) * 0.5f;
-        switch (fh) {
-            case FacialHair::Mustache: return stache;
-            case FacialHair::Goatee: return std::min(std::max(box(ax - 0.13f, s - 0.215f, 0.2f - sn), -mouth), stache);
-            case FacialHair::ShortBeard:
-            case FacialHair::FullBeard: {
-                float jaw = std::max(s - (0.30f - 0.11f * std::max(0.0f, sn)), -0.10f - sn);
-                float cheekClear = std::max(0.24f - s, ax - 0.22f);
-                return std::min(std::max(std::max(jaw, -cheekClear), -mouth), stache);
-            }
-            default: return 1.0f;
-        }
-    };
-    auto faceCoords = [this](Vec3 p, float& th, float& s) {
-        s = (p.y - m.headOrigin.y) / m.h;
-        float zc = hZc_(clamp(s, 0.0f, 1.0f)) * m.h;
-        th = std::atan2(p.z - m.headOrigin.z - zc, p.x - m.headOrigin.x);
-    };
-    // 1) Painted on the head itself with an exact edge (stubble for short beards).
-    parts[headPart_].clips.push_back({[=](Vec3 p) {
-        float th, s;
-        faceCoords(p, th, s);
-        return field(th, std::max(s, 0.0f));
-    }, mat});
-    // 2) Volume as faceted locks combed down along the jaw (moustache: down and out
-    //    from the philtrum). Their tips form a jagged hem instead of a smooth mask.
+    const Vec3 col = lerp(g.palette.hair, g.palette.skin * 0.45f, 0.15f);
     Part& p = newPart();
-    const bool full = fh == FacialHair::FullBeard, shortB = fh == FacialHair::ShortBeard;
-    const float L = (full ? 0.13f * std::max(0.7f, g.hairLength) : shortB ? 0.06f : fh == FacialHair::Goatee ? 0.08f : 0.055f) * h;
-    const float W = (full ? 0.11f : 0.09f) * h, Tk = (full ? 0.024f : shortB ? 0.010f : 0.016f) * h;
-    Rng rr = Rng(g.seed).fork(77);
-    const float dth = 0.8f * W / (0.36f * h), dsr = 0.6f * L / h;
-    int row = 0;
-    for (float sr = 0.31f; sr > -0.005f; sr -= std::max(dsr, 0.035f), ++row)
-        for (float th = -0.30f + (row % 2) * 0.5f * dth; th < kPi + 0.30f; th += dth) {
-            if (field(th, std::max(sr, 0.0f)) > -0.006f) continue;
-            const float sn = std::sin(th), ax = std::cos(th);
-            const bool stache = fh != FacialHair::None && sr > 0.25f && sn > 0.6f;
-            auto flow = [=](Vec3) {
-                if (stache) return Vec3{std::copysign(1.2f, ax), -0.7f, 0.1f};
-                return Vec3{-0.25f * ax, -1.0f, 0.30f * std::max(0.0f, sn)};
-            };
-            Vec3 col = mat.color * rr.range(0.92f, 1.06f);
-            emitClump(p, th, std::max(sr, 0.0f), 0.004f * h + 0.5f * Tk, (stache ? std::min(L, 0.045f * h) : L) * rr.range(0.85f, 1.15f),
-                      W * rr.range(0.9f, 1.1f), Tk, 0.0f, flow, col, head);
+    const SkinW w = one(head);
+    auto addV = [&](Vec3 v) {
+        p.pos.push_back(v);
+        p.w.push_back(w);
+        p.uv.push_back({});
+        return uint32_t(p.pos.size() - 1);
+    };
+    auto onFace = [&](float th, float sv, float off) {
+        Vec3 q = headPoint(th, std::max(sv, 0.0f));
+        if (sv < 0.0f) q.y += sv * h;
+        return q + headNormalDir(q) * off;
+    };
+    const Vec3 hcen = headCenter();
+    auto tri = [&](uint32_t a, uint32_t b, uint32_t c, Vec3 shade) {
+        const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
+        Vec3 nrm = cross(B - A, C - A), out = (A + B + C) / 3.0f - hcen;
+        if (dot(nrm, out) < 0) std::swap(b, c);
+        p.tris.push_back({a, b, c, Mat{shade, MaterialClass::Hair}});
+    };
+    const float mw = g.face.mouthWidth;
+    const bool full = fh == FacialHair::FullBeard, shortB = fh == FacialHair::ShortBeard, goatee = fh == FacialHair::Goatee;
+    if (full || shortB || goatee) {
+        // Columns across the jaw (theta 0 = right ear, pi/2 = chin front, pi = left ear).
+        const float th0 = goatee ? kPi / 2 - 0.55f : -0.12f, th1 = kPi - th0;
+        const int NC = goatee ? 6 : 14, NR = 3;
+        const float thick = (full ? 0.030f : shortB ? 0.010f : 0.020f) * h;
+        const float drop = full ? 0.08f * std::max(0.7f, g.hairLength) : goatee ? 0.03f : 0.0f;
+        std::vector<std::vector<uint32_t>> outer(NC + 1), inner(NC + 1);
+        for (int c = 0; c <= NC; ++c) {
+            const float th = lerp(th0, th1, float(c) / NC), sn = std::max(0.0f, std::sin(th)), ax = std::fabs(std::cos(th));
+            const float front = smoothstep(0.55f, 0.18f, ax);                    // 1 at the chin front
+            // Top line: sideburn at the ear, down the cheek, under the lower lip at the front.
+            float sTop = goatee ? 0.19f : lerp(0.36f - 0.12f * sn, 0.185f, front * smoothstep(0.30f, 0.10f, ax / std::max(mw, 0.5f)));
+            // Bottom: under the jaw at the sides, a pointed hem at the chin.
+            const bool tipCol = c % 2 == 1;
+            const float chin = smoothstep(0.90f, 0.25f, ax);  // the hem's points spread across the whole chin
+            float sBot = -0.02f - (drop * (0.55f + 0.45f * front) + (tipCol ? 0.022f : 0.0f) * (full ? 1.0f : 0.5f)) * chin * (shortB ? 0.0f : 1.0f);
+            if (!goatee) sBot = lerp(sBot, 0.02f, smoothstep(0.75f, 1.0f, ax));
+            for (int r = 0; r <= NR; ++r) {
+                float f = float(r) / NR, sv = lerp(sTop, sBot, f);
+                float edge = std::min(f, 1.0f - f) * 2.0f;                             // 0 on the borders
+                float side = goatee ? std::min(float(c), float(NC - c)) / 1.5f : 1.0f; // goatee: taper the sides too
+                float off = 0.003f * h + thick * std::min(1.0f, 0.35f + edge) * (0.6f + 0.4f * front) * std::min(side, 1.0f);
+                outer[size_t(c)].push_back(addV(onFace(th, sv, off)));
+                inner[size_t(c)].push_back(addV(onFace(th, sv, -0.004f * h)));
+            }
         }
+        for (int c = 0; c < NC; ++c)
+            for (int r = 0; r < NR; ++r) {
+                Vec3 sh = col * (0.94f + 0.08f * float((c + r) % 2));
+                tri(outer[size_t(c)][size_t(r)], outer[size_t(c + 1)][size_t(r)], outer[size_t(c + 1)][size_t(r + 1)], sh);
+                tri(outer[size_t(c)][size_t(r)], outer[size_t(c + 1)][size_t(r + 1)], outer[size_t(c)][size_t(r + 1)], sh);
+            }
+        // Hem and side walls (only visible where the beard has thickness).
+        for (int c = 0; c < NC; ++c) {
+            tri(outer[size_t(c)][NR], inner[size_t(c)][NR], inner[size_t(c + 1)][NR], col * 0.8f);
+            tri(outer[size_t(c)][NR], inner[size_t(c + 1)][NR], outer[size_t(c + 1)][NR], col * 0.8f);
+        }
+    }
+    if (fh != FacialHair::ShortBeard) {
+        // Moustache: a bar over the upper lip, parted slightly at the philtrum and
+        // drooping past the mouth corners into soft points.
+        const int NC = 8;
+        const float xMax = 0.112f * mw, thick = 0.022f * h;
+        std::vector<uint32_t> top, bot, mid;
+        for (int c = 0; c <= NC; ++c) {
+            const float x = lerp(-xMax, xMax, float(c) / NC), u = std::fabs(x) / xMax;
+            const float th = std::acos(clamp(x / 0.36f, -1.0f, 1.0f));
+            const float droop = 0.022f * u * u * u;
+            const float sTop = 0.312f - 0.016f * u - droop - 0.006f * bump(x / 0.012f);
+            const float sBot = 0.258f - 0.006f * u - droop * 1.25f;
+            const float t = std::sin(kPi * std::min(1.0f, 0.15f + 0.85f * (1.0f - u)));
+            top.push_back(addV(onFace(th, sTop, 0.002f * h)));
+            mid.push_back(addV(onFace(th, 0.5f * (sTop + sBot), 0.002f * h + thick * t)));
+            bot.push_back(addV(onFace(th, sBot, 0.002f * h)));
+        }
+        for (int c = 0; c < NC; ++c) {
+            tri(top[size_t(c)], top[size_t(c + 1)], mid[size_t(c + 1)], col * 1.05f);
+            tri(top[size_t(c)], mid[size_t(c + 1)], mid[size_t(c)], col * 1.05f);
+            tri(mid[size_t(c)], mid[size_t(c + 1)], bot[size_t(c + 1)], col * 0.88f);
+            tri(mid[size_t(c)], bot[size_t(c + 1)], bot[size_t(c)], col * 0.88f);
+        }
+    }
 }
 
 void Builder::buildHorns() {

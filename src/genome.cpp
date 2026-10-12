@@ -351,7 +351,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
                             (per == Persona::Cute ? 0.25f : 0.0f));
     f.jaw = clamp(fem ? -0.10f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
-                      : 0.40f + 0.22f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
+                      : 0.75f + 0.18f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
                   -1.0f, 1.0f);
     f.chin = clamp(0.2f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
                        (per == Persona::Cute ? 0.3f : 0.0f),
@@ -403,7 +403,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     g.hairWave = g.hair == HairStyle::LongWavy ? rh.range(0.6f, 1.0f) : rh.range(0.0f, 0.2f);
     g.partSide = rh.chance(0.5f) ? 1.0f : -1.0f;
     if (!fem && g.age >= 19)
-        g.facialHair = FacialHair(rh.weighted({young ? 10.0f : 4.0f, 0.6f, 1.0f,
+        g.facialHair = FacialHair(rh.weighted({young ? 10.0f : 4.0f, 0.25f, 0.9f,
                                                1.5f + (per == Persona::Heroic || per == Persona::Rogue ? 1.0f : 0.0f),
                                                1.0f + (elder ? 1.5f : 0.0f) + (per == Persona::Stern ? 1.0f : 0.0f)}));
 

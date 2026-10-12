@@ -131,10 +131,11 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
 ### Rosto 2D e cabeça
 Cabeça esculpida em poucos planos (rosto afinando para um queixo definido mas não pontudo, mandíbula mais quadrada nos homens, nariz em crista, arcada, maçãs).
 Olhos, sobrancelhas e boca são pintados com SDF num atlas 1024×512 (8 células de olhos × 8 de
-boca, combináveis); olhos amendoados angulares — canto interno baixo, linha superior forte
-terminando em ponta, íris alta em dois tons com um único brilho, pálpebra inferior curta. Expressão = offset de UV. Barbas são pintadas
-na pele com borda exata e cobertas por mechas facetadas penteadas para baixo (o bigode, para os
-lados), com barra irregular.
+boca, combináveis); olhos amendoados nítidos (cerca de metade da largura em altura, topo reto e cantos agudos),
+linha superior forte terminando em ponta, íris grande e redonda cortada pelas duas pálpebras, um
+único brilho, sobrancelha curta e suave. Expressão = offset de UV. Barbas são massas low-poly sólidas
+(do costeleta ao queixo, mais grossas no queixo, barra com poucas pontas grandes); o bigode é uma
+peça única sobre o lábio que desce suavemente após os cantos da boca.
 
 ### Cabelo e física
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
