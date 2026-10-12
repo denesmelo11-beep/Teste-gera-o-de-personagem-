@@ -92,14 +92,14 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
     const float rib55 = lerp(0.48f, 0.62f, fem), rib66 = lerp(0.80f, 0.95f, fem);
     cHw_ = Curve{{-0.06f, 0.82f * P}, {0.0f, 0.92f * P},  {0.06f, 0.98f * P}, {0.13f, P},
                  {0.23f, lerp(P, W, 0.38f)}, {0.32f, lerp(P, W, 0.75f)}, {0.42f, W}, {0.55f, lerp(W, C, rib55)}, {0.66f, lerp(W, C, rib66)},
-                 {0.76f, C + 0.6f * lat}, {0.85f, lerp(C, 0.9f * S, 0.55f) + lat}, {0.90f, std::max(0.84f * S, 0.95f * C)},
+                 {0.76f, C + 0.6f * lat}, {0.85f, lerp(C, 0.78f * S, 0.45f) + lat}, {0.90f, std::max(0.74f * S, 0.95f * C)},
                  // Trapezius: a straight slope from the top of the shoulder joint to the side of
                  // the neck (slightly convex with the muscle); the deltoid cap of the arm,
                  // not the torso, forms the shoulder's outline.
-                 {0.94f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.24f) + 0.5f * trap},
-                 {0.98f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.48f) + 0.9f * trap},
-                 {1.02f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.72f) + trap},
-                 {1.06f, lerp(std::max(0.84f * S, 0.95f * C), 1.1f * nR, 0.94f) + 0.4f * trap}, {1.085f, 1.04f * nR}, {1.10f, nR}};
+                 {0.94f, lerp(std::max(0.74f * S, 0.95f * C), 1.1f * nR, 0.24f) + 0.5f * trap},
+                 {0.98f, lerp(std::max(0.74f * S, 0.95f * C), 1.1f * nR, 0.48f) + 0.9f * trap},
+                 {1.02f, lerp(std::max(0.74f * S, 0.95f * C), 1.1f * nR, 0.72f) + trap},
+                 {1.06f, lerp(std::max(0.74f * S, 0.95f * C), 1.1f * nR, 0.94f) + 0.4f * trap}, {1.085f, 1.04f * nR}, {1.10f, nR}};
     cDf_ = Curve{{-0.06f, 0.74f * D}, {0.0f, 0.86f * D}, {0.10f, 0.86f * D}, {0.20f, 0.84f * D}, {0.30f, 0.76f * D},
                  {0.42f, 0.72f * D},  {0.55f, 0.80f * D}, {0.66f, 0.88f * D}, {0.76f, 0.95f * D}, {0.86f, 0.92f * D - 0.02f * hunch},
                  {0.905f, 0.84f * D - 0.03f * hunch}, {0.945f, 0.76f * D}, {0.975f, 0.66f * D}, {1.0f, 0.56f * D},
@@ -542,14 +542,16 @@ void Builder::buildArms() {
         const Vec3 d = a.dir;
         const float r = a.radius;
         // Above the joint (t < 0) the radius closes like a dome: the deltoid cap.
-        Curve rc{{-0.21f, 0.40f}, {-0.15f, 0.76f}, {-0.08f, 0.95f}, {0.0f, 1.0f}, {0.05f, 1.0f}, {0.20f, 0.95f}, {0.35f, 0.88f},
+        const float dk = 1.0f + 0.28f * an.deltoids;  // deltoid cap size
+        Curve rc{{-0.21f, 0.62f * dk}, {-0.15f, 0.88f * dk}, {-0.08f, 1.02f * dk}, {0.0f, 1.06f * dk}, {0.07f, 1.04f * dk}, {0.18f, 0.94f + 0.04f * dk},
+                 {0.27f, 0.90f}, {0.35f, 0.88f},
                  {te - 0.05f, 0.76f}, {te, 0.72f}, {te + 0.10f, 0.84f}, {te + 0.25f, 0.70f}, {0.85f, 0.54f}, {1.0f, 0.48f}, {1.05f, 0.48f}};
         auto relief = [&](float beta, float t, float rr) {
             auto win = [&](float c, float w) { return bump(std::remainder(beta - c, kTau) / w); };
             float o = 0;
             // Deltoid: wide over the shoulder, its outline closing to a V at the insertion.
             float dw = lerp(1.7f, 0.45f, smoothstep(0.02f, 0.30f, t));
-            float dt = smoothstep(-0.17f, -0.07f, t) * smoothstep(0.33f, 0.12f, t);
+            float dt = smoothstep(-0.08f, 0.02f, t) * smoothstep(0.33f, 0.12f, t);
             o += rr * 0.32f * (0.4f + an.deltoids) * win(kPi, dw) * dt;
             o += rr * 0.10f * (0.4f + an.deltoids) * (win(2.1f, 0.6f) + win(4.2f, 0.6f)) * smoothstep(-0.10f, 0.0f, t) * smoothstep(0.22f, 0.08f, t);
             // The groove under the deltoid, between biceps and triceps.
@@ -576,7 +578,7 @@ void Builder::buildArms() {
             o -= rr * 0.06f * win(0.0f, 0.8f) * bump((t - 0.10f) / 0.18f);
             return o;
         };
-        std::vector<float> ts{-0.21f, -0.15f, -0.08f, 0.0f, 0.08f, 0.18f, 0.30f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
+        std::vector<float> ts{-0.21f, -0.15f, -0.08f, 0.0f, 0.07f, 0.18f, 0.27f, 0.36f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
         if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         Loft L;
         // Above the joint the cap climbs along the trapezius slope towards the neck,
@@ -591,7 +593,7 @@ void Builder::buildArms() {
             // deltoid cap; its medial side is then pulled onto the torso (below).
             Vec3 dd = d;
             Vec3 vv = orthoFront(dd), uu = cross(dd, vv);
-            Vec3 c = a.shoulder + d * (t * Ltot * (t >= 0 ? 1.0f : 0.32f));
+            Vec3 c = a.shoulder + d * (t * Ltot * (t >= 0 ? 1.0f : 0.17f));
             std::vector<Vec3> ring(static_cast<size_t>(n));
             for (int j = 0; j < n; ++j) {
                 float al = kTau * float(j) / float(n);
@@ -602,18 +604,21 @@ void Builder::buildArms() {
             // The medial half of the cap (towards the neck and chest) lies on the torso
             // surface, so the deltoid grows out of the trapezius and pectoral without a seam.
             if (t < 0.10f && a.pair == 0) {
-                const Vec3 dirTop = normalize(dirIn + Vec3{0, 0.9f, 0});
+                const Vec3 dirTop = normalize(dirIn * 0.6f + Vec3{0, 1.0f, 0});
                 for (Vec3& p : ring) {
                     Vec3 rd = normalize(p - c, dirIn);
-                    float medial = saturate(std::max(dot(rd, dirIn), dot(rd, dirTop)) * 1.4f);
-                    p = lerp(p, insideTorso(p, 0.97f), medial * smoothstep(0.10f, -0.06f, t));
+                    // Top: fully onto the trapezius (no peak). Front/medial: partly, leaving a
+                    // crisp emergence edge between deltoid and pectoral.
+                    float top = saturate(dot(rd, dirTop) * 2.0f + 0.2f), med = saturate(dot(rd, dirIn) * 1.4f);
+                    float k = std::max(top * smoothstep(0.12f, -0.04f, t), 0.7f * med * smoothstep(0.06f, -0.12f, t));
+                    p = lerp(p, insideTorso(p, 0.96f), k);
                 }
             }
             L.rings.push_back(ring);
             L.t.push_back(t);
         }
         L.poleStart = true;
-        L.startPole = a.shoulder - d * (0.235f * Ltot * 0.32f);
+        L.startPole = a.shoulder - d * (0.25f * Ltot * 0.17f);
         L.tStart = -0.26f;
         int clav = rig.root, up = rig.upper, lo = rig.lower, hand = rig.end;
         Part& ap = newPart();
@@ -747,8 +752,10 @@ void Builder::buildLegs() {
         // diamond whose widest point sits high (a quarter down the shin), then a long
         // clean taper to a slim ankle that stays slim for the last third.
         auto shin = [&](float f) { return tk + f * (1.0f - tk); };
-        Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {0.12f, lerp(Ttop, T, 0.5f)}, {0.24f, 0.92f * T},
-                 {tk - 0.14f, lerp(T, K, 0.55f)}, {tk - 0.04f, 1.03f * K}, {tk + 0.01f, K}, {shin(0.10f), 0.86f * Cf},
+        // Thigh: one steady taper from the hip to the knee (no waist on the thigh).
+        auto thigh = [&](float f) { return f * tk; };
+        Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {thigh(0.22f), lerp(Ttop, T, 0.7f)}, {thigh(0.45f), 0.93f * T},
+                 {thigh(0.68f), lerp(T, K, 0.40f)}, {thigh(0.86f), lerp(T, K, 0.78f)}, {tk - 0.02f, 1.02f * K}, {tk + 0.015f, K}, {shin(0.10f), 0.86f * Cf},
                  {shin(0.27f), Cf}, {shin(0.42f), 0.84f * Cf}, {shin(0.56f), 0.60f * Cf}, {shin(0.70f), A}, {1.0f, 0.96f * A}, {1.06f, 0.96f * A}};
         int th = rig.upper, sh = rig.lower, ft = rig.end;
         auto weights = [=](float t) {
@@ -772,11 +779,11 @@ void Builder::buildLegs() {
             float o = 0;
             // Thigh: vastus lateralis sweep, rectus femoris, vastus medialis teardrop above
             // the inner knee, adductor mass high on the inside, hamstrings, flat IT band.
-            o += rr * 0.10f * an.quads * def * win(2.15f, 1.0f) * bump((t - 0.26f) / 0.20f);
-            o += rr * 0.06f * an.quads * def * win(1.57f, 0.7f) * bump((t - 0.24f) / 0.18f);
-            o += rr * 0.16f * an.quads * def * win(0.75f, 0.8f) * bump((t - (tk - 0.075f)) / 0.075f);
+            o += rr * 0.10f * an.quads * def * win(2.15f, 1.0f) * bump((t - 0.55f * tk) / (0.45f * tk));
+            o += rr * 0.06f * an.quads * def * win(1.57f, 0.7f) * bump((t - 0.5f * tk) / (0.4f * tk));
+            o += rr * 0.09f * an.quads * def * win(0.75f, 0.8f) * bump((t - (tk - 0.08f)) / 0.07f);
             o += rr * 0.10f * an.adductors * win(0.1f, 1.1f) * bump((t - (tc + 0.10f)) / 0.16f);
-            o += rr * 0.07f * an.hamstrings * def * win(4.71f, 0.9f) * bump((t - 0.28f) / 0.18f);
+            o += rr * 0.07f * an.hamstrings * def * win(4.71f, 0.9f) * bump((t - 0.55f * tk) / (0.4f * tk));
             o -= rr * 0.05f * def * win(3.14f, 0.45f) * bump((t - 0.30f) / 0.16f);
             // Knee: patella block, narrow sides, popliteal hollow, patellar tendon.
             o += rr * 0.15f * bone * win(1.57f, 0.6f) * bump((t - (tk - 0.008f)) / 0.042f);
@@ -888,9 +895,9 @@ void Builder::buildLegs() {
         // Thigh, knee, calf, ankle.
         std::vector<float> ts{t1};
         // Rings on the landmarks only, so flat facets form large, deliberate planes.
-        for (float t : {0.19f, 0.28f})
-            if (t > t1 + 0.04f && t < tk - 0.17f) ts.push_back(t);
-        for (float t : {tk - 0.13f, tk - 0.05f, tk - 0.01f, tk + 0.03f, shin(0.12f), shin(0.27f), shin(0.43f), shin(0.57f), shin(0.72f), 0.97f, 1.06f})
+        for (float f : {0.30f, 0.50f, 0.68f})
+            if (f * tk > t1 + 0.04f) ts.push_back(f * tk);
+        for (float t : {thigh(0.86f), tk - 0.02f, tk + 0.03f, shin(0.12f), shin(0.27f), shin(0.43f), shin(0.57f), shin(0.72f), 0.97f, 1.06f})
             if (t > t1 + 0.03f) ts.push_back(t);
         if (lod.sparseRings) ts = mergeRings(ts, {}, true);
         for (float t : ts) {

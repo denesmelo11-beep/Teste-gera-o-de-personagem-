@@ -31,6 +31,92 @@ Vec3 thetaDir(float theta) { return {std::cos(theta), 0, std::sin(theta)}; }
 
 }  // namespace
 
+void Builder::emitClump(Part& p, float th, float s, float off, float len, float width, float thick, float lift,
+                        const std::function<Vec3(Vec3)>& flow, Vec3 color, int bone) const {
+    const float h = m.h;
+    constexpr int kSteps = 3;
+    const float seg = len / kSteps;
+    std::vector<Vec3> pts{headSurface(th, std::min(s, 0.985f), off)};
+    Vec3 prevDir = normalize(flow(pts[0]), Vec3{0, -1, 0});
+    bool free = s < 0.03f;
+    // On the scalp: step along the tangent plane, then project back onto the offset
+    // head surface along the ray from the head centre (smooth across the crown).
+    const Vec3 hcen = headCenter();
+    auto project = [&](Vec3 q) {
+        for (int it = 0; it < 2; ++it) {
+            float sq = clamp((q.y - m.headOrigin.y) / h, 0.0f, 0.985f);
+            float tq = std::atan2(q.z - m.headOrigin.z - hZc_(sq) * h, q.x - m.headOrigin.x);
+            Vec3 sp = headSurface(tq, sq, off);
+            q = hcen + normalize(q - hcen, Vec3{0, 1, 0}) * length(sp - hcen);
+        }
+        return q;
+    };
+    for (int k = 0; k < kSteps; ++k) {
+        const Vec3 cur = pts.back();
+        Vec3 D = normalize(flow(cur), prevDir);
+        Vec3 q;
+        if (!free) {
+            const Vec3 N = headNormalDir(cur);
+            Vec3 Dt = normalize(D - N * dot(D, N), prevDir);
+            q = project(cur + Dt * seg);
+            if ((q.y - m.headOrigin.y) / h < 0.03f) free = true;
+        } else {
+            q = collide(cur + normalize(D + prevDir) * seg, 0.004f * h);
+        }
+        prevDir = normalize(q - cur, prevDir);
+        pts.push_back(q);
+    }
+    if (pts.size() < 3) return;
+    // Cross-sections: two side edges sunk slightly into the surface and a raised
+    // ridge, so each lock shows two planes catching the light differently.
+    const size_t n = pts.size();
+    std::vector<uint32_t> Ls, Ms, Rs;
+    const SkinW w = one(bone);
+    auto add = [&](Vec3 v) {
+        p.pos.push_back(v);
+        p.w.push_back(w);
+        p.uv.push_back({});
+        return uint32_t(p.pos.size() - 1);
+    };
+    for (size_t k = 0; k + 1 < n; ++k) {
+        const float t = float(k) / float(n - 1);
+        const Vec3 c = pts[k];
+        const Vec3 T = normalize(pts[k + 1] - pts[k > 0 ? k - 1 : 0], prevDir);
+        const Vec3 N0 = headNormalDir(c);
+        const Vec3 N = normalize(N0 - T * dot(N0, T), N0);
+        const Vec3 B = normalize(cross(N, T), Vec3{1, 0, 0});
+        const float hw = 0.5f * width * std::pow(1.0f - 0.85f * t, 0.8f);
+        const float ridge = thick * (k == 0 ? 0.12f : 1.0f - 0.45f * t) + lift * t * t;
+        Ls.push_back(add(c - B * hw - N * (0.30f * thick)));
+        Ms.push_back(add(c + N * ridge));
+        Rs.push_back(add(c + B * hw - N * (0.30f * thick)));
+    }
+    const uint32_t tip = add(pts.back() + headNormalDir(pts.back()) * (lift * 0.8f));
+    const Mat base{color, MaterialClass::Hair};
+    const Mat tipM{color * 1.06f, MaterialClass::Hair};
+    auto quad = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d, const Mat& mt) {
+        p.tris.push_back({a, b, c, mt});
+        p.tris.push_back({a, c, d, mt});
+    };
+    for (size_t k = 0; k + 1 < Ls.size(); ++k) {
+        quad(Ls[k], Ls[k + 1], Ms[k + 1], Ms[k], base);
+        quad(Ms[k], Ms[k + 1], Rs[k + 1], Rs[k], base);
+    }
+    const size_t e = Ls.size() - 1;
+    p.tris.push_back({Ls[e], tip, Ms[e], tipM});
+    p.tris.push_back({Ms[e], tip, Rs[e], tipM});
+    p.tris.push_back({Ls[0], Ms[0], Rs[0], base});  // root cap
+    // Winding: make every face point away from the head.
+    for (size_t i = p.tris.size() - (Ls.size() - 1) * 4 - 3; i < p.tris.size(); ++i) {
+        auto& tr = p.tris[i];
+        const Vec3 A = p.pos[tr.a], Bv = p.pos[tr.b], C = p.pos[tr.c];
+        const Vec3 nrm = cross(Bv - A, C - A), ctr = (A + Bv + C) / 3.0f;
+        bool rootCap = i == p.tris.size() - 1;
+        Vec3 out = rootCap ? (pts[0] - pts[1]) : (ctr - headCenter());
+        if (dot(nrm, out) < 0) std::swap(tr.b, tr.c);
+    }
+}
+
 void Builder::buildHair() {
     const HairStyle style = g.hair;
     const float h = m.h, vol = g.hairVolume, len = g.hairLength, deg = kPi / 180.0f;
@@ -39,7 +125,7 @@ void Builder::buildHair() {
     const Vec3 hc = headCenter();
     Rng r = Rng(g.seed).fork(55);
     const Vec3 c0 = g.palette.hair, c1 = g.palette.hairTip;
-    const Mat hairMat{c0, MaterialClass::Hair};
+    const Mat hairMat{c0 * 0.80f, MaterialClass::Hair};  // under-layer, a touch darker than the locks
 
     const bool tied = style == HairStyle::Ponytail || style == HairStyle::HighPonytail || style == HairStyle::Braid ||
                       style == HairStyle::Bun || style == HairStyle::ManBun;
@@ -51,28 +137,6 @@ void Builder::buildHair() {
         float front, temple, side, back, nape;  // hairline height per direction
         float thick, top;                       // thickness, highest covered s (1 = crown)
         float tips = 1.0f;                      // lock tips along the rim (0 = clean edge)
-    };
-    // Short hair is silhouette: the cap itself carries the cut's volume.
-    const float part0 = g.partSide;
-    auto volumeField = [&](float th, float s) -> float {
-        const float dTop = bump((s - 0.88f) / 0.28f);
-        const float phi = std::remainder(th - kPi / 2, kTau);  // signed angle from the front
-        switch (style) {
-            case HairStyle::SidePart: {
-                float away = smoothstep(0.0f, 1.2f, -phi * part0);  // side opposite the part gets the sweep
-                float groove = bump((phi - part0 * 0.45f) / 0.12f) * bump((s - 0.85f) / 0.15f);
-                return h * (0.035f * vol * dTop * (0.5f + 0.8f * away) + 0.02f * bump((s - 0.80f) / 0.1f) * bump(phi / 0.9f) -
-                            0.015f * groove);
-            }
-            case HairStyle::ShortCrop: return h * 0.016f * dTop;
-            case HairStyle::SlickedBack:
-                return h * (0.022f * bump((s - 0.83f) / 0.08f) * bump(phi / 1.0f) + 0.022f * bump((s - 0.80f) / 0.25f) * bump((std::fabs(phi) - kPi) / 1.4f));
-            case HairStyle::Messy:
-                return h * vol * (0.02f * dTop + 0.022f * dTop * (0.5f + 0.5f * std::sin(th * 5.0f + s * 11.0f)));
-            case HairStyle::Pixie: return h * vol * 0.03f * dTop * (0.6f + 0.6f * smoothstep(0.0f, 1.0f, -phi * part0));
-            case HairStyle::Undercut: return h * vol * 0.05f * bump((s - 0.92f) / 0.22f) * (0.6f + 0.6f * smoothstep(-0.5f, 1.0f, -phi * part0));
-            default: return 0.0f;
-        }
     };
     auto cap = [&](CapSpec cs, float crownVolume) {
         Curve line{{0.0f, cs.front}, {0.8f, cs.temple}, {1.57f, cs.side}, {2.3f, cs.back}, {kPi, cs.nape}};
@@ -90,7 +154,7 @@ void Builder::buildHair() {
                 if (i == 0 && cs.thick > 0.03f * h && j % 2 == 0)
                     s -= lerp(0.06f, 0.035f, bump((phi - 1.57f) / 0.7f)) * (cs.top >= 0.999f ? 1.0f : 0.0f) * cs.tips;
                 float off = cs.thick * (0.20f + 0.80f * smoothstep(0.0f, 0.3f, f)) + crownVolume * h * bump((s - 0.86f) / 0.22f) +
-                            (cs.thick > 0.03f * h ? volumeField(th, s) * smoothstep(0.0f, 0.35f, f) : 0.0f);
+                            0.0f;
                 // Combed strands: alternate columns sit lower, so the cap reads as locks
                 // radiating from the crown (fades out near the crown and on buzz cuts).
                 if (cs.thick > 0.03f * h && j % 2 == 1) off -= 0.30f * cs.thick * smoothstep(0.98f, 0.70f, s) * smoothstep(0.0f, 0.15f, f);
@@ -125,11 +189,94 @@ void Builder::buildHair() {
             cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.013f * h, 1.0f}, 0);       // shaved sides
             cap({0.80f, 0.74f, 0.74f, 0.70f, 0.66f, capT * 1.1f, 1.0f}, 0.0f);  // full top
             break;
-        default:
-            if (tied) cap(tightCap, 0.01f);
-            else if (style <= HairStyle::Pixie) cap(shortCap, 0.025f * vol);
-            else cap(longCap, 0.012f * vol);
+        default: {
+            // A thin under-layer only: the volume comes from the faceted locks laid over it.
+            CapSpec c = tied ? tightCap : style <= HairStyle::Pixie ? shortCap : longCap;
+            c.thick = 0.018f * h;
+            c.tips = 0.0f;
+            cap(c, 0.0f);
             break;
+        }
+    }
+
+    // ---- faceted locks over the scalp (short cuts, tops of long and tied cuts) ----
+    {
+        Part& cp = newPart();
+        const Vec3 crown = m.headOrigin + Vec3{0, h * 1.02f, hZc_(1.0f) * h};
+        const Vec3 tie = headSurface(270 * deg, style == HairStyle::HighPonytail ? 0.86f : style == HairStyle::Bun ? 0.72f
+                                                 : style == HairStyle::ManBun ? 0.88f : 0.52f, 0.0f);
+        auto away = [&](Vec3 q) { Vec3 d = q - crown; d.y = std::min(d.y, 0.0f); return normalize(d, Vec3{0, -1, 0}); };
+        const float part = g.partSide;
+        const float px = part * 0.10f * h;  // part line offset on top
+        std::function<Vec3(Vec3)> flow;
+        float L = 0.30f, W = 0.20f, Tk = 0.045f, lift = 0.0f, sTop = 0.97f, jit = 0.07f;
+        Curve hairline{{0.0f, 0.80f}, {0.8f, 0.68f}, {1.57f, 0.49f}, {2.3f, 0.38f}, {kPi, 0.30f}};
+        bool use = true;
+        switch (style) {
+            case HairStyle::ShortCrop:
+                flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.5f, 0}; };
+                L = 0.24f; W = 0.18f; Tk = 0.040f;
+                break;
+            case HairStyle::SidePart:
+            case HairStyle::Pixie:
+                flow = [&, px](Vec3 q) {
+                    float top = smoothstep(0.62f * h, 0.85f * h, q.y - m.headOrigin.y);
+                    float sideSign = (q.x - px) * part >= 0 ? 1.0f : -1.0f;   // +1 on the part's side
+                    Vec3 sweep{sideSign > 0 ? part * 0.8f : -part * 1.0f, -0.25f, -0.15f};
+                    return lerp(away(q) + Vec3{0, -0.6f, -0.2f}, sweep, top);
+                };
+                L = style == HairStyle::Pixie ? 0.40f : 0.36f; W = 0.21f; Tk = 0.050f;
+                break;
+            case HairStyle::SlickedBack:
+                flow = [&](Vec3 q) { return Vec3{0, -0.35f, -1.0f} + away(q) * 0.3f; };
+                L = 0.40f; W = 0.22f; Tk = 0.036f; jit = 0.04f;
+                break;
+            case HairStyle::Messy:
+                flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.3f, 0}; };
+                L = 0.30f; W = 0.19f; Tk = 0.050f; lift = 0.015f; jit = 0.30f;
+                break;
+            case HairStyle::Undercut:
+                flow = [&, part](Vec3 q) { return Vec3{-part * 0.55f, -0.15f, -0.8f} + away(q) * 0.25f; };
+                L = 0.40f; W = 0.22f; Tk = 0.055f;
+                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.76f}, {1.57f, 0.76f}, {2.3f, 0.74f}, {kPi, 0.70f}};
+                break;
+            case HairStyle::Buzz:
+            case HairStyle::Bald:
+                use = false;
+                break;
+            default:
+                if (tied) {
+                    flow = [&, tie](Vec3 q) { return normalize(tie - q) + Vec3{0, -0.1f, 0}; };
+                    L = 0.40f; W = 0.24f; Tk = 0.026f; jit = 0.03f;
+                } else {  // long cuts: the top is combed away from the part, the mass takes over below
+                    flow = [&, px](Vec3 q) {
+                        float sideSign = (q.x - px) >= 0 ? 1.0f : -1.0f;
+                        return Vec3{sideSign * 0.7f, -0.6f, -0.25f} + away(q) * 0.3f;
+                    };
+                    L = 0.40f; W = 0.24f; Tk = 0.030f; jit = 0.04f;
+                    hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.72f}, {1.57f, 0.72f}, {2.3f, 0.86f}, {kPi, 0.88f}};
+                }
+                break;
+        }
+        if (use) {
+            L *= h; W *= h * vol; Tk *= h * vol; lift *= h;
+            const float headR = 0.40f * h;
+            const float dsRow = 0.40f * L / h;
+            int row = 0;
+            for (float sr = sTop; sr > 0.2f; sr -= dsRow, ++row) {
+                const float ringR = headR * std::max(0.25f, std::sin(std::acos(clamp((sr - 0.55f) / 0.48f, -1.0f, 1.0f))));
+                const int nAround = std::max(4, int(kTau * ringR / (0.70f * W)));
+                for (int j = 0; j < nAround; ++j) {
+                    float th = kTau * (float(j) + 0.5f * float(row % 2) + r.range(-0.12f, 0.12f)) / float(nAround);
+                    float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
+                    if (sr < hairline(phi) + 0.02f) continue;
+                    Vec3 col = c0 * r.range(0.90f, 1.08f);
+                    Vec3 jdir{r.range(-jit, jit), r.range(-0.3f * jit, 0.3f * jit), r.range(-jit, jit)};
+                    auto fl = [&, jdir](Vec3 q) { return normalize(flow(q), Vec3{0, -1, 0}) + jdir; };
+                    emitClump(cp, th, sr, 0.012f * h + Tk * 0.5f, L * r.range(0.85f, 1.12f), W * r.range(0.9f, 1.1f), Tk, lift, fl, col, head);
+                }
+            }
+        }
     }
 
     // ---- locks ----
@@ -582,7 +729,9 @@ void Builder::buildFacialHair() {
         const float sn = std::sin(th), ax = std::fabs(std::cos(th)) * 0.38f;
         auto box = [](float a, float b, float c) { return std::max(a, std::max(b, c)); };
         const float mouth = box(ax - 0.075f * mw, 0.19f - s, s - 0.268f);
-        const float stache = box(ax - 0.09f, 0.255f - s, s - 0.305f) + std::max(0.0f, -sn);
+        // Moustache: a band that thins and droops towards the mouth corners, with a gap at the philtrum.
+        const float stache = box(ax - 0.088f, (0.266f - 0.10f * ax) - s, s - (0.292f - 0.22f * ax)) + std::max(0.0f, -sn) +
+                             std::max(0.0f, 0.010f - ax) * 0.5f;
         switch (fh) {
             case FacialHair::Mustache: return stache;
             case FacialHair::Goatee: return std::min(std::max(box(ax - 0.13f, s - 0.215f, 0.2f - sn), -mouth), stache);
@@ -606,38 +755,27 @@ void Builder::buildFacialHair() {
         faceCoords(p, th, s);
         return field(th, std::max(s, 0.0f));
     }, mat});
-    // 2) Volume for moustache, goatee and beards: a shell whose thickness falls to
-    //    zero at the edge, so it grows out of the painted region without a step.
-    const float thick = fh == FacialHair::FullBeard ? 0.030f * h : fh == FacialHair::ShortBeard ? 0.008f * h : 0.014f * h;
-    const float drop = fh == FacialHair::FullBeard ? 0.10f * h * g.hairLength : 0.0f;
-    const int cols = 30, rows = 18;
+    // 2) Volume as faceted locks combed down along the jaw (moustache: down and out
+    //    from the philtrum). Their tips form a jagged hem instead of a smooth mask.
     Part& p = newPart();
-    p.smoothAlways = true;
-    p.cavity = 0.8f;
-    std::vector<int> vid(size_t((cols + 1) * (rows + 1)), -1);
-    auto vert = [&](int i, int j) {
-        int& id = vid[size_t(j * (cols + 1) + i)];
-        if (id >= 0) return uint32_t(id);
-        float th = lerp(-0.25f, kPi + 0.25f, float(i) / cols), s = lerp(-0.02f, 0.34f, float(j) / rows);
-        Vec3 q = headPoint(th, std::max(s, 0.0f));
-        if (s < 0.0f) q.y += s * h;
-        float cover = smoothstep(0.0f, 0.035f, -field(th, std::max(s, 0.0f)));
-        float chinK = bump((s - 0.04f) / 0.2f) * std::max(0.0f, std::sin(th)) * cover;
-        Vec3 n = normalize(headNormalDir(q) + Vec3{0, -0.6f * chinK, 0});
-        q += n * (0.0015f * h + thick * cover * (0.6f + 0.4f * chinK)) + Vec3{0, -drop * chinK, 0.3f * drop * chinK};
-        id = int(p.pos.size());
-        p.pos.push_back(q);
-        p.w.push_back(one(head));
-        p.uv.push_back({});
-        return uint32_t(id);
-    };
-    for (int j = 0; j < rows; ++j)
-        for (int i = 0; i < cols; ++i) {
-            float th = lerp(-0.25f, kPi + 0.25f, (i + 0.5f) / cols), s = lerp(-0.02f, 0.34f, (j + 0.5f) / rows);
-            if (field(th, std::max(s, 0.0f)) > -0.004f) continue;
-            uint32_t a = vert(i, j), b = vert(i, j + 1), c = vert(i + 1, j + 1), d = vert(i + 1, j);
-            p.tris.push_back({a, b, c, mat});
-            p.tris.push_back({a, c, d, mat});
+    const bool full = fh == FacialHair::FullBeard, shortB = fh == FacialHair::ShortBeard;
+    const float L = (full ? 0.13f * std::max(0.7f, g.hairLength) : shortB ? 0.06f : fh == FacialHair::Goatee ? 0.08f : 0.055f) * h;
+    const float W = (full ? 0.11f : 0.09f) * h, Tk = (full ? 0.024f : shortB ? 0.010f : 0.016f) * h;
+    Rng rr = Rng(g.seed).fork(77);
+    const float dth = 0.8f * W / (0.36f * h), dsr = 0.6f * L / h;
+    int row = 0;
+    for (float sr = 0.31f; sr > -0.005f; sr -= std::max(dsr, 0.035f), ++row)
+        for (float th = -0.30f + (row % 2) * 0.5f * dth; th < kPi + 0.30f; th += dth) {
+            if (field(th, std::max(sr, 0.0f)) > -0.006f) continue;
+            const float sn = std::sin(th), ax = std::cos(th);
+            const bool stache = fh != FacialHair::None && sr > 0.25f && sn > 0.6f;
+            auto flow = [=](Vec3) {
+                if (stache) return Vec3{std::copysign(1.2f, ax), -0.7f, 0.1f};
+                return Vec3{-0.25f * ax, -1.0f, 0.30f * std::max(0.0f, sn)};
+            };
+            Vec3 col = mat.color * rr.range(0.92f, 1.06f);
+            emitClump(p, th, std::max(sr, 0.0f), 0.004f * h + 0.5f * Tk, (stache ? std::min(L, 0.045f * h) : L) * rr.range(0.85f, 1.15f),
+                      W * rr.range(0.9f, 1.1f), Tk, 0.0f, flow, col, head);
         }
 }
 

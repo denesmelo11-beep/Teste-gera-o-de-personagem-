@@ -26,6 +26,10 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
 
+| Cabelos curtos e barbas (`--heads`) |
+|---|
+| ![cabelos e barbas](docs/cabelos_barbas.png) |
+
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
 
@@ -50,6 +54,7 @@ chargen_viewer [--seed N] [--count K] [--res 480]      # interativo
 chargen_viewer --shots pasta --seed 21                 # gera a bateria de imagens e sai
 chargen_viewer --studio folha.png --seed 21            # folha de modelo: mulher e homem, 4 vistas
 chargen_viewer --population pop.png --seed 40          # população natural + presets
+chargen_viewer --heads cabecas.png --seed 60            # retratos masculinos: cortes curtos e barbas
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -128,11 +133,14 @@ Cabeça esculpida em poucos planos (rosto em V com queixo pontudo, nariz em cris
 Olhos, sobrancelhas e boca são pintados com SDF num atlas 1024×512 (8 células de olhos × 8 de
 boca, combináveis); olhos amendoados angulares — canto interno baixo, linha superior forte
 terminando em ponta, íris alta em dois tons com um único brilho, pálpebra inferior curta. Expressão = offset de UV. Barbas são pintadas
-na pele com borda exata e ganham volume que afina até zero na borda.
+na pele com borda exata e cobertas por mechas facetadas penteadas para baixo (o bigode, para os
+lados), com barra irregular.
 
 ### Cabelo e física
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
-- Topo com mechas radiais saindo da coroa e linha do cabelo/nuca terminando em pontas.
+- Cortes curtos, topo dos longos e presos: **mechas facetadas** (cunhas com crista e ponta) deitadas
+  sobre uma calota fina, sobrepostas como telhas e penteadas por um campo de direção próprio de
+  cada corte (repartido, para trás, bagunçado, em direção ao elástico do rabo de cavalo...).
 - Cortes médios/longos são **massas contínuas**: folhas grossas enraizadas sob a coroa, ao redor da
   nuca e das laterais, com mechas em cunha (crista/sulco facetados, comprimentos individuais, sem
   linhas escuras divisórias), pontas na barra e duas mechas frontais caindo à frente dos ombros; franjas reta, de lado ou cortina no mesmo sistema. Rabos de cavalo, tranças e coques
@@ -152,9 +160,9 @@ coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equi
 
 | | triângulos | tempo/personagem |
 |---|---|---|
-| LOD0 | ~4.200 | ~30 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
-| LOD1 | ~2.500 | ~30 ms |
-| LOD2 | ~2.000 | ~28 ms |
+| LOD0 | ~4.600 | ~30 ms (malha poucos ms; o resto é o atlas facial, em paralelo) |
+| LOD1 | ~2.900 | ~30 ms |
+| LOD2 | ~2.400 | ~28 ms |
 
 No estilo facetado cada face tem vértices próprios (≈3× vértices por triângulo); se memória de
 vértices importar mais que a contagem de triângulos, gere com `--smooth` e faceteie no shader

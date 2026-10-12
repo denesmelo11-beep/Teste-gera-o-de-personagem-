@@ -725,10 +725,59 @@ int runPopulation(Scene& s, const std::string& path, uint64_t seed) {
     return 0;
 }
 
+// Close 3/4 portraits of men with every facial-hair type and a mix of short cuts.
+int runHeads(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int n = 8, pw = 300, ph = 330;
+    Image sheet = GenImageColor(4 * pw, 2 * ph, BLACK);
+    const cg::HairStyle hs[] = {cg::HairStyle::ShortCrop, cg::HairStyle::SidePart, cg::HairStyle::SlickedBack, cg::HairStyle::Messy,
+                                cg::HairStyle::Undercut, cg::HairStyle::ManBun, cg::HairStyle::Ponytail, cg::HairStyle::Shoulder};
+    for (int i = 0; i < n; ++i) {
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.sex = cg::Sex::Male;
+        o.age = cg::AgeGroup(1 + i % 3);
+        o.hair = hs[i];
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i), o);
+        g.facialHair = cg::FacialHair(i % int(cg::FacialHair::Count));
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(g, gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
+        float hh = a.ch.height / a.ch.genome.body.headsTall;
+        Camera3D cam = makeCam({head.x, head.y + 0.05f * hh, head.z}, 0.55f, 0.06f, hh * 4.6f, 30.0f);
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%s %s", std::string(cg::toString(g.hair)).c_str(), std::string(cg::toString(g.facialHair)).c_str());
+        ImageDrawText(&img, buf, 6, ph - 16, 10, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % 4) * pw), float((i / 4) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population;
+    std::string shots, studio, population, heads;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -737,6 +786,7 @@ int main(int argc, char** argv) {
         if (a == "--shots" && i + 1 < argc) shots = argv[++i];
         else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
         else if (a == "--population" && i + 1 < argc) population = argv[++i];
+        else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
         else if (a == "--crease") gGen.faceted = false;
@@ -769,6 +819,12 @@ int main(int argc, char** argv) {
     }
 
     s.faceted = faceted;
+    if (!heads.empty()) {
+        int rc = runHeads(s, heads, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
     if (!population.empty()) {
         int rc = runPopulation(s, population, seed);
         for (auto& a : s.actors) unload(a);

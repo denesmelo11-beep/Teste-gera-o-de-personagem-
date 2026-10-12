@@ -2,6 +2,7 @@
 // generator.cpp (body), head.cpp (head & face decals) and hair.cpp (hair,
 // facial hair, horns, ears).
 #pragma once
+#include <functional>
 #include "builder.hpp"
 
 namespace cg::detail {
@@ -83,6 +84,10 @@ private:
     // hair.cpp
     void buildHair();
     void buildFacialHair();
+    // One faceted lock (a ridged wedge ending in a point) laid on the head surface
+    // from (theta, s) along a comb direction; continues freely below the chin.
+    void emitClump(Part& p, float theta, float s, float off, float len, float width, float thick, float lift,
+                   const std::function<Vec3(Vec3)>& flow, Vec3 color, int bone) const;
     void buildHorns();
     void buildEars();
 
