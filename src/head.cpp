@@ -180,8 +180,8 @@ void Builder::buildHead() {
     const Vec3 o = m.headOrigin;
     hp.normalFn = [=](Vec3 p, Vec3 n) {
         float s = (p.y - o.y) / h;
-        float front = smoothstep(0.0f, 0.3f * h, p.z - o.z) * bump((s - 0.45f) / 0.4f);
-        return normalize(lerp(n, normalize(Vec3{n.x * 0.5f, n.y * 0.6f + 0.1f, 1.0f}), 0.3f * front));
+        float front = smoothstep(0.0f, 0.3f * h, p.z - o.z) * bump((s - 0.42f) / 0.5f);
+        return normalize(lerp(n, normalize(Vec3{n.x * 0.5f, n.y * 0.6f + 0.1f, 1.0f}), 0.5f * front));
     };
     emitLoft(hp, L, [=](float, float, Vec3) { return one(head); }, [&](float, float) { return skin(); });
 }

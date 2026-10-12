@@ -571,7 +571,12 @@ void finalizeParts(std::vector<Part>& parts, Mesh& mesh, bool faceted, float cre
                 for (int k = 0; k < 3; ++k) {
                     const uint32_t li = lis[k];
                     Vec3 nrm = cn[t][size_t(k)];
-                    if (part.normalFn && !flat) nrm = part.normalFn(part.pos[li], nrm);
+                    // normalFn also applies to flat facets: it is evaluated at the face centre so
+                    // every face keeps a single (edited) normal.
+                    if (part.normalFn) {
+                        if (!flat) nrm = part.normalFn(part.pos[li], nrm);
+                        else nrm = part.normalFn((part.pos[tr.a] + part.pos[tr.b] + part.pos[tr.c]) / 3.0f, nrm);
+                    }
                     const uint64_t key = (uint64_t(li) << 33) ^ quant(nrm);
                     auto& bucket = weld[key];
                     // vertex colour = material colour shaded by curvature
