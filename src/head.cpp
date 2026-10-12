@@ -11,7 +11,7 @@ namespace cg::detail {
 void Builder::initHead() {
     // Normalised to head height: s = 0 chin, 1 crown. Eye line ~0.47.
     // Stylised: the lower face narrows to a defined chin, the cranium stays full.
-    hW_ = Curve{{0, 0.050f},    {0.06f, 0.12f}, {0.15f, 0.205f}, {0.25f, 0.28f}, {0.36f, 0.345f}, {0.47f, 0.375f},
+    hW_ = Curve{{0, 0.085f},    {0.06f, 0.16f}, {0.15f, 0.245f}, {0.25f, 0.305f}, {0.36f, 0.352f}, {0.47f, 0.375f},
                 {0.60f, 0.392f}, {0.74f, 0.39f}, {0.86f, 0.345f}, {0.95f, 0.235f}, {1.0f, 0.05f}};
     hZc_ = Curve{{0, 0.20f}, {0.06f, 0.16f}, {0.15f, 0.10f}, {0.28f, 0.03f}, {0.42f, -0.01f},
                  {0.58f, -0.035f}, {0.74f, -0.05f}, {0.88f, -0.06f}, {1.0f, -0.06f}};

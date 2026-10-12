@@ -350,8 +350,8 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     f.noseSize = (fem ? 0.92f : 1.10f) + 0.08f * z(rf) - (per == Persona::Cute ? 0.1f : 0.0f) + (elder ? 0.06f : 0.0f);
     f.noseBridge = saturate(0.5f + 0.2f * z(rf) + (fem ? 0.0f : 0.15f) + (per == Persona::Noble || per == Persona::Villainous ? 0.15f : 0.0f) -
                             (per == Persona::Cute ? 0.25f : 0.0f));
-    f.jaw = clamp(fem ? -0.35f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
-                      : 0.05f + 0.25f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
+    f.jaw = clamp(fem ? -0.10f + 0.2f * z(rf) - (per == Persona::Villainous ? 0.1f : 0.0f)
+                      : 0.40f + 0.22f * z(rf) + (per == Persona::Heroic ? 0.2f : 0.0f) - (per == Persona::Cute ? 0.3f : 0.0f),
                   -1.0f, 1.0f);
     f.chin = clamp(0.2f * z(rf) + (per == Persona::Villainous ? 0.35f : 0.0f) + (per == Persona::Heroic ? 0.2f : 0.0f) -
                        (per == Persona::Cute ? 0.3f : 0.0f),

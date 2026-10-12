@@ -129,7 +129,7 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
   refinamento por bisseção), então as bordas são curvas limpas em qualquer ângulo.
 
 ### Rosto 2D e cabeça
-Cabeça esculpida em poucos planos (rosto em V com queixo pontudo, nariz em crista, arcada, maçãs).
+Cabeça esculpida em poucos planos (rosto afinando para um queixo definido mas não pontudo, mandíbula mais quadrada nos homens, nariz em crista, arcada, maçãs).
 Olhos, sobrancelhas e boca são pintados com SDF num atlas 1024×512 (8 células de olhos × 8 de
 boca, combináveis); olhos amendoados angulares — canto interno baixo, linha superior forte
 terminando em ponta, íris alta em dois tons com um único brilho, pálpebra inferior curta. Expressão = offset de UV. Barbas são pintadas
