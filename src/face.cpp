@@ -278,7 +278,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                 }
         } else {
             auto openSdf = [&](Vec2 p) { return sdBetween(toLocal(p), W, yUp, yLo); };
-            const Vec3 sclera = lerp(Vec3{0.97f, 0.97f, 0.97f}, pal.skin, 0.06f);
+            const Vec3 sclera = lerp(f.sclera, pal.skin, 0.06f);
             cp.fill(openSdf, [&](Vec2 p) {
                 Vec2 l = toLocal(p);
                 float sh = smoothstep(yUp(l.x) - 0.40f * Hh, yUp(l.x), l.y);  // shadow under the lash
@@ -494,6 +494,28 @@ void paintMouth(CellPainter& cp, const Genome& g, MouthExpr e) {
             return Vec2{x, yBot(x) - 0.006f};
         }, [](float t) { return 0.0025f * std::sin(kPi * t) + 0.0005f; }, 8);
         cp.fill(under, Vec4(skinDark, 0.35f), lo, hi);
+        if (f.mouthStyle == 1) {  // a wide, thin grin showing a row of small sharp teeth
+            const float gw = mw * 1.0f;
+            cp.fill([=](Vec2 p) { return sdBetween(p, gw, [=](float x) { return yM(x) + 0.006f; }, [=](float x) { return yM(x) - 0.007f; }); },
+                    Vec4(inner * 0.6f, 1), lo, hi);
+            for (int k = 0; k < 7; ++k) {  // upper fangs pointing down, lower ones up, interleaved
+                const float x = lerp(-0.80f * gw, 0.80f * gw, float(k) / 6.0f), y = yM(x);
+                const bool up = k % 2 == 1;
+                const float base = up ? y - 0.007f : y + 0.006f, tipY = up ? y + 0.002f : y - 0.003f;
+                cp.fill([=](Vec2 p) {
+                    const float t = saturate((p.y - base) / (tipY - base));
+                    return std::max(std::fabs(p.x - x) - 0.0055f * (1.0f - t), std::max(-t, t - 1.0f) * std::fabs(tipY - base));
+                }, Vec4(teeth * 0.92f, 1), Vec2{x - 0.01f, y - 0.012f}, Vec2{x + 0.01f, y + 0.01f});
+            }
+        } else if (f.mouthStyle == 2) {  // underbite: the lower lip juts up with two teeth over it
+            cp.fill([=](Vec2 p) { return sdBetween(p, 0.9f * mw, [=](float x) { return yM(x) + 0.002f; }, [=](float x) { return yBot(x) - 0.004f; }); },
+                    Vec4(lipC * 0.75f, 0.85f), lo, hi);
+            for (float sd : {1.0f, -1.0f}) {
+                const float x = sd * 0.45f * mw, y = yM(x);
+                cp.fill([=](Vec2 p) { return std::max(std::fabs(p.x - x) - 0.0045f + 0.4f * (p.y - y), y - 0.002f - p.y); },
+                        Vec4(teeth * 0.9f, 1), Vec2{x - 0.01f, y - 0.004f}, Vec2{x + 0.01f, y + 0.014f});
+            }
+        }
     };
     auto openMouth = [&](float halfW, float top, float bottom, float curve, bool upperTeeth, bool lowerTeeth) {
         curve += f.mouthRest;
@@ -611,6 +633,27 @@ void paintSkin(CellPainter& cp, const Genome& g) {
     if (f.browTilt < -0.15f || f.ageLines > 0.6f)
         for (float sd : {1.0f, -1.0f}) line({{sd * 0.020f, 0.545f}, {sd * 0.026f, 0.600f}}, {0.0025f, 0.0015f}, {0.80f, 0.68f, 0.68f}, 0.45f);
     if (f.chinWidth > 0.45f && (g.seed % 3 == 0)) line({{0.0f, 0.050f}, {0.0f, 0.105f}}, {0.004f, 0.002f}, {0.84f, 0.74f, 0.74f}, 0.5f);  // cleft
+
+    // Creased skin (goblins, dwarves, the old and the hard-lived): brow furrows, nose
+    // bridge creases, crow's feet and deep cheek folds.
+    if (f.wrinkles > 0.01f) {
+        const float a = 0.55f * f.wrinkles;
+        const Vec3 crease{0.74f, 0.64f, 0.62f};
+        for (int k = 0; k < 3; ++k) {
+            const float y = 0.53f + 0.012f * float(k);
+            line({{-0.045f, y - 0.004f}, {0.0f, y + 0.003f}, {0.045f, y - 0.004f}}, {0.002f, 0.0028f, 0.002f}, crease, a);  // nose bridge
+        }
+        for (float sd : {1.0f, -1.0f}) {
+            for (int k = 0; k < 3; ++k) {
+                const Vec2 p0{sd * (ex + 0.12f), ey + 0.012f - 0.016f * float(k)};
+                line({p0, p0 + Vec2{sd * 0.045f, 0.010f - 0.012f * float(k)}}, {0.0022f, 0.0008f}, crease, a);  // crow's feet
+            }
+            line({{sd * 0.08f, 0.36f}, {sd * 0.115f, 0.30f}, {sd * 0.12f, 0.22f}}, {0.0012f, 0.0035f, 0.0012f}, crease, a);  // cheek fold
+            line({{sd * 0.11f, 0.44f}, {sd * 0.21f, 0.425f}}, {0.0015f, 0.0008f}, crease, 0.8f * a);  // under-eye
+        }
+        for (int k = 0; k < 2; ++k) line({{-0.12f, 0.64f + 0.03f * float(k)}, {0.0f, 0.65f + 0.03f * float(k)}, {0.12f, 0.64f + 0.03f * float(k)}},
+                                         {0.0012f, 0.0025f, 0.0012f}, crease, 0.8f * a);  // brow
+    }
 
     // Freckles across the nose and cheeks.
     if (f.freckles) {

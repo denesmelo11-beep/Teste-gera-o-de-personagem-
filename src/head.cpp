@@ -36,8 +36,13 @@ SuperRing Builder::headRing(float s) const {
     // Masculine jaw: a defined angle and a broad, flat-bottomed chin (no long V).
     const float masc = 1.0f - g.femininity;
     wMul += masc * (0.10f * bump((s - 0.11f) / 0.09f) + 0.14f * bump(s / 0.06f));
-    const float crownBack = f.crown * 0.05f * bump((s - 0.75f) / 0.25f);
-    const float chinFwd = f.chin * 0.03f * bump(s / 0.14f);
+    // Species character: a bulbous dome, a pointed chin, a jutting underbite.
+    wMul += f.headTop * 0.13f * bump((s - 0.82f) / 0.24f);
+    wMul *= 1.0f - f.chinPoint * 0.55f * smoothstep(0.34f, 0.0f, s);
+    wMul += f.underbite * 0.12f * bump((s - 0.10f) / 0.12f);
+    const float crownBack = f.crown * 0.05f * bump((s - 0.75f) / 0.25f) + f.headTop * 0.07f * bump((s - 0.80f) / 0.25f);
+    const float chinFwd = f.chin * 0.03f * bump(s / 0.14f) + f.chinPoint * 0.035f * bump(s / 0.12f) +
+                          f.underbite * 0.10f * smoothstep(0.24f, 0.06f, s);
     const float chinDrop = f.chin * 0.02f * bump(s / 0.1f);
     const float full = (0.02f * f.roundness + 0.015f * f.jowl) * bump((s - 0.22f) / 0.15f);
     // Muzzle (bovine/beast peoples): the lower face pushed forward below the eyes.

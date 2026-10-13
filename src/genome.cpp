@@ -214,6 +214,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.noseWidth = r.range(1.30f, 1.65f) * (fem ? 0.85f : 1.0f); f.noseTip = r.range(-0.2f, 0.4f);
             f.browRidge = saturate(f.browRidge + 0.3f); f.eyeDepth = saturate(f.eyeDepth + 0.3f);
             f.ruddy = saturate(f.ruddy + 0.4f); f.jaw = std::max(f.jaw, fem ? 0.2f : 0.8f);
+            f.wrinkles = saturate((g.age - 25.0f) / 60.0f + 0.25f); f.eyeSize *= 0.9f; f.headTop = 0.2f;
             b.ear.length = 0.13f;
             hairColor(pickC({{0.55f, 0.20f, 0.10f}, {0.30f, 0.20f, 0.14f}, {0.16f, 0.13f, 0.12f}, {0.75f, 0.60f, 0.35f}, {0.45f, 0.30f, 0.18f}}));
             hair({{HairStyle::Braid, 2}, {HairStyle::TwinBraids, fem ? 3.0f : 0.8f}, {HairStyle::Bald, fem ? 0.0f : 2.0f},
@@ -230,6 +231,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.eyeSize = 1.22f; f.eyeShape = 1; f.irisSize = 1.08f;
             f.noseLength = 1.2f; f.noseProj = r.range(1.3f, 1.6f); f.noseWidth = 1.3f; f.noseTip = 0.45f;
             f.roundness = saturate(f.roundness + 0.4f); f.chin = -0.3f; f.jaw = fem ? -0.3f : 0.0f; f.cheekHollow = 0.0f;
+            f.headTop = 0.6f; f.wrinkles = g.age > 40 ? 0.4f : 0.1f;
             b.ear = {0.30f, 0.11f, 0.25f, 0.35f, 0.0f};
             hairColor(pickC({{0.62f, 0.36f, 0.44f}, {0.30f, 0.50f, 0.50f}, {0.42f, 0.32f, 0.52f}, {0.42f, 0.50f, 0.30f}, {0.80f, 0.80f, 0.80f},
                              {0.58f, 0.30f, 0.18f}, {0.70f, 0.62f, 0.40f}}));  // dyed, but faded
@@ -246,7 +248,10 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.hunch = std::max(b.hunch, fem ? 0.3f : 0.9f);
             f.browRidge = 1.1f; f.eyeDepth = 0.9f; f.eyeShape = r.chance(0.5f) ? 2 : 3; f.eyeSize = 0.88f;
             f.noseLength = 0.85f; f.noseProj = 0.75f; f.noseWidth = 1.6f; f.noseTip = 0.35f; f.noseHump = 0.0f;
-            f.jaw = fem ? 0.5f : 1.0f; f.chinWidth = fem ? 0.4f : 1.0f; f.cheek = 0.3f; f.mouthWidth = 1.2f; f.lipFullness = 0.5f;
+            f.jaw = fem ? 0.5f : 1.0f; f.chinWidth = fem ? 0.4f : 1.0f; f.cheek = 0.3f; f.mouthWidth = 1.25f; f.lipFullness = 0.5f;
+            f.underbite = fem ? 0.55f : 0.95f; f.mouthStyle = 2; f.headTop = -0.3f; f.wrinkles = fem ? 0.1f : 0.35f;
+            f.sclera = Vec3{0.88f, 0.80f, 0.62f}; f.browTilt = -0.3f; f.restLid = 0.2f; f.irisSize = 0.85f; f.eyeShape = 6;
+            f.browThick = 1.0f; f.lashWeight = 0.15f;
             b.tusks = 1; b.tuskSize = fem ? 0.55f : 1.0f;
             b.ear = {0.20f, 0.07f, 0.35f, 0.40f, 0.0f};
             skinTo(fem ? pickC({{0.48f, 0.60f, 0.32f}, {0.40f, 0.52f, 0.28f}, {0.55f, 0.60f, 0.34f}})
@@ -264,7 +269,9 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             widths(1.05f, 1.0f, 0.88f, 0.95f, 0.88f);
             b.armLength *= 1.15f; b.handSize *= 1.35f; b.footSize *= 1.25f; b.hunch = std::max(b.hunch, fem ? 0.9f : 1.6f);
             f.noseLength = 1.5f; f.noseProj = r.range(1.5f, 1.8f); f.noseWidth = 1.2f; f.noseTip = -0.2f;
-            f.jaw = -0.2f; f.chin = 0.4f; f.eyeShape = 3; f.eyeDepth = 0.6f; f.browRidge = 0.8f; f.mouthWidth = 1.25f;
+            f.jaw = -0.2f; f.chin = 0.4f; f.eyeShape = 3; f.eyeDepth = 0.6f; f.browRidge = 0.8f; f.mouthWidth = 1.4f;
+            f.underbite = 0.6f; f.mouthStyle = 2; f.chinPoint = 0.35f; f.sclera = Vec3{0.90f, 0.84f, 0.55f}; f.faceWidth = -0.4f;
+            f.eyeTilt = 0.12f; f.cheekHollow = 0.6f; f.wrinkles = 0.25f;
             b.tusks = 2; b.tuskSize = fem ? 0.75f : 1.3f;
             b.digitigrade = false;
             b.ear = {0.55f, 0.09f, 0.05f, 0.30f, 0.15f};
@@ -301,7 +308,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.legRatio = 0.52f;
             widths(fem ? 1.0f : 1.10f, fem ? 1.0f : 1.08f, 0.95f, 1.0f, 1.0f);
             b.muscle = saturate(b.muscle + 0.15f);
-            f.eyeShape = 3; f.cheek = std::max(f.cheek, 0.4f); f.noseLength = 1.1f;
+            f.eyeShape = 3; f.cheek = std::max(f.cheek, 0.4f); f.noseLength = 1.1f; f.chinPoint = 0.25f; f.eyeTilt = 0.12f;
+            f.browRidge = saturate(f.browRidge + 0.3f);
             glow({0.82f, 0.90f, 1.0f});
             b.ear = {0.80f, 0.085f, 0.55f, 0.50f, 0.0f};
             b.ears = EarStyle::Elf;
@@ -320,6 +328,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             widths(0.95f, 0.95f, 0.92f, 0.98f, 0.92f);
             b.muscle = saturate(b.muscle - 0.1f);
             f.cheek = std::max(f.cheek, 0.5f); f.jaw = fem ? -0.3f : 0.2f; f.chin = 0.2f; f.noseProj = fem ? 0.6f : 0.9f;
+            f.chinPoint = 0.35f; f.eyeTilt = 0.10f;
             f.noseWidth = 0.85f; f.eyeShape = 3; f.cheekHollow = 0.2f; f.jowl = 0.0f;
             glow(r.chance(0.7f) ? Vec3{0.55f, 1.0f, 0.40f} : Vec3{0.55f, 0.80f, 1.0f});
             b.ear = {0.62f, 0.075f, 0.45f, 0.45f, 0.0f};
@@ -378,8 +387,11 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.legRatio = 0.42f;
             widths(0.90f, 0.92f, 0.95f, 0.92f, 0.80f);
             b.handSize *= 1.2f; b.footSize *= 1.0f; b.neckLength *= 0.7f; b.bust *= 0.7f;
-            f.noseLength = 1.7f; f.noseProj = r.range(1.8f, 2.2f); f.noseWidth = 0.9f; f.noseTip = -0.4f;
-            f.eyeShape = 3; f.eyeSize = 0.88f; f.mouthWidth = 1.35f; f.chin = 0.4f; f.cheek = 0.4f; f.jaw = -0.2f;
+            f.noseLength = 1.7f; f.noseProj = r.range(1.9f, 2.3f); f.noseWidth = 0.9f; f.noseTip = -0.5f; f.noseHump = 0.5f;
+            f.eyeShape = 3; f.eyeSize = 0.84f; f.irisSize = 0.72f; f.eyeTilt = 0.16f; f.restLid = 0.16f; f.mouthWidth = 1.75f;
+            f.chin = 0.5f; f.cheek = 0.7f; f.jaw = -0.3f; f.browRidge = 0.9f; f.browTilt = -0.35f; f.lipFullness = 0.05f;
+            f.headTop = 0.85f; f.chinPoint = 0.9f; f.wrinkles = r.range(0.45f, 0.8f); f.mouthStyle = 1; f.mouthRest = 0.006f;
+            f.sclera = Vec3{0.92f, 0.86f, 0.52f}; f.cheekHollow = 0.4f;
             b.ear = {0.60f, 0.17f, 0.15f, 0.25f, 0.05f};
             skinTo(pickC({{0.50f, 0.66f, 0.32f}, {0.62f, 0.70f, 0.36f}, {0.36f, 0.50f, 0.28f}}));
             pal.iris = pickC({{0.85f, 0.65f, 0.10f}, {0.75f, 0.15f, 0.10f}, {0.30f, 0.55f, 0.20f}});
@@ -428,7 +440,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.anat.traps = 1.4f; b.anat.deltoids = 1.3f; b.anat.forearms = 1.4f;
             f.browRidge = 1.2f; f.eyeDepth = 1.0f; f.eyeSize = 0.80f; f.eyeShape = 6; f.jaw = 1.0f; f.chinWidth = 1.0f; f.chin = 0.6f;
             f.noseWidth = 1.7f; f.noseProj = 0.9f; f.noseLength = 0.9f; f.noseTip = 0.3f; f.mouthWidth = 1.3f; f.cheekHollow = 0.0f;
-            f.jowl = 0.6f; f.crown = -0.6f;
+            f.jowl = 0.6f; f.crown = -0.6f; f.headTop = -0.7f; f.underbite = 0.85f; f.mouthStyle = 2; f.wrinkles = 0.5f;
+            f.sclera = Vec3{0.86f, 0.80f, 0.66f}; f.irisSize = 0.75f;
             b.tusks = 1; b.tuskSize = fem ? 0.6f : 1.1f;
             b.ear = {0.13f, 0.09f, 0.10f, 0.25f, 0.0f};
             skinTo(pickC({{0.55f, 0.50f, 0.42f}, {0.50f, 0.42f, 0.38f}, {0.58f, 0.36f, 0.30f}, {0.46f, 0.50f, 0.44f}, {0.44f, 0.44f, 0.50f}}));

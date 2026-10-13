@@ -209,6 +209,13 @@ struct FaceStyle {
     bool glowEyes = false;     // luminous eyes without pupils (elves, draenei, undead)
     bool darkNose = false;     // a dark, wet animal nose (worgen)
     float milky = 0.0f;        // clouded, dead eyes 0..1
+    // Species head and face character.
+    float headTop = 0.0f;      // -1 small, low cranium .. +1 big bulbous dome
+    float chinPoint = 0.0f;    // 0 .. 1 the lower face narrows to a pointed chin
+    float underbite = 0.0f;    // 0 .. 1 the lower jaw juts forward past the upper lip
+    float wrinkles = 0.0f;     // 0 .. 1 creased skin (brow, nose bridge, crow's feet, cheek folds)
+    int mouthStyle = 0;        // 0 lips, 1 wide sharp-toothed grin line, 2 underbite with lower teeth
+    Vec3 sclera{0.97f, 0.97f, 0.97f};
     bool hollowEyes = false;   // eyes rotted away: dark sockets
     Vec3 glow{0.8f, 0.9f, 1.0f};
     float rot = 0.0f;          // undead decay: dark patches and stitches 0..1
