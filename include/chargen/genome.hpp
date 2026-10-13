@@ -255,6 +255,7 @@ struct GenomeOptions {
     std::optional<Persona> persona;
     std::optional<HairStyle> hair;
     std::optional<Species> species;      // Human when empty (unless mixedSpecies)
+    std::optional<int> armPairs;         // 1 or 2 (four arms) for any people
     bool mixedSpecies = false;           // draw the people from the whole world
     float exaggeration = 0.0f;           // pushes proportions towards stylised extremes
 };

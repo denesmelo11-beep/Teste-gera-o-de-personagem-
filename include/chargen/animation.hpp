@@ -24,6 +24,8 @@ struct Clip {
 };
 
 Pose restPose(const Skeleton& sk);
+// Clamps a pose to the rig's joint limits (how far each joint can bend).
+void limitPose(const RigInfo& rig, Pose& pose);
 Pose sampleClip(const Clip& clip, float time);
 FaceState sampleFace(const Clip& clip, float time);
 

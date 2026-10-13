@@ -114,6 +114,7 @@ private:
     size_t headPart_ = 0;
     size_t nosePart_ = SIZE_MAX;
     float decay_ = 0.0f;
+    int upperArmI0_ = 0;                 // first torso ring of the upper arms' opening (four arms)
     bool bonesOnly_ = false;             // full decay / risen skeleton: no flesh at all
     struct Hole {
         Vec3 c;

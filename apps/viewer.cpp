@@ -695,6 +695,7 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         o.persona = cg::Persona::Heroic;
         if (std::getenv("CHARGEN_RAW")) o = cg::GenomeOptions{};  // debug: the plain genome of this seed
         if (const char* se = std::getenv("CHARGEN_SPECIES")) o.species = cg::speciesFromString(se);
+        if (const char* ap = std::getenv("CHARGEN_ARMS")) o.armPairs = std::atoi(ap) >= 4 ? 2 : 1;
         if (const char* ar = std::getenv("CHARGEN_ARCH")) {  // debug: studio sheet of a preset
             o.archetype = cg::archetypeFromString(ar);
             o.sex.reset();

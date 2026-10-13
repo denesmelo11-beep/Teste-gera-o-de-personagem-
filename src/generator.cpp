@@ -192,8 +192,8 @@ void Builder::computeMarks() {
             ArmMarks a;
             a.side = s == 0 ? 1.0f : -1.0f;
             a.pair = pair;
-            a.radius = armR * (pair ? 0.85f : 1.0f);
-            a.deltoid = del * (pair ? 0.85f : 1.0f);
+            a.radius = armR * (pair ? 0.88f : 1.0f);
+            a.deltoid = del * (pair ? 0.80f : 1.0f);
             float angle, fwd;
             if (pair == 0) {
                 a.shoulder = {a.side * std::max(S - 0.55f * del, 0.5f * S), m.shoulderY - 0.05f * h - 0.9f * del - 0.10f * mu * h,
@@ -202,11 +202,13 @@ void Builder::computeMarks() {
                 angle = 46.0f;
                 fwd = 0.0f;
             } else {
-                float y = m.chestY - 0.12f * h;
-                a.shoulder = {a.side * 0.92f * C, y, 0.02f * h};
-                a.clav = {a.side * 0.35f * C, y + 0.04f * h, 0.0f};
-                angle = 64.0f;
-                fwd = 0.3f;
+                // A second shoulder girdle on the lower ribcage: a little smaller, angled
+                // forward and out, so both pairs can work without colliding.
+                float y = m.crotchY + 0.555f * m.torsoLen;
+                a.shoulder = {a.side * 0.80f * C, y, 0.03f * h};
+                a.clav = {a.side * 0.30f * C, y + 0.06f * h, 0.06f * h};
+                angle = 40.0f;
+                fwd = 0.55f;
             }
             float ar = angle * kPi / 180.0f;
             a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), fwd});
@@ -463,6 +465,20 @@ void Builder::buildSkeleton() {
         l.tip = sk.add("toe" + suf, l.end, m.ball[s]);
         r.legs.push_back(l);
     }
+    // Range of motion. Elbows and knees are hinges that only fold one way; the rest are
+    // cones (bigger at the shoulders, small along the spine and neck).
+    auto cone = [&](int bone, float maxA) { if (bone >= 0) r.limits.push_back({bone, false, {1, 0, 0}, 0.0f, maxA}); };
+    cone(r.hips, 0.9f);
+    cone(r.spine, 0.55f);
+    cone(r.chest, 0.45f);
+    cone(r.neck, 0.6f);
+    cone(r.head, 0.85f);
+    for (const LimbRig& a : r.arms) {
+        cone(a.root, 0.35f);
+        cone(a.upper, 2.7f);
+        r.limits.push_back({a.lower, true, normalize(cross(a.restDir, {0, 0, 1})), -0.05f, 2.55f});
+        cone(a.end, 1.25f);
+    }
     if (g.body.centaur)
         for (int s = 0; s < 2; ++s) {
             std::string suf = s == 0 ? ".L" : ".R";
@@ -476,6 +492,12 @@ void Builder::buildSkeleton() {
             l.tip = sk.add("hindtoe" + suf, l.end, m.hindBall[s]);
             r.legs.push_back(l);
         }
+    for (const LimbRig& l : r.legs) {
+        cone(l.upper, 1.9f);
+        r.limits.push_back({l.lower, true, {1, 0, 0}, -0.05f, 2.6f});  // the knee only folds backwards
+        cone(l.end, 0.9f);
+        cone(l.tip, 0.7f);
+    }
     if (g.body.bust > 0.05f) {
         const float bust = std::min(g.body.bust, 1.5f);
         const float tb = 0.735f - 0.035f * bust - 0.05f * g.body.sag, depth = (0.06f + 0.31f * bust) * h;
@@ -661,7 +683,7 @@ void Builder::buildArms() {
             float beta = a.side > 0 ? al : kPi - al;
             return a.shoulder + d * (t * Ltot) + radial + normalize(radial, vv) * relief(beta, t, rr);
         };
-        if (a.pair == 0) {
+        {
             // The arm grows out of the torso surface: a patch on the side of the chest
             // (armpit to shoulder top, front to back) is opened and its boundary becomes
             // the first ring of the arm. Junction rings in between form the deltoid as a
@@ -678,8 +700,17 @@ void Builder::buildArms() {
             // The opening scales with the arm: from below the armpit to the top of the
             // deltoid, and wider front-to-back for heavy shoulders.
             const float Ra = r * rc(0.02f) * 1.1f;
-            int i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), 0.52f, 0.80f));
-            int i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
+            // Four arms: the upper opening keeps above the lower pair's.
+            const bool four = m.arms.size() > 2;
+            int i0, i1;
+            if (a.pair == 0) {
+                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), four ? 0.70f : 0.52f, 0.80f));
+                i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
+                upperArmI0_ = i0;
+            } else {
+                i1 = std::min(nearest(clamp(torsoT(a.shoulder.y + 0.95f * Ra), 0.55f, 0.66f)), upperArmI0_ - 1);
+                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.2f * Ra), 0.36f, 0.52f));
+            }
             if (lod.sparseRings) { if (i1 <= i0) i1 = i0 + 1; }
             else i0 = std::max(1, std::min(i0, i1 - 3));  // at least three rings tall: no pinched armpit
             const float dF = torsoRing(torsoT(a.shoulder.y)).dF;
@@ -789,25 +820,6 @@ void Builder::buildArms() {
                 prev = cur;
             }
             armGroup_ = bodyGroup_;
-        } else {
-            // Extra arm pairs (fantasy anatomy): a separate loft with a closed cap.
-            std::vector<float> ts{-0.15f, -0.07f, 0.0f, 0.10f, 0.20f, 0.30f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
-            Loft L;
-            const int n = lod.limbSeg;
-            for (float t : ts) {
-                std::vector<Vec3> ring(static_cast<size_t>(n));
-                for (int j = 0; j < n; ++j) ring[size_t(j)] = t >= 0 ? ringPoint(t, kTau * float(j) / float(n))
-                                                                       : a.shoulder + d * (t * Ltot * 0.3f) +
-                                                                             (uu * std::cos(kTau * j / n) + vv * std::sin(kTau * j / n)) * (r * rc(t));
-                L.rings.push_back(ring);
-                L.t.push_back(t);
-            }
-            L.poleStart = true;
-            L.startPole = a.shoulder - d * (0.22f * Ltot * 0.3f);
-            L.tStart = -0.2f;
-            Part& ap = newPart();
-            armGroup_ = ap.id;
-            emitLoft(ap, L, [=](float t, float, Vec3) { return armWeights(t); }, [&](float, float) { return skin(); });
         }
         buildHand(a, rig);
     }

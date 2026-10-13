@@ -901,6 +901,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     if (!opt.species && opt.mixedSpecies)
         sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f, 0.6f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
+    if (opt.armPairs) g.body.armPairs = std::clamp(*opt.armPairs, 1, 2);
     return g;
 }
 

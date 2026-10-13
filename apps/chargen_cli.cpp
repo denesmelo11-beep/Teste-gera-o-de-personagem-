@@ -52,6 +52,7 @@ GenomeOptions genomeOpts(const Args& a) {
     if (a.flag("sex")) o.sex = a.get("sex", "") == "male" ? Sex::Male : Sex::Female;
     if (a.flag("age")) o.age = ageFromString(a.get("age", ""));
     if (a.flag("persona")) o.persona = personaFromString(a.get("persona", ""));
+    if (a.flag("arms")) o.armPairs = a.num("arms", 2) >= 4 ? 2 : 1;
     if (a.flag("species")) {
         if (a.get("species", "") == "mixed") o.mixedSpecies = true;
         else if (!(o.species = speciesFromString(a.get("species", "")))) std::fprintf(stderr, "especie desconhecida: %s\n", a.get("species", "").c_str());
@@ -80,6 +81,7 @@ void usage() {
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
+        "anatomia: --arms 2|4 (dois pares de bracos)\n"
         "morte: --decay 0..1 (0 vivo, 0.15 recem-morto, 0.4 apodrecendo, 0.7 putrefato, 1 ossada)\n"
         "estilo: padrao low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave; --toon = cel com contorno\n"
         "presets: natural bombshell dorito brute amazon slender chibi monster\n"

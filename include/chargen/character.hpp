@@ -63,6 +63,16 @@ struct LimbRig {
     Vec3 restDir;     // rest direction of the upper bone
 };
 
+// Anatomical range of motion. Hinges (elbows, knees) bend about one axis within
+// [minAngle, maxAngle]; ball joints (shoulders, hips, spine, neck, wrists, ankles)
+// rotate at most maxAngle away from rest in any direction.
+struct JointLimit {
+    int bone = -1;
+    bool hinge = false;
+    Vec3 axis{1, 0, 0};          // hinge axis (bone rest frame)
+    float minAngle = 0, maxAngle = 0;
+};
+
 struct RigInfo {
     int root = -1, hips = -1, spine = -1, chest = -1, neck = -1, head = -1;
     std::vector<LimbRig> arms;  // L, R, (L2, R2)
@@ -72,6 +82,7 @@ struct RigInfo {
     std::vector<std::vector<int>> hairChains;
     // Equipment sockets (bone ids): weapons, shield, back, belt.
     int socketHandR = -1, socketHandL = -1, socketBack = -1, socketHip = -1;
+    std::vector<JointLimit> limits;  // applied by cg::limitPose (every built-in clip respects them)
 };
 
 // ---- physics description (consumed by cg::SecondaryMotion or an engine) ----

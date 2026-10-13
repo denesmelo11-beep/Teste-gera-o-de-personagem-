@@ -125,6 +125,31 @@ struct Author {
     }
 };
 
+}  // namespace
+
+void limitPose(const RigInfo& rig, Pose& pose) {
+    for (const JointLimit& L : rig.limits) {
+        if (L.bone < 0 || size_t(L.bone) >= pose.rot.size()) continue;
+        Quat q = normalize(pose.rot[size_t(L.bone)]);
+        if (q.w < 0) q = {-q.x, -q.y, -q.z, -q.w};
+        if (L.hinge) {
+            // Keep only the twist about the hinge axis, clamped to the range.
+            const Vec3 ax = normalize(L.axis);
+            const float proj = q.x * ax.x + q.y * ax.y + q.z * ax.z;
+            const float ang = 2.0f * std::atan2(proj, q.w);
+            pose.rot[size_t(L.bone)] = Quat::axisAngle(ax, clamp(ang, L.minAngle, L.maxAngle));
+        } else {
+            const float ang = 2.0f * std::acos(clamp(q.w, -1.0f, 1.0f));
+            if (ang > L.maxAngle) {
+                const Vec3 ax = normalize(Vec3{q.x, q.y, q.z}, Vec3{1, 0, 0});
+                pose.rot[size_t(L.bone)] = Quat::axisAngle(ax, L.maxAngle);
+            }
+        }
+    }
+}
+
+namespace {
+
 Clip author(const Character& c, std::string name, int frames, float fps, bool loop,
             const std::function<void(Author&, float)>& fn) {
     Clip clip;
@@ -136,6 +161,7 @@ Clip author(const Character& c, std::string name, int frames, float fps, bool lo
         a.reset();
         float t = loop ? float(f) / frames : float(f) / std::max(1, frames - 1);
         fn(a, t);
+        limitPose(c.rig, a.p);
         clip.frames.push_back(a.p);
     }
     return clip;
