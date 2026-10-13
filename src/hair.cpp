@@ -1265,17 +1265,21 @@ void Builder::buildTusks() {
         const float th = std::acos(clamp(x / 0.30f, -1.0f, 1.0f));
         Vec3 p = headPoint(th, 0.175f);
         p = p - headNormalDir(p) * (0.008f * h);
-        Vec3 dir = big ? normalize(Vec3{sd * 0.55f, 0.55f, 0.6f}) : normalize(Vec3{sd * 0.25f, 1.0f, 0.35f});
+        // tuskCurve: -1 splays the tips outwards, +1 hooks them in towards each other
+        // (the boar's sweep that reads far more imposing).
+        const float c01 = 0.5f * (clamp(g.body.tuskCurve, -1.0f, 1.0f) + 1.0f);
+        Vec3 dir = big ? normalize(Vec3{sd * lerp(0.62f, 0.42f, c01), 0.55f, 0.6f}) : normalize(Vec3{sd * lerp(0.32f, 0.12f, c01), 1.0f, 0.35f});
+        const float bendZ = big ? lerp(-0.10f, 0.15f, c01) : lerp(-0.12f, 0.40f, c01);
         const int n = big ? 6 : 3;
         const float seg = (big ? 0.30f : 0.080f) * h * sz / n;
         std::vector<Vec3> pts{p};
         for (int k = 0; k < n; ++k) {
-            if (big) dir = normalize(rotate(Quat::axisAngle({0, 0, 1}, -sd * 0.10f) * Quat::axisAngle({1, 0, 0}, -0.16f), dir));
+            dir = normalize(rotate(Quat::axisAngle({0, 0, 1}, sd * bendZ) * Quat::axisAngle({1, 0, 0}, big ? -0.16f : -0.05f), dir));
             p = p + dir * seg;
             pts.push_back(p);
         }
         Loft L;
-        const float r0 = (big ? 0.036f : 0.022f) * h * std::sqrt(sz);
+        const float r0 = (big ? 0.036f : 0.022f) * h * std::sqrt(sz) * lerp(1.0f, 1.15f, c01);
         for (int k = 0; k < n; ++k) {
             const float t = float(k) / n;
             const Vec3 d = normalize(pts[size_t(k + 1)] - pts[size_t(k)]);

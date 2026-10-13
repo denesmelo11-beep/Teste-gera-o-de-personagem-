@@ -133,6 +133,11 @@ struct BodyShape {
     float muzzle = 0.0f;        // 0 flat face .. 1 bovine snout
     int tusks = 0;              // 0 none, 1 short lower tusks, 2 long upswept tusks
     float tuskSize = 1.0f;
+    float tuskCurve = 0.0f;     // -1 splay outwards .. +1 hook inwards towards each other (more imposing)
+    int tailType = 0;           // 0 plain, 1 heavy reptile, 2 whip with spade tip, 3 bushy fur, 4 spiked club, 5 thin rat-like
+    int spines = 0;             // dorsal spines along the spine (and the tail): count, 0 none
+    float spineSize = 1.0f;
+    int spineKind = 0;          // 0 swept-back spikes, 1 bony plates, 2 short knobs
     bool hooves = false;
     int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
     bool centaur = false;       // human torso on a horse body (four legs)

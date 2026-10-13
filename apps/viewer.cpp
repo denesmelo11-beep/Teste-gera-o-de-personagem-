@@ -681,6 +681,24 @@ int runShots(Scene& s, const std::string& dir, uint64_t seed) {
     return runCuts(s, dir + "/11_cortes.png", seed);
 }
 
+// Debug overrides for the new body variables: CHARGEN_TAIL=type (0..5),
+// CHARGEN_SPINES="count kind size", CHARGEN_TUSKCURVE=-1..1.
+cg::Genome withOverrides(cg::Genome g) {
+    if (const char* t = std::getenv("CHARGEN_TAIL")) {
+        g.body.tail = true;
+        g.body.tailFur = false;
+        g.body.tailType = std::atoi(t);
+        g.body.tailLength = std::max(g.body.tailLength, 0.8f);
+    }
+    if (const char* sp = std::getenv("CHARGEN_SPINES")) {
+        float sz = 1.0f;
+        std::sscanf(sp, "%d %d %f", &g.body.spines, &g.body.spineKind, &sz);
+        g.body.spineSize = sz;
+    }
+    if (const char* tc = std::getenv("CHARGEN_TUSKCURVE")) g.body.tuskCurve = float(std::atof(tc));
+    return g;
+}
+
 // Model sheet of a natural adult woman and man: front and three-quarter views on a
 // neutral backdrop (how base meshes are judged).
 int runStudio(Scene& s, const std::string& path, uint64_t seed) {
@@ -702,7 +720,7 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         }
         s.actors.emplace_back();
         Actor& a = s.actors.back();
-        a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i), o), gGen);
+        a.ch = cg::generateCharacter(withOverrides(cg::randomGenome(seed + uint64_t(i), o)), gGen);
         a.clips = cg::makeDefaultClips(a.ch);
         a.sim = new cg::SecondaryMotion(a.ch);
         a.posed = true;
@@ -794,6 +812,86 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
         std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(i))).c_str(), s.actors[0].ch.height,
                       s.actors[1].ch.height);
         ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
+// New anatomy variables: tail types with dorsal ridges (top row, from behind) and
+// tusks splayed outwards vs hooked inwards (bottom row, portraits).
+int runAnatomy(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int cols = 4, pw = 340, ph = 470;
+    Image sheet = GenImageColor(cols * pw, 2 * ph, BLACK);
+    struct Panel {
+        cg::Species sp;
+        cg::Sex sex;
+        int tail, spines, kind;
+        float tusk;
+        const char* label;
+    };
+    const Panel panels[] = {
+        {cg::Species::Orc, cg::Sex::Male, 1, 8, 0, 0.6f, "cauda reptil + espinhos"},
+        {cg::Species::Troll, cg::Sex::Female, 2, 7, 2, 0.6f, "chicote com lamina + nos"},
+        {cg::Species::Ogre, cg::Sex::Male, 4, 7, 1, 0.6f, "maca com espinhos + placas"},
+        {cg::Species::Human, cg::Sex::Female, 5, 0, 0, 0.0f, "cauda de rato"},
+        {cg::Species::Orc, cg::Sex::Male, -1, 0, 0, -1.0f, "presas para fora"},
+        {cg::Species::Orc, cg::Sex::Male, -1, 0, 0, 1.0f, "presas para dentro"},
+        {cg::Species::Troll, cg::Sex::Male, -1, 0, 0, -1.0f, "presas longas para fora"},
+        {cg::Species::Troll, cg::Sex::Male, -1, 0, 0, 1.0f, "presas longas para dentro"},
+    };
+    for (int i = 0; i < 8; ++i) {
+        const Panel& P = panels[i];
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.species = P.sp;
+        o.sex = P.sex;
+        o.age = cg::AgeGroup::Adult;
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i < 4 ? i * 13 : 4 * 13 + (i - 4) / 2 * 13), o);
+        if (P.tail >= 0) {
+            g.body.tail = true;
+            g.body.tailFur = false;
+            g.body.tailType = P.tail;
+            g.body.tailLength = std::max(g.body.tailLength, 0.9f);
+            g.body.spines = P.spines;
+            g.body.spineKind = P.kind;
+            g.body.spineSize = 1.1f;
+            if (P.sp == cg::Species::Human) g.body.horns = 2;
+        }
+        g.body.tuskCurve = P.tusk;
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(g, gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        const float H = a.ch.height;
+        Camera3D cam;
+        if (i < 4) {
+            cam = makeCam({-0.05f * H, H * 0.46f, -0.30f * H}, 2.0f, 0.05f, H * 3.5f, 21.0f);
+        } else {
+            const cg::Vec3 hp = a.ch.skeleton.bones[size_t(a.ch.rig.head)].restWorld;
+            const float hh = H - hp.y;
+            cam = makeCam({0, hp.y + 0.38f * hh, 0.1f * hh}, 0.42f, 0.0f, hh * 7.2f, 21.0f);
+        }
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        ImageDrawText(&img, P.label, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
         UnloadImage(img);
         UnloadRenderTexture(prt);
@@ -937,7 +1035,7 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
         if (!hr) g.facialHair = cg::FacialHair(i % int(cg::FacialHair::Count));
         s.actors.emplace_back();
         Actor& a = s.actors.back();
-        a.ch = cg::generateCharacter(g, gGen);
+        a.ch = cg::generateCharacter(withOverrides(g), gGen);
         a.clips = cg::makeDefaultClips(a.ch);
         a.sim = new cg::SecondaryMotion(a.ch);
         a.posed = true;
@@ -1016,7 +1114,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races, decayOut;
+    std::string shots, studio, population, heads, faces, cuts, races, decayOut, anatomy;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -1029,6 +1127,7 @@ int main(int argc, char** argv) {
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
         else if (a == "--decay" && i + 1 < argc) decayOut = argv[++i];
+        else if (a == "--anatomy" && i + 1 < argc) anatomy = argv[++i];
         else if (a == "--faces" && i + 1 < argc) faces = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
@@ -1066,6 +1165,12 @@ int main(int argc, char** argv) {
     s.faceted = faceted;
     if (!faces.empty()) {
         int rc = runFaces(s, faces, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!anatomy.empty()) {
+        int rc = runAnatomy(s, anatomy, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

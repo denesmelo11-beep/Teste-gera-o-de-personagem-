@@ -20,7 +20,8 @@ add_library(chargen
   src/animation.cpp
   src/image.cpp
   src/render.cpp
-  src/gltf.cpp)
+  src/gltf.cpp
+  src/engine.cpp)
 target_include_directories(chargen PUBLIC include)
 find_package(Threads REQUIRED)
 target_link_libraries(chargen PUBLIC Threads::Threads)

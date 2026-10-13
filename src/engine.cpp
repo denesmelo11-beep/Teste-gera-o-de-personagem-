@@ -1,0 +1,708 @@
+#include "chargen/engine.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <span>
+#include <type_traits>
+
+#include "chargen/rng.hpp"
+
+namespace cg {
+
+namespace {
+
+constexpr char kB32[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";  // Crockford: no I, L, O, U
+
+int b32Value(char ch) {
+    if (ch >= 'a' && ch <= 'z') ch = char(ch - 'a' + 'A');
+    if (ch == 'O') ch = '0';
+    if (ch == 'I' || ch == 'L') ch = '1';
+    for (int i = 0; i < 32; ++i)
+        if (kB32[i] == ch) return i;
+    return -1;
+}
+
+uint32_t fnv1a(const uint8_t* p, size_t n) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+
+float percentile(std::vector<float>& v, float q) {
+    if (v.empty()) return 0;
+    const size_t k = std::min(v.size() - 1, size_t(q * float(v.size() - 1) + 0.5f));
+    std::nth_element(v.begin(), v.begin() + std::ptrdiff_t(k), v.end());
+    return v[k];
+}
+
+Vec3 closestOnSegment(Vec3 p, Vec3 a, Vec3 b) {
+    const Vec3 ab = b - a;
+    const float l2 = dot(ab, ab);
+    if (l2 < 1e-12f) return a;
+    return a + ab * saturate(dot(p - a, ab) / l2);
+}
+
+// Ray (unit dir) against a capsule; -1 on a miss. (Inigo Quilez's formulation.)
+float rayCapsule(Vec3 ro, Vec3 rd, Vec3 pa, Vec3 pb, float r) {
+    const Vec3 ba = pb - pa, oa = ro - pa;
+    const float baba = dot(ba, ba);
+    auto sphere = [&](Vec3 c) {
+        const Vec3 oc = ro - c;
+        const float b = dot(rd, oc), cc = dot(oc, oc) - r * r, h = b * b - cc;
+        if (h < 0) return -1.0f;
+        const float t = -b - std::sqrt(h);
+        return t >= 0 ? t : (cc <= 0 ? 0.0f : -1.0f);
+    };
+    if (baba < 1e-10f) return sphere(pa);
+    const float bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+    const float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
+    const float h = b * b - a * c;
+    if (h >= 0 && std::fabs(a) > 1e-12f) {
+        const float t = (-b - std::sqrt(h)) / a;
+        const float y = baoa + t * bard;
+        if (y > 0 && y < baba && t >= 0) return t;
+    }
+    const float t0 = sphere(pa), t1 = sphere(pb);
+    if (t0 < 0) return t1;
+    if (t1 < 0) return t0;
+    return std::min(t0, t1);
+}
+
+AgeGroup groupOfAge(float age) {
+    return age < 23 ? AgeGroup::Young : age < 40 ? AgeGroup::Adult : age < 60 ? AgeGroup::Mature : AgeGroup::Elder;
+}
+
+constexpr std::string_view kZoneNames[] = {"head", "neck", "chest", "abdomen", "pelvis", "upper_arm",
+                                           "forearm", "hand", "thigh", "shin", "foot", "tail"};
+static_assert(std::size(kZoneNames) == size_t(HitZone::Count));
+constexpr float kZoneDamage[] = {2.0f, 1.6f, 1.0f, 1.1f, 0.9f, 0.7f, 0.6f, 0.45f, 0.8f, 0.6f, 0.45f, 0.4f};
+constexpr std::string_view kStageNames[] = {"alive", "fresh", "rotting", "putrefied", "skeletal"};
+static_assert(std::size(kStageNames) == size_t(DecayStage::Count));
+
+}  // namespace
+
+// ---------------------------------------------------------------- keys & saves
+
+std::string toBase32(const std::vector<uint8_t>& bytes) {
+    std::string out;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (uint8_t b : bytes) {
+        acc = (acc << 8) | b;
+        bits += 8;
+        while (bits >= 5) {
+            out += kB32[(acc >> (bits - 5)) & 31u];
+            bits -= 5;
+        }
+    }
+    if (bits > 0) out += kB32[(acc << (5 - bits)) & 31u];
+    return out;
+}
+
+std::optional<std::vector<uint8_t>> fromBase32(std::string_view text) {
+    std::vector<uint8_t> out;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (char ch : text) {
+        if (ch == '-' || ch == ' ') continue;
+        const int v = b32Value(ch);
+        if (v < 0) return std::nullopt;
+        acc = (acc << 5) | uint32_t(v);
+        bits += 5;
+        if (bits >= 8) {
+            out.push_back(uint8_t(acc >> (bits - 8)));
+            bits -= 8;
+        }
+    }
+    return out;
+}
+
+std::string encodeKey(const CharacterKey& k) {
+    std::vector<uint8_t> b;
+    for (int i = 0; i < 8; ++i) b.push_back(uint8_t(k.seed >> (8 * i)));
+    const GenomeOptions& o = k.options;
+    b.push_back(o.archetype ? uint8_t(*o.archetype) : 0xFF);
+    b.push_back(o.sex ? uint8_t(*o.sex) : 0xFF);
+    b.push_back(o.age ? uint8_t(*o.age) : 0xFF);
+    b.push_back(o.persona ? uint8_t(*o.persona) : 0xFF);
+    b.push_back(o.hair ? uint8_t(*o.hair) : 0xFF);
+    b.push_back(o.species ? uint8_t(*o.species) : 0xFF);
+    b.push_back(o.armPairs ? uint8_t(std::clamp(*o.armPairs, 1, 2)) : 0);
+    b.push_back(o.mixedSpecies ? 1 : 0);
+    b.push_back(uint8_t(std::lround(clamp(o.exaggeration, 0.0f, 2.55f) * 100.0f)));
+    b.push_back(uint8_t(std::lround(saturate(k.decay) * 255.0f)));
+    b.push_back(uint8_t(std::clamp(k.lod, 0, 2)));
+    b.push_back(uint8_t(fnv1a(b.data(), b.size())));
+    return "CG1-" + toBase32(b);
+}
+
+std::optional<CharacterKey> decodeKey(std::string_view text) {
+    if (text.size() < 4 || text.substr(0, 4) != "CG1-") return std::nullopt;
+    auto bytes = fromBase32(text.substr(4));
+    if (!bytes || bytes->size() < 20) return std::nullopt;
+    const auto& b = *bytes;
+    if (uint8_t(fnv1a(b.data(), 19)) != b[19]) return std::nullopt;
+    CharacterKey k;
+    for (int i = 0; i < 8; ++i) k.seed |= uint64_t(b[size_t(i)]) << (8 * i);
+    GenomeOptions& o = k.options;
+    auto opt = [&](size_t i, int count, auto tag) -> std::optional<decltype(tag)> {
+        if (b[i] == 0xFF || b[i] >= count) return std::nullopt;
+        return decltype(tag)(b[i]);
+    };
+    o.archetype = opt(8, int(Archetype::Count), Archetype{});
+    o.sex = opt(9, 2, Sex{});
+    o.age = opt(10, int(AgeGroup::Count), AgeGroup{});
+    o.persona = opt(11, int(Persona::Count), Persona{});
+    o.hair = opt(12, int(HairStyle::Count), HairStyle{});
+    o.species = opt(13, int(Species::Count), Species{});
+    if (b[14]) o.armPairs = int(b[14]);
+    o.mixedSpecies = b[15] & 1;
+    o.exaggeration = float(b[16]) / 100.0f;
+    k.decay = float(b[17]) / 255.0f;
+    k.lod = std::min(int(b[18]), 2);
+    return k;
+}
+
+Genome genomeFromKey(const CharacterKey& k) { return randomGenome(k.seed, k.options); }
+
+Character generateFromKey(const CharacterKey& k, GenOptions base) {
+    base.decay = k.decay;
+    base.lod = k.lod;
+    return generateCharacter(genomeFromKey(k), base);
+}
+
+static_assert(std::is_trivially_copyable_v<Genome>, "saveGenome copies the genome as raw bytes");
+namespace {
+constexpr uint8_t kGenomeMagic[4] = {'C', 'G', 'G', 1};
+}
+
+std::vector<uint8_t> saveGenome(const Genome& g) {
+    std::vector<uint8_t> out(kGenomeMagic, kGenomeMagic + 4);
+    const uint32_t n = sizeof(Genome);
+    for (int i = 0; i < 4; ++i) out.push_back(uint8_t(n >> (8 * i)));
+    const size_t at = out.size();
+    out.resize(at + n);
+    std::memcpy(out.data() + at, &g, n);
+    const uint32_t h = fnv1a(out.data() + at, n);
+    for (int i = 0; i < 4; ++i) out.push_back(uint8_t(h >> (8 * i)));
+    return out;
+}
+
+std::optional<Genome> loadGenome(const std::vector<uint8_t>& bytes) {
+    const uint32_t n = sizeof(Genome);
+    if (bytes.size() != 8 + n + 4 || std::memcmp(bytes.data(), kGenomeMagic, 4) != 0) return std::nullopt;
+    uint32_t sz = 0, h = 0;
+    for (int i = 0; i < 4; ++i) sz |= uint32_t(bytes[size_t(4 + i)]) << (8 * i);
+    for (int i = 0; i < 4; ++i) h |= uint32_t(bytes[8 + n + size_t(i)]) << (8 * i);
+    if (sz != n || fnv1a(bytes.data() + 8, n) != h) return std::nullopt;
+    Genome g;
+    std::memcpy(&g, bytes.data() + 8, n);
+    return g;
+}
+
+// ---------------------------------------------------------------- hit volumes
+
+std::string_view toString(HitZone z) { return z < HitZone::Count ? kZoneNames[size_t(z)] : "?"; }
+
+std::vector<HitVolume> hitVolumes(const Character& c) {
+    const Skeleton& sk = c.skeleton;
+    const RigInfo& r = c.rig;
+    const size_t nb = sk.bones.size();
+    // Which bones carry a volume, and the zone of each.
+    std::vector<int> zoneOf(nb, -1);
+    auto set = [&](int b, HitZone z) {
+        if (b >= 0 && size_t(b) < nb) zoneOf[size_t(b)] = int(z);
+    };
+    set(r.head, HitZone::Head);
+    set(r.neck, HitZone::Neck);
+    set(r.chest, HitZone::Chest);
+    set(r.spine, HitZone::Abdomen);
+    set(r.hips, HitZone::Pelvis);
+    for (const LimbRig& a : r.arms) set(a.upper, HitZone::UpperArm), set(a.lower, HitZone::Forearm), set(a.end, HitZone::Hand);
+    for (const LimbRig& l : r.legs) set(l.upper, HitZone::Thigh), set(l.lower, HitZone::Shin), set(l.end, HitZone::Foot);
+    for (int t : r.tail) set(t, HitZone::Tail);
+    // Every other bone hands its vertices to its nearest volume-carrying ancestor
+    // (fingers to the hand, bust to the chest, jaw to the head...).
+    std::vector<int> owner(nb, -1);
+    for (size_t i = 0; i < nb; ++i) {
+        int b = int(i);
+        while (b >= 0 && zoneOf[size_t(b)] < 0) b = sk.bones[size_t(b)].parent;
+        owner[i] = b;
+    }
+    // Body surface only (no decals), and no hair: hits land on flesh.
+    std::vector<std::vector<Vec3>> pts(nb);
+    const Mesh& m = c.mesh;
+    std::vector<uint8_t> used(m.vertices.size(), 0);
+    for (const Submesh& s : m.submeshes) {
+        if (s.kind != SubmeshKind::Body) continue;
+        for (uint32_t i = s.firstIndex; i < s.firstIndex + s.indexCount; ++i) used[m.indices[i]] = 1;
+    }
+    for (size_t vi = 0; vi < m.vertices.size(); ++vi) {
+        if (!used[vi]) continue;
+        const Vertex& v = m.vertices[vi];
+        if (v.color[3] / 32 == int(MaterialClass::Hair)) continue;
+        int best = 0;
+        for (int k = 1; k < 4; ++k)
+            if (v.weights[k] > v.weights[best]) best = k;
+        const int o = owner[v.joints[best]];
+        if (o >= 0) pts[size_t(o)].push_back(v.pos);
+    }
+    std::vector<HitVolume> out;
+    for (size_t b = 0; b < nb; ++b) {
+        if (zoneOf[b] < 0 || pts[b].size() < 4) continue;
+        const auto& P = pts[b];
+        // Principal axis of the vertices (power iteration on the covariance).
+        Vec3 mean{};
+        for (Vec3 p : P) mean += p;
+        mean = mean * (1.0f / float(P.size()));
+        float cv[3][3] = {};
+        for (Vec3 p : P) {
+            const float d[3] = {p.x - mean.x, p.y - mean.y, p.z - mean.z};
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j) cv[i][j] += d[i] * d[j];
+        }
+        Vec3 ax{0.3f, 1.0f, 0.2f};
+        for (int it = 0; it < 24; ++it) {
+            Vec3 n{cv[0][0] * ax.x + cv[0][1] * ax.y + cv[0][2] * ax.z, cv[1][0] * ax.x + cv[1][1] * ax.y + cv[1][2] * ax.z,
+                   cv[2][0] * ax.x + cv[2][1] * ax.y + cv[2][2] * ax.z};
+            ax = normalize(n, ax);
+        }
+        std::vector<float> proj, dist;
+        proj.reserve(P.size());
+        for (Vec3 p : P) proj.push_back(dot(p - mean, ax));
+        std::vector<float> pr = proj;
+        const float lo = percentile(pr, 0.06f), hi = percentile(pr, 0.94f);
+        for (size_t i = 0; i < P.size(); ++i) dist.push_back(length(P[i] - (mean + ax * proj[i])));
+        const float rad = std::max(0.01f, percentile(dist, 0.80f));
+        float a = lo + rad, e = hi - rad;
+        if (a > e) a = e = 0.5f * (lo + hi);
+        HitVolume hv;
+        hv.bone = int(b);
+        hv.zone = HitZone(zoneOf[b]);
+        const Vec3 o = sk.bones[b].restWorld;
+        hv.a = mean + ax * a - o;
+        hv.b = mean + ax * e - o;
+        hv.radius = rad;
+        hv.damageScale = kZoneDamage[size_t(zoneOf[b])];
+        hv.side = std::fabs(mean.x) > 0.03f ? (mean.x > 0 ? 1.0f : -1.0f) : 0.0f;
+        out.push_back(hv);
+    }
+    return out;
+}
+
+RayHit raycast(const std::vector<HitVolume>& vols, const std::vector<Mat4>& global, Vec3 origin, Vec3 dir, float maxDist) {
+    RayHit best;
+    best.t = maxDist;
+    dir = normalize(dir, {0, 0, 1});
+    for (size_t i = 0; i < vols.size(); ++i) {
+        const HitVolume& v = vols[i];
+        const Mat4& M = global[size_t(v.bone)];
+        const float t = rayCapsule(origin, dir, M.point(v.a), M.point(v.b), v.radius);
+        if (t >= 0 && t < best.t) best.t = t, best.volume = int(i);
+    }
+    if (best.volume >= 0) best.point = origin + dir * best.t;
+    return best;
+}
+
+std::vector<int> overlapSphere(const std::vector<HitVolume>& vols, const std::vector<Mat4>& global, Vec3 center, float radius) {
+    std::vector<std::pair<float, int>> hits;
+    for (size_t i = 0; i < vols.size(); ++i) {
+        const HitVolume& v = vols[i];
+        const Mat4& M = global[size_t(v.bone)];
+        const float d = length(center - closestOnSegment(center, M.point(v.a), M.point(v.b))) - v.radius;
+        if (d <= radius) hits.push_back({d, int(i)});
+    }
+    std::sort(hits.begin(), hits.end());
+    std::vector<int> out;
+    for (auto& h : hits) out.push_back(h.second);
+    return out;
+}
+
+// ---------------------------------------------------------------- metrics
+
+BodyMetrics measure(const Character& c) {
+    BodyMetrics bm;
+    const Skeleton& sk = c.skeleton;
+    const RigInfo& r = c.rig;
+    auto P = [&](int b) { return b >= 0 ? sk.bones[size_t(b)].restWorld : Vec3{}; };
+    bm.height = c.height;
+    bm.arms = int(r.arms.size());
+    bm.quadruped = c.genome.body.centaur;
+    bm.boundsMin = {1e9f, 1e9f, 1e9f};
+    bm.boundsMax = {-1e9f, -1e9f, -1e9f};
+    for (const Vertex& v : c.mesh.vertices) {
+        bm.boundsMin = {std::min(bm.boundsMin.x, v.pos.x), std::min(bm.boundsMin.y, v.pos.y), std::min(bm.boundsMin.z, v.pos.z)};
+        bm.boundsMax = {std::max(bm.boundsMax.x, v.pos.x), std::max(bm.boundsMax.y, v.pos.y), std::max(bm.boundsMax.z, v.pos.z)};
+    }
+    // Eye level: the eye decal itself (or a fraction of the head when there is none).
+    double ey = 0;
+    size_t en = 0;
+    for (const Submesh& s : c.mesh.submeshes)
+        if (s.kind == SubmeshKind::FaceEyes)
+            for (uint32_t i = s.firstIndex; i < s.firstIndex + s.indexCount; ++i) ey += c.mesh.vertices[c.mesh.indices[i]].pos.y, ++en;
+    bm.eyeHeight = en ? float(ey / double(en)) : lerp(P(r.head).y, c.height, 0.45f);
+    if (r.arms.size() >= 2) {
+        const LimbRig& a = r.arms[0];
+        bm.shoulderHeight = P(a.upper).y;
+        bm.shoulderSpan = length(P(r.arms[0].upper) - P(r.arms[1].upper));
+        bm.reach = length(P(a.lower) - P(a.upper)) + length(P(a.end) - P(a.lower)) +
+                   (a.tip >= 0 ? 1.6f * length(P(a.tip) - P(a.end)) : 0.10f * c.height);
+    }
+    if (!r.legs.empty()) {
+        bm.hipHeight = P(r.legs[0].upper).y;
+        bm.legLength = bm.hipHeight;
+    }
+    // Mass from the fitted volumes (flesh ~1010 kg/m^3; capsules overlap a little at
+    // the joints and miss the hollows, which roughly cancel).
+    const auto vols = hitVolumes(c);
+    double vol = 0;
+    float torsoR = 0;
+    for (const HitVolume& v : vols) {
+        const float L = length(v.b - v.a), rr = v.radius;
+        vol += kPi * rr * rr * L + 4.0f / 3.0f * kPi * rr * rr * rr;
+        if (v.zone == HitZone::Chest || v.zone == HitZone::Abdomen || v.zone == HitZone::Pelvis) {
+            const Vec3 o = P(v.bone);
+            for (Vec3 e : {v.a + o, v.b + o}) torsoR = std::max(torsoR, std::max(std::fabs(e.x), std::fabs(e.z - o.z)) + rr);
+        }
+    }
+    bm.mass = float(vol) * 1010.0f * 0.90f;
+    // Natural walking pace at Froude number ~0.25, running ~2.2.
+    const float L = std::max(0.3f, bm.legLength);
+    bm.walkSpeed = std::sqrt(0.25f * 9.81f * L) * (bm.quadruped ? 1.25f : 1.0f);
+    bm.runSpeed = std::sqrt(2.2f * 9.81f * L) * (bm.quadruped ? 1.35f : 1.0f);
+    bm.capsuleRadius = std::max(torsoR, 0.45f * bm.shoulderSpan);
+    if (bm.quadruped) bm.capsuleRadius = std::max(bm.capsuleRadius, 0.5f * (bm.boundsMax.z - bm.boundsMin.z) * 0.8f);
+    bm.capsuleHeight = std::max(bm.height, 2.0f * bm.capsuleRadius);
+    return bm;
+}
+
+// ---------------------------------------------------------------- sockets
+
+Mat4 socketMatrix(const Character& c, const std::vector<Mat4>& global, Socket s) {
+    const RigInfo& r = c.rig;
+    int b = -1;
+    switch (s) {
+        case Socket::HandR: b = r.socketHandR; break;
+        case Socket::HandL: b = r.socketHandL; break;
+        case Socket::Back: b = r.socketBack; break;
+        case Socket::Hip: b = r.socketHip; break;
+        case Socket::Head: b = r.head; break;
+        default: break;
+    }
+    if (b < 0 || size_t(b) >= global.size()) return Mat4::identity();
+    if (s == Socket::Head) {  // helmets sit on the middle of the skull
+        const float up = 0.5f * (c.height - c.skeleton.bones[size_t(b)].restWorld.y);
+        return global[size_t(b)] * Mat4::translation({0, up, 0});
+    }
+    return global[size_t(b)];
+}
+
+// ---------------------------------------------------------------- packed mesh
+
+PackedMesh packMesh(const Mesh& m) {
+    PackedMesh out;
+    out.submeshes = m.submeshes;
+    out.vertices.resize(m.vertices.size());
+    for (size_t i = 0; i < m.vertices.size(); ++i) {
+        const Vertex& v = m.vertices[i];
+        PackedVertex& p = out.vertices[i];
+        p.pos[0] = v.pos.x, p.pos[1] = v.pos.y, p.pos[2] = v.pos.z;
+        p.normal[0] = int8_t(std::lround(clamp(v.normal.x, -1, 1) * 127.0f));
+        p.normal[1] = int8_t(std::lround(clamp(v.normal.y, -1, 1) * 127.0f));
+        p.normal[2] = int8_t(std::lround(clamp(v.normal.z, -1, 1) * 127.0f));
+        p.normal[3] = 0;
+        p.uv[0] = uint16_t(std::lround(saturate(v.uv.x) * 65535.0f));
+        p.uv[1] = uint16_t(std::lround(saturate(v.uv.y) * 65535.0f));
+        std::memcpy(p.color, v.color, 4);
+        std::memcpy(p.joints, v.joints, 4);
+        // Quantise weights so they sum to exactly 255 (largest remainders get the rest).
+        int q[4], sum = 0;
+        float rem[4];
+        for (int k = 0; k < 4; ++k) {
+            const float w = saturate(v.weights[k]) * 255.0f;
+            q[k] = int(w);
+            rem[k] = w - float(q[k]);
+            sum += q[k];
+        }
+        while (sum < 255) {
+            int bi = 0;
+            for (int k = 1; k < 4; ++k)
+                if (rem[k] > rem[bi]) bi = k;
+            ++q[bi], ++sum;
+            rem[bi] = -1;
+            if (rem[0] < 0 && rem[1] < 0 && rem[2] < 0 && rem[3] < 0) break;
+        }
+        if (sum != 255) q[0] += 255 - sum;
+        for (int k = 0; k < 4; ++k) p.weights[k] = uint8_t(std::clamp(q[k], 0, 255));
+    }
+    if (m.vertices.size() <= 65535) out.indices16.assign(m.indices.begin(), m.indices.end());
+    else out.indices32 = m.indices;
+    return out;
+}
+
+// ---------------------------------------------------------------- death & decay
+
+std::string_view toString(DecayStage s) { return s < DecayStage::Count ? kStageNames[size_t(s)] : "?"; }
+
+DecayStage decayStage(float d) {
+    // Matches the builder: torn open onto the skeleton from 0.3, bare hands and feet
+    // from 0.85, nothing but bones from 0.97.
+    if (d <= 0.0f) return DecayStage::Alive;
+    if (d < 0.30f) return DecayStage::Fresh;
+    if (d < 0.60f) return DecayStage::Rotting;
+    if (d < 0.97f) return DecayStage::Putrefied;
+    return DecayStage::Skeletal;
+}
+
+float decayFromTime(float hours, float daysToBones) {
+    if (hours <= 0.0f) return 0.0f;
+    const float x = hours / (24.0f * std::max(0.1f, daysToBones));
+    // Fast early changes (pallor, clouded eyes within a day), long tail to clean bones.
+    return x >= 1.0f ? 1.0f : std::pow(x, 0.6f);
+}
+
+float decayBucket(float decay, int steps) {
+    if (decay <= 0.0f) return 0.0f;
+    if (decay >= 0.97f) return 1.0f;
+    steps = std::max(steps, 2);
+    // Never round a corpse back to alive, and keep the builder's thresholds exact.
+    float b = std::ceil(decay * float(steps)) / float(steps);
+    for (float th : {0.30f, 0.85f, 0.97f})
+        if (decay < th && b >= th) b = th - 1e-3f;
+    return std::min(b, 0.96f);
+}
+
+bool needsRebuild(float builtDecay, float decay, int steps) {
+    return decayBucket(builtDecay, steps) != decayBucket(decay, steps) || decayStage(builtDecay) != decayStage(decay);
+}
+
+// ---------------------------------------------------------------- LOD
+
+float screenHeightPx(float worldHeight, float distance, float fovY, int viewportHeight) {
+    distance = std::max(distance, 1e-3f);
+    return worldHeight / (2.0f * distance * std::tan(0.5f * fovY)) * float(viewportHeight);
+}
+
+int pickLod(float px, int current) {
+    constexpr float kT0 = 160.0f, kT1 = 70.0f, kH = 0.12f;
+    float t0 = kT0, t1 = kT1;
+    if (current == 0) t0 *= 1.0f - kH;          // stay detailed a little longer
+    if (current == 1) t0 *= 1.0f + kH, t1 *= 1.0f - kH;
+    if (current == 2) t1 *= 1.0f + kH;
+    return px >= t0 ? 0 : px >= t1 ? 1 : 2;
+}
+
+// ---------------------------------------------------------------- populations & families
+
+std::vector<CharacterKey> planPopulation(uint64_t seed, int count, const PopulationSpec& spec) {
+    std::vector<CharacterKey> out;
+    Rng r(seed, 0x504F50);
+    std::vector<float> sw, aw;
+    for (auto& s : spec.species) sw.push_back(std::max(0.0f, s.second));
+    for (auto& a : spec.archetypes) aw.push_back(std::max(0.0f, a.second));
+    for (int i = 0; i < count; ++i) {
+        CharacterKey k;
+        k.seed = splitmix64(seed ^ splitmix64(uint64_t(i) + 1));
+        GenomeOptions& o = k.options;
+        o.species = spec.species.empty() ? Species::Human : spec.species[size_t(r.weighted(sw))].first;
+        if (!spec.archetypes.empty()) {
+            const Archetype a = spec.archetypes[size_t(r.weighted(aw))].first;
+            if (a != Archetype::Natural) o.archetype = a;
+        }
+        o.sex = r.chance(spec.femaleShare) ? Sex::Female : Sex::Male;
+        o.age = AgeGroup(r.weighted(std::span<const float>(spec.ageWeights.data(), spec.ageWeights.size())));
+        if (spec.fourArmShare > 0 && r.chance(spec.fourArmShare)) o.armPairs = 2;
+        out.push_back(k);
+    }
+    return out;
+}
+
+Genome childOf(const Genome& mo, const Genome& fa, uint64_t seed, std::optional<Sex> sex) {
+    Rng r(seed, 0xC41D);
+    GenomeOptions o;
+    o.species = mo.species == fa.species ? mo.species : (r.chance(0.5f) ? mo.species : fa.species);
+    o.sex = sex ? *sex : (r.chance(0.5f) ? Sex::Female : Sex::Male);
+    o.age = AgeGroup::Young;
+    Genome g = randomGenome(seed, o);
+    // Each trait: a blend of the parents biased to one side, then a share of the
+    // child's own fresh draw (so siblings differ and lineages drift).
+    auto mix = [&](float& out, float m, float f, float fresh = 0.25f) {
+        const float t = clamp(r.gauss(0.5f, 0.22f), 0.0f, 1.0f);
+        out = lerp(lerp(m, f, t), out, fresh);
+    };
+    auto mixV = [&](Vec3& out, Vec3 m, Vec3 f, float fresh = 0.15f) {
+        const float t = clamp(r.gauss(0.5f, 0.2f), 0.0f, 1.0f);
+        out = lerp(lerp(m, f, t), out, fresh);
+    };
+    auto pick = [&](auto& out, auto m, auto f) { out = r.chance(0.5f) ? m : f; };
+    const Genome* same = mo.species == g.species ? &mo : &fa;  // the parent of the child's people
+    // Height and frame relative to each parent's sex.
+    auto rel = [](const Genome& p) { return p.body.height / (p.sex == Sex::Male ? 1.0f : 0.93f); };
+    const float hk = g.sex == Sex::Male ? 1.0f : 0.93f;
+    mix(g.body.height, rel(mo) * hk, rel(fa) * hk, 0.3f);
+    mix(g.body.boneMass, mo.body.boneMass, fa.body.boneMass);
+    mix(g.body.legRatio, mo.body.legRatio, fa.body.legRatio);
+    mix(g.body.armLength, mo.body.armLength, fa.body.armLength);
+    mix(g.body.headWidth, mo.body.headWidth, fa.body.headWidth);
+    mix(g.body.neckLength, mo.body.neckLength, fa.body.neckLength);
+    mix(g.body.handSize, mo.body.handSize, fa.body.handSize);
+    mix(g.body.footSize, mo.body.footSize, fa.body.footSize);
+    // Face: the family resemblance.
+    FaceStyle& f = g.face;
+    const FaceStyle &fm = mo.face, &ff = fa.face;
+    pick(f.eyeShape, fm.eyeShape, ff.eyeShape);
+    pick(f.noseShape, fm.noseShape, ff.noseShape);
+    pick(f.browShape, fm.browShape, ff.browShape);
+    mix(f.eyeSize, fm.eyeSize, ff.eyeSize);
+    mix(f.eyeSpacing, fm.eyeSpacing, ff.eyeSpacing);
+    mix(f.eyeTilt, fm.eyeTilt, ff.eyeTilt);
+    mix(f.irisSize, fm.irisSize, ff.irisSize);
+    mix(f.noseSize, fm.noseSize, ff.noseSize);
+    mix(f.noseBridge, fm.noseBridge, ff.noseBridge);
+    mix(f.noseLength, fm.noseLength, ff.noseLength);
+    mix(f.noseProj, fm.noseProj, ff.noseProj);
+    mix(f.noseWidth, fm.noseWidth, ff.noseWidth);
+    mix(f.noseHump, fm.noseHump, ff.noseHump);
+    mix(f.noseTip, fm.noseTip, ff.noseTip);
+    mix(f.mouthWidth, fm.mouthWidth, ff.mouthWidth);
+    mix(f.lipFullness, fm.lipFullness, ff.lipFullness);
+    mix(f.cheek, fm.cheek, ff.cheek);
+    mix(f.crown, fm.crown, ff.crown);
+    mix(f.faceWidth, fm.faceWidth, ff.faceWidth);
+    mix(f.chinWidth, fm.chinWidth, ff.chinWidth);
+    mix(f.browRidge, fm.browRidge, ff.browRidge);
+    mix(f.earSize, fm.earSize, ff.earSize);
+    mix(f.jaw, fm.jaw, ff.jaw, 0.4f);  // jaw is strongly dimorphic: keep more of the child's own
+    f.freckles = (fm.freckles || ff.freckles) ? r.chance(0.6f) : r.chance(0.05f);
+    // Colour: skin blends, eyes follow one parent, hair blends unless a parent has
+    // gone grey (then the child keeps its own colour on that side).
+    Palette& p = g.palette;
+    mixV(p.skin, mo.palette.skin, fa.palette.skin);
+    p.iris = lerp(r.chance(0.5f) ? mo.palette.iris : fa.palette.iris, p.iris, 0.1f);
+    const Vec3 hm = mo.age > 42 ? p.hair : mo.palette.hair, hf = fa.age > 42 ? p.hair : fa.palette.hair;
+    mixV(p.hair, hm, hf, 0.2f);
+    p.hairTip = p.hair * 0.88f;
+    p.brow = luminance(p.hair) > 0.55f ? lerp(p.hair * 0.6f, Vec3{0.30f, 0.24f, 0.20f}, 0.5f) : p.hair * 0.8f;
+    p.horn = same->palette.horn;
+    // People features from the parent of that people (tusks, ears, horns...).
+    g.body.ear = same->body.ear;
+    mix(g.body.tuskSize, mo.body.tuskSize, fa.body.tuskSize, 0.3f);
+    mix(g.body.tuskCurve, mo.body.tuskCurve, fa.body.tuskCurve, 0.3f);
+    if (mo.body.spines > 0 || fa.body.spines > 0) {
+        const Genome& sp = mo.body.spines >= fa.body.spines ? mo : fa;
+        if (r.chance(0.6f)) g.body.spines = sp.body.spines, g.body.spineKind = sp.body.spineKind, g.body.spineSize = sp.body.spineSize;
+    }
+    if ((mo.body.tail || fa.body.tail) && !g.body.tail && r.chance(0.5f)) {
+        const Genome& tp = mo.body.tail ? mo : fa;
+        g.body.tail = true, g.body.tailType = tp.body.tailType, g.body.tailLength = tp.body.tailLength, g.body.tailFur = tp.body.tailFur;
+    }
+    if (mo.body.armPairs == 2 && fa.body.armPairs == 2) g.body.armPairs = 2;
+    return g;
+}
+
+Genome aged(const Genome& src, float newAge) {
+    Genome g = src;
+    const float a0 = src.age, a1 = std::max(newAge, 16.0f), d = a1 - a0;
+    g.age = a1;
+    g.ageGroup = groupOfAge(a1);
+    auto toward = [](float& v, float target, float k) { v = lerp(v, target, saturate(k)); };
+    // Grey hair: same curve as the sampler; greying only moves forward.
+    auto grey = [](float a) { return std::pow(saturate((a - 42.0f) / 30.0f), 1.2f) * 0.8f; };
+    const float g0 = grey(a0), g1 = grey(a1);
+    if (g1 > g0) {
+        const float k = (g1 - g0) / std::max(1e-3f, 1.0f - g0);
+        g.palette.hair = lerp(g.palette.hair, Vec3{0.74f, 0.73f, 0.71f}, k);
+        g.palette.hairTip = g.palette.hair * 0.88f;
+        g.palette.brow = lerp(g.palette.brow, Vec3{0.62f, 0.60f, 0.58f}, 0.7f * k);
+    }
+    FaceStyle& f = g.face;
+    f.ageLines = saturate((a1 - 34.0f) / 34.0f);
+    f.eyeBags = saturate(f.eyeBags + d / 45.0f);
+    if (a1 > 25.0f || d < 0) f.wrinkles = saturate(f.wrinkles + d / 60.0f);
+    if (a1 > 40.0f || d < 0) f.jowl = saturate(f.jowl + d / 80.0f);
+    f.roundness = saturate(f.roundness - d / 60.0f);
+    if (a1 > 55.0f) f.cheekHollow = saturate(f.cheekHollow + std::max(0.0f, d) / 90.0f);
+    BodyShape& b = g.body;
+    const float sagT = a1 >= 60 ? 0.75f : a1 >= 40 ? 0.30f : 0.05f;
+    const float hunchT = a1 >= 60 ? 0.6f : a1 >= 40 ? 0.08f : 0.0f;
+    toward(b.sag, sagT, std::fabs(d) / 20.0f);
+    toward(b.hunch, std::max(hunchT, d < 0 ? 0.0f : b.hunch), std::fabs(d) / 25.0f);
+    // Muscle and definition fade after ~45; height shrinks a little after ~60.
+    auto decline = [](float a) { return saturate((a - 45.0f) / 40.0f); };
+    const float dm = decline(a1) - decline(a0);
+    b.muscle = std::max(0.0f, b.muscle * (1.0f - 0.45f * dm));
+    b.anat.definition = saturate(b.anat.definition - 0.35f * dm);
+    b.belly = std::max(0.0f, b.belly + 0.12f * dm);
+    auto shrink = [](float a) { return 1.0f - 0.04f * saturate((a - 60.0f) / 30.0f); };
+    b.height *= shrink(a1) / shrink(a0);
+    return g;
+}
+
+// ---------------------------------------------------------------- traits & text
+
+PhysicalTraits physicalTraits(const Genome& g) {
+    const BodyShape& b = g.body;
+    PhysicalTraits t;
+    const float mp = b.height * b.height * b.height * (0.6f + 0.25f * b.muscle + 0.2f * b.belly + 0.3f * (b.boneMass - 1.0f)) *
+                     (b.shoulderWidth / 0.82f) * (b.centaur ? 2.5f : 1.0f);
+    t.size = saturate((std::log(std::max(mp, 0.05f)) - std::log(1.2f)) / (std::log(20.0f) - std::log(1.2f)));
+    t.vigor = g.age < 25 ? lerp(0.8f, 1.0f, saturate((g.age - 16.0f) / 9.0f)) : 1.0f - 0.8f * saturate((g.age - 30.0f) / 50.0f);
+    t.strength = saturate((0.22f + 0.5f * b.muscle * b.boneMass + 0.45f * (t.size - 0.4f)) * (0.55f + 0.45f * t.vigor));
+    t.agility = saturate((0.5f + 0.9f * (b.legRatio - 0.5f) + 0.25f * (b.anat.definition - 0.4f) - 0.55f * (t.size - 0.4f) -
+                          0.35f * b.belly + (b.digitigrade ? 0.1f : 0.0f)) * (0.55f + 0.45f * t.vigor));
+    t.endurance = saturate((0.35f + 0.3f * (b.boneMass - 1.0f) + 0.2f * b.muscle + 0.25f * t.size - 0.2f * b.belly) *
+                           (0.65f + 0.35f * t.vigor) + (g.species == Species::Undead || b.skeletal ? 0.25f : 0.0f));
+    t.presence = saturate(0.15f + 0.5f * t.size + 0.12f * float(b.tusks) * b.tuskSize * (1.0f + 0.3f * b.tuskCurve) +
+                          (b.horns ? 0.12f * b.hornSize : 0.0f) + (b.spines ? 0.1f * b.spineSize : 0.0f) +
+                          (g.face.scarType ? 0.06f : 0.0f) + 0.08f * g.face.browRidge + (b.armPairs == 2 ? 0.1f : 0.0f) +
+                          (g.face.glowEyes ? 0.06f : 0.0f));
+    return t;
+}
+
+std::string describe(const Genome& g) {
+    const BodyShape& b = g.body;
+    std::string s(toString(g.species));
+    if (!s.empty()) s[0] = char(s[0] - 'a' + 'A');
+    s += g.sex == Sex::Male ? " man" : " woman";
+    s += ", " + std::to_string(int(g.age + 0.5f));
+    static constexpr std::string_view kBuild[] = {"average", "lean", "heavy", "stocky", "lanky", "strong"};
+    s += ", " + std::string(kBuild[size_t(std::clamp(b.build, 0, 5))]) + " build";
+    char hb[16];
+    std::snprintf(hb, sizeof hb, ", %.2f m", double(b.height));
+    s += hb;
+    std::vector<std::string> fx;
+    if (b.centaur) fx.push_back("horse body");
+    if (b.skeletal) fx.push_back("bare bones");
+    if (b.armPairs == 2) fx.push_back("four arms");
+    if (b.tusks) {
+        std::string t = b.tusks == 2 ? "long tusks" : "short tusks";
+        if (b.tuskCurve > 0.35f) t += " hooked inwards";
+        else if (b.tuskCurve < -0.35f) t += " splayed outwards";
+        fx.push_back(t);
+    }
+    if (b.horns) fx.push_back("horns");
+    if (b.muzzle > 0.3f) fx.push_back(b.snout == 1 ? "wolf muzzle" : "bovine snout");
+    if (b.tail) {
+        static constexpr std::string_view kTail[] = {"tail", "heavy reptile tail", "whip tail with a spade", "bushy tail",
+                                                     "spiked club tail", "thin rat tail"};
+        fx.emplace_back(kTail[size_t(b.tailFur ? 3 : std::clamp(b.tailType, 0, 5))]);
+    }
+    if (b.spines) {
+        static constexpr std::string_view kSp[] = {"spiked dorsal ridge", "bony dorsal plates", "knobbed spine"};
+        fx.emplace_back(kSp[size_t(std::clamp(b.spineKind, 0, 2))]);
+    }
+    if (b.hooves) fx.push_back("hooves");
+    else if (b.digitigrade) fx.push_back("digitigrade legs");
+    if (b.claws) fx.push_back("claws");
+    if (g.face.glowEyes) fx.push_back("glowing eyes");
+    if (g.face.scarType) fx.push_back("scarred");
+    if (g.hair != HairStyle::Bald) fx.push_back(std::string(toString(g.hair)) + " hair");
+    else fx.push_back("bald");
+    if (g.facialHair != FacialHair::None && g.facialHair != FacialHair::Stubble) fx.emplace_back(toString(g.facialHair));
+    for (size_t i = 0; i < fx.size(); ++i) s += (i == 0 ? "; " : ", ") + fx[i];
+    return s;
+}
+
+}  // namespace cg

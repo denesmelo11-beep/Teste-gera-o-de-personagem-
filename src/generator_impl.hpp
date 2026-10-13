@@ -16,6 +16,10 @@ void applyDecay(Genome& g, float decay);
 SkinW chainWeights(std::initializer_list<std::pair<float, int>> keys, float t);  // weights along a bone chain
 Vec3 orthoFront(Vec3 d);                                                       // perpendicular to d, facing +z  // bones.cpp: the corpse's genome at a decay stage
 
+struct Part;
+struct Mat;
+void emitSpike(Part& p, Vec3 base, Vec3 dir, Vec3 sweep, float len, float wid, int kind, const SkinW& w, const Mat& m);
+
 struct ArmMarks {
     Vec3 clav, shoulder, elbow, wrist, handTip;
     Vec3 dir;
@@ -89,6 +93,7 @@ private:
     void applyFur();
     void buildFurTufts();
     void buildTail();
+    void buildSpines();  // dorsal spikes, plates or knobs along the back
     void buildColliders();
     void initHead();
     // head.cpp

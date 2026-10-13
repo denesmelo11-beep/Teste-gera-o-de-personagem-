@@ -32,6 +32,10 @@ Raylib 5.5 (opcional).
 | **Centauro** (torso humano sobre corpo equino, quatro pernas, trote) | **Ogro / colosso** (2,6–3 m, cabeça pequena, massa enorme) |
 | ![centauro](docs/folha_centaur.png) | ![ogro](docs/folha_ogre.png) |
 
+| Caudas, cristas dorsais e presas (`--anatomy`): réptil pesada, chicote com lâmina, maça com espinhos, rato; espinhos, placas e nós ao longo da coluna; presas abertas para fora vs. curvadas para dentro (mais imponentes) |
+|---|
+| ![caudas e presas](docs/caudas_presas.png) |
+
 | Morte e decomposição (`--decay`): vivo → recém-morto → apodrecendo → putrefato → quase ossada → ossada |
 |---|
 | ![decomposição](docs/decomposicao.png) |
@@ -98,9 +102,11 @@ chargen_viewer --faces rostos.png --seed 100            # rostos da população
 chargen_viewer --races povos.png --seed 5               # cada povo, homem e mulher lado a lado
 chargen_viewer --decay morte.png --seed 12              # estágios de decomposição até a ossada
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
+chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
+# CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1 (forçam as novas variáveis)
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -118,7 +124,34 @@ chargen_cli faces     --seed 301
 chargen_cli anim      --seed 304 --clip run --frames 6        # inclui física secundária
 chargen_cli export    --seed 42 --lod 0 --out heroi.glb
 chargen_cli stats     --count 300
+chargen_cli info      --seed 9 --species troll --sex male     # chave, descrição, métricas, traços, hitboxes
+chargen_cli info      --key CG1-1400000000001ZR1ZZZZY1000000000F
+chargen_cli family    --seed 7 --species dwarf --children 3   # pais, filhos herdando, o pai envelhecendo
+chargen_cli corpse    --days 30                               # linha do tempo da decomposição e regenerações
 ```
+
+## Para a engine do RPG (`chargen/engine.hpp`)
+
+Tudo o que o jogo precisa em volta do personagem gerado, sem depender do visualizador:
+
+| Função | Para quê |
+|---|---|
+| `encodeKey` / `decodeKey` / `generateFromKey` | chave de texto compacta (`CG1-…`, 32 caracteres, com checksum) com seed + opções + decomposição + LOD: salva um NPC em poucos bytes e o regenera idêntico |
+| `saveGenome` / `loadGenome` / `toBase32` | snapshot exato de um genoma editado (filhos, envelhecidos, sliders), com versão e checksum |
+| `measure` | altura, altura dos olhos (câmera), ombros, quadril, alcance do braço, perna, massa estimada pelo volume do corpo, velocidade de andar/correr (número de Froude) e cápsula do controlador |
+| `hitVolumes` / `raycast` / `overlapSphere` | cápsulas por osso ajustadas à malha, com zona (cabeça, pescoço, peito, abdômen, membros, mãos, pés, cauda), lado e multiplicador de dano; consultas de raio e esfera na pose animada |
+| `socketMatrix` | matriz das âncoras de equipamento (mãos, costas, cinto, cabeça) na pose atual |
+| `packMesh` | vértices de 32 bytes (contra 56) e índices de 16 bits: ~45% menos memória de GPU |
+| `decayFromTime` / `decayStage` / `decayBucket` / `needsRebuild` | horas desde a morte → decomposição (clima ajustável), estágios (fresco, apodrecendo, putrefato, ossada) e quando regenerar o cadáver (só quando muda visivelmente; ~9 regenerações até a ossada) |
+| `screenHeightPx` / `pickLod` | LOD pelo tamanho na tela, com histerese |
+| `planPopulation` | chaves de uma vila inteira com pesos de povos, arquétipos, sexo, idade e quatro braços |
+| `childOf` / `aged` | linhagens à Dwarf Fortress: filhos herdam pele, cabelo, cor e formato dos olhos, nariz, mandíbula, crânio, orelhas, altura e estrutura dos pais (com variação própria); envelhecer grisalha, enruga, cria bolsas e papada, curva, tira músculo e um pouco de altura |
+| `physicalTraits` | força, agilidade, resistência, porte, presença e vigor (0..1) lidos do corpo, para semear atributos coerentes com a aparência |
+| `describe` | uma linha para tooltips e logs: *"Troll man, 20, average build, 1.99 m; long tusks, spiked dorsal ridge, undercut hair"* |
+
+Variáveis novas no genoma (`BodyShape`): `tailType` (0 simples, 1 réptil pesada, 2 chicote com lâmina, 3 peluda,
+4 maça com espinhos, 5 de rato), `spines` / `spineKind` (espinhos, placas, nós) / `spineSize` (crista dorsal que
+continua pela cauda) e `tuskCurve` (-1 abertas para fora … +1 curvadas para dentro).
 
 Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|ogre|centaur|skeleton|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
@@ -317,13 +350,14 @@ vértices importar mais que a contagem de triângulos, gere com `--smooth` e fac
 ## Estrutura
 
 ```
-include/chargen/  math, rng, genome, character, animation, physics, image, render, gltf
+include/chargen/  math, rng, genome, character, animation, physics, image, render, gltf, engine
 src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
-                  generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, colisores)
+                  generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, caudas, cristas dorsais, colisores)
                   head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
                   bones.cpp (esqueleto real, decomposição, buracos na carne, esqueletos)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
+                  engine.cpp (chaves, métricas, hitboxes, sockets, malha compacta, decomposição, LOD, famílias)
 apps/             chargen_cli.cpp, viewer.cpp (Raylib)
 tests/tests.cpp   docs/ (imagens geradas pelo visualizador)
 ```

@@ -75,9 +75,48 @@ std::vector<float> mergeRings(std::vector<float> base, const std::vector<float>&
 }
 
 Vec3 orthoFront(Vec3 d) { return normalize(Vec3{0, 0, 1} - d * d.z, {1, 0, 0}); }
-namespace {
 
-}  // namespace
+// A horn-like growth rooted at `base` (sunk a little into the surface) pointing
+// along `dir`: kind 0 a faceted spike curving towards `sweep`, 1 a thin bony plate
+// (a diamond, flat across `fore`), 2 a short blunt knob.
+void emitSpike(Part& p, Vec3 base, Vec3 dir, Vec3 sweep, float len, float wid, int kind, const SkinW& w, const Mat& m) {
+    dir = normalize(dir, {0, 0, -1});
+    const Vec3 fore = normalize(sweep - dir * dot(sweep, dir), orthoFront(dir));
+    const Vec3 side = normalize(cross(dir, fore));
+    const Mat tipM{m.color * 0.72f, m.cls};
+    auto paint = [=](float t, float) { return t > 0.55f ? tipM : m; };
+    auto weight = [=](float, float, Vec3) { return w; };
+    if (kind == 2) {  // knob
+        Ellipsoid e;
+        e.center = base + dir * (0.35f * len);
+        e.axis = dir;
+        e.up = fore;
+        e.rAxis = 0.55f * len;
+        e.rU = 0.85f * wid;
+        e.rV = wid;
+        e.lat = 3;
+        e.lon = 6;
+        emitEllipsoid(p, e, weight, paint);
+        return;
+    }
+    Loft L;
+    const int n = kind == 1 ? 4 : 3;
+    const float ts[] = {0.0f, 0.38f, 0.72f};
+    for (int k = 0; k < 3; ++k) {
+        const float t = ts[k];
+        // The spike bends towards `sweep` as it rises; the plate stays straight.
+        const Vec3 c = base + dir * (len * (t - 0.18f)) + fore * (kind == 0 ? 0.35f * len * t * t : 0.0f);
+        const float rr = wid * (1.0f - 0.78f * t);
+        SuperRing sr = kind == 1 ? SuperRing{0.22f * wid * (1.0f - 0.5f * t), 0, rr * 1.15f, rr * 1.15f, 1.3f, 1.3f}
+                                 : SuperRing{rr, 0, rr, rr};
+        L.rings.push_back(makeRing(c, side, fore, sr, kind == 1 ? n : 5));
+        L.t.push_back(t);
+    }
+    L.poleEnd = true;
+    L.endPole = base + dir * (len * 0.82f) + fore * (kind == 0 ? 0.32f * len : 0.06f * len);
+    L.tEnd = 1;
+    emitLoft(p, L, weight, paint);
+}
 
 Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o), lod(lodSpec(o.lod)) {
     decay_ = std::max(o.decay, genome.body.skeletal ? 1.0f : 0.0f);
@@ -1443,11 +1482,16 @@ void Builder::buildTail() {
     Skeleton& sk = ch.skeleton;
     RigInfo& r = ch.rig;
     const float h = m.h;
+    // 0 plain, 1 heavy reptile, 2 whip with a spade, 3 bushy fur, 4 spiked club, 5 thin and ratty.
+    const int type = g.body.tailFur ? 3 : g.body.hooves ? 0 : std::clamp(g.body.tailType, 0, 5);
+    const float lenK[] = {1.0f, 1.05f, 1.25f, 1.0f, 0.95f, 1.15f};
+    const float radK[] = {1.25f, 2.7f, 0.6f, 1.0f, 1.6f, 0.5f};
     float y0 = m.crotchY + 0.22f * m.torsoLen;
     float z0 = torsoRing(torsoT(y0)).backZ(0) - gluteDepth(0.22f) + 0.02f * h;
     if (g.body.centaur) y0 = m.barrelY + 0.80f * m.barrelHalfH, z0 = m.barrelBack + 0.05f * h;
-    const float len = g.body.tailLength * (g.body.centaur ? m.barrelY + 0.4f * m.barrelHalfH : m.hipJointY) * 0.95f;
+    const float len = lenK[type] * g.body.tailLength * (g.body.centaur ? m.barrelY + 0.4f * m.barrelHalfH : m.hipJointY) * 0.95f;
     const float r0 = 0.11f * h * (1 + 0.3f * g.body.muscle) * (g.body.centaur ? 1.6f : 1.0f);
+    const float rt = r0 * radK[type];
     constexpr int kPts = 9;
     std::vector<Vec3> pts;
     Vec3 p{0, y0, z0};
@@ -1455,7 +1499,16 @@ void Builder::buildTail() {
     for (int i = 0; i < kPts; ++i) {
         pts.push_back(p);
         float u = float(i) / (kPts - 1);
-        p += normalize(g.body.tailFur ? Vec3{0, lerp(-1.6f, -0.9f, u), -0.55f} : Vec3{0, lerp(-0.8f, 0.3f, u), -1.0f}) * step;
+        Vec3 d;
+        switch (type) {
+            case 1: d = {0, lerp(-1.5f, 0.05f, u), -1.0f}; break;                            // heavy, carried low
+            case 2: d = {0.30f * std::sin(u * 4.0f), lerp(-1.6f, 1.2f, u), -1.0f}; break;     // whip curling up
+            case 3: d = {0, lerp(-1.6f, -0.9f, u), -0.55f}; break;                            // bushy, hanging
+            case 5: d = {0.22f * std::sin(u * 5.0f), lerp(-1.8f, -0.4f, u), -0.8f}; break;   // limp rat tail
+            case 4: d = {0, lerp(-1.3f, 0.2f, u), -1.0f}; break;
+            default: d = {0, lerp(-1.2f, 0.3f, u), -1.0f}; break;
+        }
+        p += normalize(d) * step;
     }
     const int nb = 4;
     int parent = r.hips;
@@ -1464,6 +1517,17 @@ void Builder::buildTail() {
         r.tail.push_back(parent);
     }
     std::vector<int> bones = r.tail;
+    const int hips = r.hips;
+    auto tw = [=](float t) {
+        float f = t * nb;
+        int i0 = std::clamp(int(f), 0, nb - 1);
+        if (i0 == nb - 1) return one(bones[size_t(i0)]);
+        if (t < 0.05f) return blend(hips, bones[0], t / 0.05f);
+        return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.3f, 1.0f, f - i0));
+    };
+    auto dirAt = [&](int i) {
+        return normalize(i + 1 < kPts ? pts[size_t(i + 1)] - pts[size_t(i)] : pts[size_t(i)] - pts[size_t(i - 1)]);
+    };
     if (bonesOnly_) {  // a chain of shrinking vertebrae
         Part& vp = newPart();
         const Mat bone{{0.80f, 0.76f, 0.63f}, MaterialClass::Horn};
@@ -1474,7 +1538,7 @@ void Builder::buildTail() {
             e.axis = normalize(pts[size_t(i + 1)] - pts[size_t(i)]);
             e.up = {0, 1, 0};
             e.rAxis = 0.4f * step;
-            e.rU = e.rV = 0.35f * r0 * (1.0f - 0.6f * u);
+            e.rU = e.rV = 0.35f * rt * (1.0f - 0.6f * u);
             e.lat = 3;
             e.lon = 5;
             const int bi = r.tail[size_t(std::min(int(u * nb), nb - 1))];
@@ -1484,46 +1548,123 @@ void Builder::buildTail() {
     Loft L;
     for (int i = 0; i < kPts; ++i) {
         float u = float(i) / (kPts - 1);
-        Vec3 d = normalize(i + 1 < kPts ? pts[size_t(i + 1)] - pts[size_t(i)] : pts[size_t(i)] - pts[size_t(i - 1)]);
+        Vec3 d = dirAt(i);
         Vec3 v = normalize(cross(d, {1, 0, 0}), {0, 1, 0});
         Vec3 uu = cross(d, v);
         // Furred tails are bushy (fullest past the middle); bovine tails end in a tuft.
-        float rad = g.body.tailFur ? r0 * (0.75f + 1.2f * bump((u - 0.55f) / 0.55f)) * (1.0f - 0.5f * smoothstep(0.85f, 1.0f, u))
-                  : g.body.hooves ? r0 * (1.0f - 0.85f * u) + 1.4f * r0 * bump((u - 0.92f) / 0.10f)
-                                  : r0 * (1.0f - 0.8f * u);
-        L.rings.push_back(makeRing(pts[size_t(i)], uu, v, SuperRing{rad, 0, rad, rad}, lod.limbSeg));
+        float rad;
+        switch (type) {
+            case 1: rad = rt * (1.0f - 0.88f * std::pow(u, 0.75f)); break;
+            case 2: rad = rt * (1.0f - 0.55f * u); break;
+            case 3: rad = r0 * (0.75f + 1.2f * bump((u - 0.55f) / 0.55f)) * (1.0f - 0.5f * smoothstep(0.85f, 1.0f, u)); break;
+            case 4: rad = rt * (1.0f - 0.55f * u); break;
+            case 5: rad = rt * (1.0f - 0.78f * u); break;
+            default:
+                rad = g.body.hooves ? r0 * (1.0f - 0.85f * u) + 1.4f * r0 * bump((u - 0.92f) / 0.10f) : r0 * (1.0f - 0.8f * u);
+        }
+        L.rings.push_back(makeRing(pts[size_t(i)], uu, v, SuperRing{rad, 0, rad, rad}, type == 2 || type == 5 ? 5 : lod.limbSeg));
         L.t.push_back(u);
     }
     L.poleStart = true;
     L.startPole = pts[0] + Vec3{0, 0, 0.05f * h};
     L.poleEnd = true;
-    L.endPole = pts.back() + normalize(pts.back() - pts[pts.size() - 2]) * (0.6f * r0);
+    L.endPole = pts.back() + dirAt(kPts - 1) * (0.6f * rt);
     L.tEnd = 1;
-    int hips = r.hips;
     Vec3 base = g.palette.skin;
-    const bool fur = g.body.tailFur, tuft = g.body.hooves && !fur;
+    const bool fur = type == 3, tuft = g.body.hooves && !fur;
     const Vec3 hairC = g.palette.hair;
-    emitLoft(newPart(), L, [=](float t, float, Vec3) {
-        float f = t * nb;
-        int i0 = std::clamp(int(f), 0, nb - 1);
-        if (i0 == nb - 1) return one(bones[size_t(i0)]);
-        if (t < 0.05f) return blend(hips, bones[0], t / 0.05f);
-        return blend(bones[size_t(i0)], bones[size_t(i0 + 1)], smoothstep(0.3f, 1.0f, f - i0));
-    }, [=](float t, float) {
+    const float darken = type == 1 ? 0.30f : 0.15f;
+    emitLoft(newPart(), L, [=](float t, float, Vec3) { return tw(t); }, [=](float t, float) {
         if (fur) return Mat{lerp(hairC, base, 0.3f) * (1.0f - 0.2f * t), MaterialClass::Hair};
         if (tuft && t > 0.8f) return Mat{hairC, MaterialClass::Hair};
-        return Mat{base * (1.0f - 0.15f * t), MaterialClass::Skin};
+        return Mat{base * (1.0f - darken * t), MaterialClass::Skin};
     });
+    }
+    // Tips and spines: horn, or bone once the flesh is gone.
+    const Vec3 hornC = bonesOnly_ ? Vec3{0.80f, 0.76f, 0.63f} : g.palette.horn;
+    const Mat hornM{hornC, MaterialClass::Horn};
+    const Vec3 tip = pts.back(), tipD = dirAt(kPts - 1);
+    if (type == 2 && !bonesOnly_) {  // spade: a flat diamond blade
+        emitSpike(newPart(), tip - tipD * (0.3f * rt), tipD, {0, 1, 0}, 3.4f * rt, 2.6f * rt, 1, one(bones.back()),
+                  Mat{g.palette.skin * 0.8f, MaterialClass::Skin});
+    }
+    if (type == 4) {  // club: a bony mace head ringed with spikes
+        Part& cp = newPart();
+        const float R = 1.35f * rt;
+        const Vec3 c = tip + tipD * (0.4f * R);
+        Ellipsoid e;
+        e.center = c;
+        e.axis = tipD;
+        e.up = {0, 1, 0};
+        e.rAxis = 1.15f * R;
+        e.rU = e.rV = R;
+        e.lat = 4;
+        e.lon = 7;
+        const int bb = bones.back();
+        emitEllipsoid(cp, e, [=](float, float, Vec3) { return one(bb); }, [=](float, float) { return hornM; });
+        const Vec3 up = normalize(Vec3{0, 1, 0} - tipD * tipD.y, {0, 1, 0}), sd = normalize(cross(tipD, up));
+        for (int k = 0; k < 6; ++k) {
+            const float a = 2 * kPi * k / 6 + 0.3f;
+            const Vec3 n = normalize(up * std::cos(a) + sd * std::sin(a));
+            emitSpike(cp, c + n * (0.8f * R), n, tipD, 1.3f * R, 0.42f * R, 0, one(bb), hornM);
+        }
+        emitSpike(cp, c + tipD * (0.9f * R), tipD, {0, 1, 0}, 1.1f * R, 0.40f * R, 0, one(bb), hornM);
+    }
+    if (g.body.spines > 0 && type != 3) {  // the dorsal ridge carries on down the tail, shrinking
+        Part& sp = newPart();
+        const int n = std::max(2, g.body.spines / 2 + 1);
+        for (int k = 0; k < n; ++k) {
+            const float u = 0.12f + 0.70f * float(k) / std::max(1, n - 1);
+            const float f = u * (kPts - 1);
+            const int i = std::min(int(f), kPts - 2);
+            const Vec3 c = lerp(pts[size_t(i)], pts[size_t(i + 1)], f - i);
+            const Vec3 d = dirAt(i);
+            const Vec3 up = normalize(Vec3{0, 1, 0} - d * d.y, {0, 1, 0});
+            const float rad = std::max(rt * (1.0f - 0.7f * u), 0.25f * r0);
+            const float sz = g.body.spineSize * (1.0f - 0.55f * u) * clamp(radK[type] / 1.3f, 0.45f, 1.1f);
+            emitSpike(sp, c + up * (0.8f * rad), normalize(up - d * 0.2f), d, 0.40f * h * sz, 0.10f * h * sz, g.body.spineKind, tw(u),
+                      hornM);
+        }
     }
     SpringChain sc;
     sc.name = "tail";
     sc.bones = bones;
     sc.tail = pts.back() - sk.bones[size_t(bones.back())].restWorld;
-    sc.stiffness = 0.9f;
+    sc.stiffness = type == 1 || type == 4 ? 1.5f : type == 2 || type == 5 ? 0.6f : 0.9f;
     sc.drag = 0.35f;
-    sc.gravity = 0.2f;
-    sc.hitRadius = r0 * 0.6f;
+    sc.gravity = type == 1 || type == 4 ? 0.35f : 0.2f;
+    sc.hitRadius = rt * 0.6f;
     ch.physics.chains.push_back(sc);
+}
+
+// Dorsal ridge: spikes, plates or knobs along the back midline, biggest between the
+// shoulder blades, shrinking towards the neck and the small of the back.
+void Builder::buildSpines() {
+    if (g.body.spines <= 0) return;
+    const float h = m.h;
+    const RigInfo& r = ch.rig;
+    const int n = g.body.spines;
+    const Vec3 hornC = bonesOnly_ ? Vec3{0.80f, 0.76f, 0.63f} : g.palette.horn;
+    Part& p = newPart();
+    for (int k = 0; k < n; ++k) {
+        const float a = float(k) / std::max(1, n - 1);
+        const float t = lerp(0.30f, 0.97f, a);
+        const Vec3 q = torsoPoint(t, 1.5f * kPi);
+        const float prof = 0.55f + 0.45f * bump((a - 0.62f) / 0.62f);
+        const float sz = g.body.spineSize * prof * (g.body.centaur ? 0.8f : 1.0f);
+        const float len = (g.body.spineKind == 2 ? 0.24f : g.body.spineKind == 1 ? 0.42f : 0.55f) * h * sz;
+        const float wid = (g.body.spineKind == 1 ? 0.17f : g.body.spineKind == 2 ? 0.12f : 0.11f) * h * sz;
+        // Spikes rake back towards the hips; near the neck they lean up and back.
+        const Vec3 dir = normalize(Vec3{0, lerp(-0.45f, 0.25f, a), -1.0f});
+        const Vec3 sweep = Vec3{0, -1, 0};
+        const SkinW w = chainWeights({{0.12f, r.hips}, {0.40f, r.spine}, {0.66f, r.chest}, {1.0f, r.chest}, {1.16f, r.neck}}, t);
+        const float shade = 1.0f - 0.12f * float(k % 2);
+        // Plates grow from hide (darker, skin-toned at the root) and stagger left and right.
+        const bool plate = g.body.spineKind == 1;
+        const Vec3 col = plate && !bonesOnly_ ? lerp(g.palette.skin, hornC, 0.55f) * 0.8f : hornC;
+        const Vec3 at = q + Vec3{plate ? (k % 2 ? 0.035f : -0.035f) * h : 0.0f, 0, 0.01f * h};
+        emitSpike(p, at, dir, sweep, len, wid, g.body.spineKind, w, Mat{col * shade, MaterialClass::Horn});
+    }
 }
 
 // Capsules/spheres the hair and tails collide with; also exported for engines.
@@ -1797,6 +1938,7 @@ Character Builder::build() {
     if (bonesOnly_) {  // bare bones: the same rig, nothing but the skeleton (and horns, tusks, hooves' bones)
         buildSkeleton();
         buildTail();
+        buildSpines();
         buildHorns();
         buildTusks();
         buildColliders();
@@ -1813,6 +1955,7 @@ Character Builder::build() {
     buildLegs();
     buildFeet();
     buildTail();
+    buildSpines();
     buildEars();
     buildHorns();
     buildTusks();

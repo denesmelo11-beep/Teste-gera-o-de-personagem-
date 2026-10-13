@@ -197,6 +197,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     b.ear = EarShape{};
     b.horns = 0;
     b.tail = false;
+    b.tailType = 0;
+    b.spines = 0;
     b.armPairs = 1;
     f.pupil = PupilStyle::Round;
     f.fang = false;
@@ -258,7 +260,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.underbite = fem ? 0.55f : 0.95f; f.mouthStyle = 2; f.headTop = -0.3f; f.wrinkles = fem ? 0.1f : 0.35f;
             f.sclera = Vec3{0.88f, 0.80f, 0.62f}; f.browTilt = -0.3f; f.restLid = 0.2f; f.irisSize = 0.85f; f.eyeShape = 6;
             f.browThick = 1.0f; f.lashWeight = 0.15f;
-            b.tusks = 1; b.tuskSize = fem ? 0.55f : 1.0f;
+            b.tusks = 1; b.tuskSize = fem ? 0.55f : 1.0f; b.tuskCurve = r.range(-0.3f, 1.0f);
+            if (!fem && r.chance(0.15f)) { b.spines = 6; b.spineKind = 2; b.spineSize = 0.7f; }  // a ridge of bony knobs
             b.ear = {0.20f, 0.07f, 0.35f, 0.40f, 0.0f};
             skinTo(fem ? pickC({{0.48f, 0.60f, 0.32f}, {0.40f, 0.52f, 0.28f}, {0.55f, 0.60f, 0.34f}})
                        : pickC({{0.45f, 0.58f, 0.30f}, {0.38f, 0.48f, 0.26f}, {0.52f, 0.52f, 0.30f}, {0.40f, 0.36f, 0.26f}, {0.30f, 0.42f, 0.24f}}));
@@ -279,7 +282,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.jaw = -0.2f; f.chin = 0.4f; f.eyeShape = 3; f.eyeDepth = 0.6f; f.browRidge = 0.8f; f.mouthWidth = 1.4f;
             f.underbite = 0.6f; f.mouthStyle = 2; f.chinPoint = 0.35f; f.sclera = Vec3{0.90f, 0.84f, 0.55f}; f.faceWidth = -0.4f;
             f.eyeTilt = 0.12f; f.cheekHollow = 0.6f; f.wrinkles = 0.25f;
-            b.tusks = 2; b.tuskSize = fem ? 0.75f : 1.3f;
+            b.tusks = 2; b.tuskSize = fem ? 0.75f : 1.3f; b.tuskCurve = r.range(-0.2f, 1.0f);
+            if (r.chance(0.25f)) { b.spines = r.rangeInt(5, 8); b.spineKind = 0; b.spineSize = r.range(0.6f, 0.9f); }
             b.digitigrade = false;
             b.ear = {0.55f, 0.09f, 0.05f, 0.30f, 0.15f};
             skinTo(pickC({{0.35f, 0.55f, 0.70f}, {0.30f, 0.60f, 0.58f}, {0.42f, 0.62f, 0.45f}, {0.55f, 0.45f, 0.70f}}));
@@ -357,7 +361,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             if (fem) widths(1.0f, 1.0f, 0.98f, 1.06f, 1.0f);
             else widths(1.30f, 1.30f, 1.15f, 1.05f, 1.28f), b.muscle = saturate(b.muscle + 0.3f);
             b.horns = 2; b.hornKind = 0; b.hornSize = fem ? 0.8f : 1.1f;
-            b.tail = true; b.tailLength = 0.8f; b.hooves = true; b.digitigrade = true;
+            b.tail = true; b.tailLength = 0.8f; b.hooves = true; b.digitigrade = true; b.tailType = 0;
             glow({0.70f, 0.85f, 1.0f});
             b.ear = {0.30f, 0.085f, 0.30f, 0.45f, 0.0f};
             skinTo(pickC({{0.45f, 0.55f, 0.85f}, {0.68f, 0.60f, 0.88f}, {0.52f, 0.42f, 0.72f}, {0.70f, 0.78f, 0.95f}}));
@@ -423,7 +427,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.handSize *= 1.35f; b.footSize *= 1.15f; b.neckThick *= 1.4f; b.neckLength *= 0.6f;
             b.muscle = saturate(b.muscle + 0.35f); b.hunch = std::max(b.hunch, fem ? 0.9f : 1.4f); b.belly = 0.0f;
             b.bust *= 0.55f; b.butt *= 0.7f;
-            b.digitigrade = true; b.claws = true; b.tail = true; b.tailFur = true; b.tailLength = 0.65f; b.furPattern = 2;
+            b.digitigrade = true; b.claws = true; b.tail = true; b.tailFur = true; b.tailType = 3; b.tailLength = 0.65f; b.furPattern = 2;
             b.muzzle = fem ? 0.85f : 1.0f; b.snout = 1;
             b.ear = {0.36f, 0.15f, 1.15f, 0.30f, 0.0f, 0.80f, 0.70f};
             glow({1.0f, 0.78f, 0.25f});
@@ -457,7 +461,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             f.noseWidth = 1.7f; f.noseProj = 0.9f; f.noseLength = 0.9f; f.noseTip = 0.3f; f.mouthWidth = 1.3f; f.cheekHollow = 0.0f;
             f.jowl = 0.6f; f.crown = -0.6f; f.headTop = -0.7f; f.underbite = 0.85f; f.mouthStyle = 2; f.wrinkles = 0.5f;
             f.sclera = Vec3{0.86f, 0.80f, 0.66f}; f.irisSize = 0.75f;
-            b.tusks = 1; b.tuskSize = fem ? 0.6f : 1.1f;
+            b.tusks = 1; b.tuskSize = fem ? 0.6f : 1.1f; b.tuskCurve = r.range(0.0f, 1.0f);
+            if (r.chance(0.3f)) { b.spines = 7; b.spineKind = 1; b.spineSize = 1.1f; }
             b.ear = {0.13f, 0.09f, 0.10f, 0.25f, 0.0f};
             skinTo(pickC({{0.55f, 0.50f, 0.42f}, {0.50f, 0.42f, 0.38f}, {0.58f, 0.36f, 0.30f}, {0.46f, 0.50f, 0.44f}, {0.44f, 0.44f, 0.50f}}));
             pal.iris = pickC({{0.85f, 0.55f, 0.10f}, {0.30f, 0.22f, 0.15f}, {0.75f, 0.20f, 0.10f}});
@@ -472,7 +477,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.headsTall = r.range(7.8f, 8.1f);
             b.legRatio = 0.56f;  // the human hip line rides at the horse's withers
             widths(fem ? 1.05f : 1.15f, fem ? 1.05f : 1.12f, 1.05f, 1.0f, 1.10f);
-            b.centaur = true; b.hooves = true; b.tail = true; b.tailFur = true; b.tailLength = 0.9f; b.belly = 0.0f;
+            b.centaur = true; b.hooves = true; b.tail = true; b.tailFur = true; b.tailType = 3; b.tailLength = 0.9f; b.belly = 0.0f;
             b.muscle = saturate(b.muscle + 0.2f);
             f.cheek = std::max(f.cheek, 0.3f);
             b.ear = {0.20f, 0.08f, 0.35f, 0.40f, 0.0f};
@@ -734,6 +739,13 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     b.armPairs = monster && rx.chance(0.5f) ? 2 : 1;
     b.tail = monster ? rx.chance(0.6f) : (fantasy && rx.chance(0.2f));
     b.tailLength = rx.range(0.7f, 1.2f);
+    if (b.tail) b.tailType = rx.weighted({1.0f, monster ? 2.0f : 0.8f, 1.2f, 0.6f, monster ? 1.2f : 0.2f, 0.6f});
+    // Dorsal spines and plates: monsters often, other fantasy blood sometimes.
+    if (monster ? rx.chance(0.55f) : (fantasy && rx.chance(0.18f))) {
+        b.spines = rx.rangeInt(5, 9);
+        b.spineKind = rx.weighted({1.5f, 1.0f, 0.8f});
+        b.spineSize = rx.range(0.8f, 1.3f) * (monster ? 1.2f : 1.0f);
+    }
     b.horns = (monster ? rx.chance(0.7f) : (fantasy && rx.chance(0.35f))) ? 2 : 0;
     b.hornSize = rx.range(0.7f, 1.3f) * (monster ? 1.3f : 1.0f);
     b.ears = (fantasy ? rx.chance(0.6f) : rx.chance(0.10f)) ? EarStyle::Elf : EarStyle::Human;

@@ -8,6 +8,7 @@
 
 #include "chargen/animation.hpp"
 #include "chargen/character.hpp"
+#include "chargen/engine.hpp"
 #include "chargen/genome.hpp"
 #include "chargen/gltf.hpp"
 #include "chargen/physics.hpp"
@@ -80,6 +81,9 @@ void usage() {
         "  portraits --seed N --count K [--out portraits.png]      (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
+        "  info    --seed N | --key CG1-...                         (chave, descricao, metricas, tracos, hitboxes)\n"
+        "  family  --seed N [--children 4] [--species S]           (pais, filhos herdando, e o pai envelhecendo)\n"
+        "  corpse  --seed N [--days 30]                            (linha do tempo da decomposicao)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
         "anatomia: --arms 2|4 (dois pares de bracos)\n"
         "morte: --decay 0..1 (0 vivo, 0.15 recem-morto, 0.4 apodrecendo, 0.7 putrefato, 1 ossada)\n"
@@ -293,6 +297,80 @@ int cmdStats(const Args& a) {
     return 0;
 }
 
+void printTraits(const PhysicalTraits& t) {
+    std::printf("  tracos: forca %.2f  agilidade %.2f  resistencia %.2f  porte %.2f  presenca %.2f  vigor %.2f\n", t.strength,
+                t.agility, t.endurance, t.size, t.presence, t.vigor);
+}
+
+int cmdInfo(const Args& a) {
+    CharacterKey k;
+    if (a.flag("key")) {
+        auto dk = decodeKey(a.get("key", ""));
+        if (!dk) return std::fprintf(stderr, "chave invalida\n"), 1;
+        k = *dk;
+    } else {
+        k.seed = uint64_t(a.num("seed", 1));
+        k.options = genomeOpts(a);
+        k.decay = a.flt("decay", 0.0f);
+        k.lod = int(a.num("lod", 0));
+    }
+    Character c = generateFromKey(k);
+    const BodyMetrics m = measure(c);
+    std::printf("%s\n  chave: %s\n", describe(c.genome).c_str(), encodeKey(k).c_str());
+    std::printf("  altura %.2f m, olhos %.2f m, ombros %.2f m (vao %.2f m), quadril %.2f m, alcance %.2f m\n", m.height,
+                m.eyeHeight, m.shoulderHeight, m.shoulderSpan, m.hipHeight, m.reach);
+    std::printf("  massa ~%.0f kg, andar %.2f m/s, correr %.2f m/s, capsula r %.2f h %.2f, %d bracos%s\n", m.mass, m.walkSpeed,
+                m.runSpeed, m.capsuleRadius, m.capsuleHeight, m.arms, m.quadruped ? ", quadrupede" : "");
+    printTraits(physicalTraits(c.genome));
+    const auto vols = hitVolumes(c);
+    std::printf("  hitboxes (%zu):", vols.size());
+    for (const HitVolume& v : vols)
+        std::printf(" %s%s", std::string(toString(v.zone)).c_str(), v.side > 0 ? ".L" : v.side < 0 ? ".R" : "");
+    const PackedMesh pm = packMesh(c.mesh);
+    std::printf("\n  malha: %zu vertices, %zu tris; empacotada %.1f KB (%s indices), original %.1f KB\n", c.mesh.vertices.size(),
+                c.mesh.triangleCount(), (pm.vertices.size() * sizeof(PackedVertex) + pm.indices16.size() * 2 + pm.indices32.size() * 4) / 1024.0,
+                pm.wide() ? "32-bit" : "16-bit", (c.mesh.vertices.size() * sizeof(Vertex) + c.mesh.indices.size() * 4) / 1024.0);
+    return 0;
+}
+
+int cmdFamily(const Args& a) {
+    const uint64_t seed = uint64_t(a.num("seed", 1));
+    GenomeOptions o = genomeOpts(a);
+    o.age = AgeGroup::Adult;
+    o.sex = Sex::Female;
+    const Genome mo = randomGenome(seed, o);
+    o.sex = Sex::Male;
+    if (a.flag("father")) o.species = speciesFromString(a.get("father", ""));
+    const Genome fa = randomGenome(seed + 1000, o);
+    std::printf("mae: %s\npai: %s\n", describe(mo).c_str(), describe(fa).c_str());
+    for (int i = 0; i < int(a.num("children", 4)); ++i) {
+        const Genome ch = childOf(mo, fa, seed * 31 + uint64_t(i));
+        std::printf("  filho %d: %s\n", i + 1, describe(ch).c_str());
+        printTraits(physicalTraits(ch));
+    }
+    for (float age : {50.0f, 65.0f, 80.0f}) {
+        const Genome old = aged(fa, age);
+        std::printf("pai aos %.0f: %s\n", age, describe(old).c_str());
+        printTraits(physicalTraits(old));
+    }
+    return 0;
+}
+
+int cmdCorpse(const Args& a) {
+    const float days = a.flt("days", 30.0f);
+    float built = 0.0f;
+    int rebuilds = 0;
+    for (float d : {0.0f, 0.25f, 1.0f, 2.0f, 4.0f, 7.0f, 10.0f, 14.0f, 21.0f, 30.0f, 45.0f}) {
+        const float dec = decayFromTime(d * 24.0f, days);
+        const bool rb = needsRebuild(built, dec);
+        if (rb) built = decayBucket(dec), ++rebuilds;
+        std::printf("dia %5.2f: decay %.2f  %-10s%s\n", d, dec, std::string(toString(decayStage(dec))).c_str(),
+                    rb ? "  (regerar)" : "");
+    }
+    std::printf("%d regeneracoes\n", rebuilds);
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -305,6 +383,9 @@ int main(int argc, char** argv) {
     if (a.cmd == "sheet") return cmdSheet(a);
     if (a.cmd == "portraits") return cmdPortraits(a);
     if (a.cmd == "stats") return cmdStats(a);
+    if (a.cmd == "info") return cmdInfo(a);
+    if (a.cmd == "family") return cmdFamily(a);
+    if (a.cmd == "corpse") return cmdCorpse(a);
     usage();
     return a.cmd.empty() ? 0 : 1;
 }
