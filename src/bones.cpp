@@ -53,7 +53,8 @@ void applyDecay(Genome& g, float d) {
     f.restLid = std::max(f.restLid, 0.25f * smoothstep(0.0f, 0.2f, d));
     // Bared bones painted into the flesh while it still covers the body; past ~0.55 the
     // flesh tears open on the real skeleton instead.
-    b.bones = d < 0.35f ? b.bones : d < 0.45f ? (b.bones | 1 | 8) : d < 0.55f ? 15 : 0;
+    // From ~0.3 the flesh tears onto the real skeleton (Builder::addDecayHoles); no painted bones.
+    b.bones = d < 0.3f ? b.bones : 0;
 }
 
 // The skeleton, built from the body's own landmarks: it sits inside the flesh at any
@@ -424,7 +425,8 @@ void Builder::buildBoneSkeleton() {
 // Torn flesh: round holes through the skin onto the skeleton, growing with decay, each
 // backed by a dark cavity floor behind the bones.
 void Builder::addDecayHoles() {
-    const float h = m.h, k = g.species == Species::Undead && decay_ < 0.55f ? 0.0f : smoothstep(0.55f, 0.95f, decay_);
+    // k: 0 small first tears (decay 0.3, undead) .. 1 the flesh mostly gone.
+    const float h = m.h, k = g.species == Species::Undead && decay_ < 0.3f ? 0.0f : smoothstep(0.3f, 0.95f, decay_);
     const float side = (g.seed % 2 == 0) ? 1.0f : -1.0f;
     const float R0 = h * lerp(0.13f, 0.25f, k);
     const float T = g.body.thigh * h, Cf = g.body.calf * h;

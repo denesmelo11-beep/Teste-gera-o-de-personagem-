@@ -204,7 +204,7 @@ void Builder::computeMarks() {
             } else {
                 // A second shoulder girdle on the lower ribcage: a little smaller, angled
                 // forward and out, so both pairs can work without colliding.
-                float y = m.crotchY + 0.555f * m.torsoLen;
+                float y = m.crotchY + 0.50f * m.torsoLen;
                 a.shoulder = {a.side * 0.80f * C, y, 0.03f * h};
                 a.clav = {a.side * 0.30f * C, y + 0.06f * h, 0.06f * h};
                 angle = 40.0f;
@@ -704,12 +704,12 @@ void Builder::buildArms() {
             const bool four = m.arms.size() > 2;
             int i0, i1;
             if (a.pair == 0) {
-                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), four ? 0.70f : 0.52f, 0.80f));
+                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), four ? 0.63f : 0.52f, 0.80f));
                 i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
                 upperArmI0_ = i0;
             } else {
-                i1 = std::min(nearest(clamp(torsoT(a.shoulder.y + 0.95f * Ra), 0.55f, 0.66f)), upperArmI0_ - 1);
-                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.2f * Ra), 0.36f, 0.52f));
+                i1 = std::min(nearest(clamp(torsoT(a.shoulder.y + 0.95f * Ra), 0.52f, 0.60f)), upperArmI0_ - 1);
+                i0 = std::min(nearest(clamp(torsoT(a.shoulder.y - 1.2f * Ra), 0.32f, 0.46f)), i1 - 2);
             }
             if (lod.sparseRings) { if (i1 <= i0) i1 = i0 + 1; }
             else i0 = std::max(1, std::min(i0, i1 - 3));  // at least three rings tall: no pinched armpit
@@ -861,7 +861,7 @@ void Builder::buildArms() {
                 if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) {
                     ++folds;
                     if (std::getenv("CHARGEN_CHECK")[0] == '2')
-                        std::fprintf(stderr, "  fold t=%.3f x/h=%.2f z/h=%.2f\n", torsoT(ctr.y), ctr.x / m.h, ctr.z / m.h);
+                        std::fprintf(stderr, "  fold t=%.3f x/h=%.2f z/h=%.2f tris %zu %zu verts %u\n", torsoT(ctr.y), ctr.x / m.h, ctr.z / m.h, e.second[0], e.second[1], tr.a);
                 }
             }
             std::fprintf(stderr, "CHECK open=%d folds=%d\n", open, folds);
@@ -1822,7 +1822,7 @@ Character Builder::build() {
     buildBones();
     applyFur();
     buildFurTufts();
-    if (decay_ >= 0.55f || g.species == Species::Undead) {  // torn open onto the real skeleton
+    if (decay_ >= 0.3f || g.species == Species::Undead) {  // torn open onto the real skeleton
         buildBoneSkeleton();
         addDecayHoles();
         buildCavityShells();

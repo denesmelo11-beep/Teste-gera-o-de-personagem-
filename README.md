@@ -44,6 +44,10 @@ Raylib 5.5 (opcional).
 |---|
 | ![goblins](docs/goblins.png) |
 
+| Gnomos: olhos afiados (não de boneca), nariz longo e fino, pés de galinha |
+|---|
+| ![gnomos](docs/gnomos.png) |
+
 | Esqueleto (povo `skeleton`, olhos em brasa) | Esqueleto correndo (mesmo rig, todas as animações) |
 |---|---|
 | ![esqueleto](docs/folha_esqueleto.png) | ![corrida](docs/esqueleto_corrida.png) |
@@ -197,7 +201,7 @@ No jogo os personagens apodrecem e viram ossada ao morrer. `GenOptions::decay` (
 tempo passa (mesma semente, mesmo rig, mesmas animações):
 - **0,15 recém-morto**: palidez acinzentada, olhos leitosos, pálpebras caídas.
 - **0,4 apodrecendo**: carne manchada (hematomas, putrefação esverdeada), definhamento sobre os
-  ossos, costelas e mandíbula aparecendo pela pele, cabelo desbotado.
+  ossos, os primeiros rasgos pequenos já mostrando o esqueleto real, cabelo desbotado.
 - **0,7 putrefato**: couro escuro, órbitas vazias, e a carne se rasga em buracos recortados
   exatamente (campos de recorte) mostrando o **esqueleto real** dentro: costelas, coluna, fêmur,
   úmero, rádio e ulna; atrás dos ossos, a parede interna escura da cavidade.

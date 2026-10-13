@@ -211,8 +211,9 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.chestDepth *= 1.3f; b.handSize *= 1.25f; b.footSize *= 1.25f;
             b.neckLength *= 0.45f; b.neckThick *= 1.35f; b.muscle = saturate(b.muscle + 0.2f);
             if (!fem) b.belly += 0.12f;
-            f.noseLength = r.range(1.15f, 1.40f); f.noseProj = r.range(1.30f, 1.65f) * (fem ? 0.75f : 1.0f);
-            f.noseWidth = r.range(1.30f, 1.65f) * (fem ? 0.85f : 1.0f); f.noseTip = r.range(-0.2f, 0.4f);
+            // A strong, straight or hawkish nose: long and prominent, never a round bulb.
+            f.noseLength = r.range(1.05f, 1.25f); f.noseProj = r.range(1.05f, 1.30f) * (fem ? 0.8f : 1.0f);
+            f.noseWidth = r.range(1.00f, 1.20f) * (fem ? 0.9f : 1.0f); f.noseTip = r.range(-0.3f, 0.1f); f.noseHump = r.range(0.0f, 0.6f);
             f.browRidge = saturate(f.browRidge + 0.3f); f.eyeDepth = saturate(f.eyeDepth + 0.3f);
             f.ruddy = saturate(f.ruddy + 0.4f); f.jaw = std::max(f.jaw, fem ? 0.2f : 0.8f);
             f.wrinkles = saturate((g.age - 25.0f) / 60.0f + 0.25f); f.eyeSize *= 0.9f; f.headTop = 0.2f;
@@ -230,10 +231,12 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.legRatio = 0.41f;
             widths(0.88f, 0.88f, 0.92f, 0.92f, 0.80f);
             b.neckLength *= 0.6f; b.handSize *= 1.1f; b.bust *= 0.6f; b.butt *= 0.8f;
-            f.eyeSize = 1.22f; f.eyeShape = 1; f.irisSize = 1.08f;
-            f.noseLength = 1.2f; f.noseProj = r.range(1.3f, 1.6f); f.noseWidth = 1.3f; f.noseTip = 0.45f;
-            f.roundness = saturate(f.roundness + 0.4f); f.chin = -0.3f; f.jaw = fem ? -0.3f : 0.0f; f.cheekHollow = 0.0f;
-            f.headTop = 0.6f; f.wrinkles = g.age > 40 ? 0.4f : 0.1f;
+            // Gnomes: wide-set, sharp, clever eyes (not doll eyes), a long pointed nose, crow's feet.
+            f.eyeSize = 1.0f; f.eyeShape = r.chance(0.5f) ? 0 : 3; f.irisSize = 0.92f; f.eyeSpacing = 1.08f; f.eyeTilt = 0.06f;
+            f.noseLength = 1.15f; f.noseProj = r.range(1.05f, 1.3f); f.noseWidth = 0.95f; f.noseTip = r.range(-0.1f, 0.3f);
+            f.chinPoint = 0.3f; f.browRidge = 0.5f; f.mouthWidth = 1.2f; f.lipFullness = 0.2f;
+            f.roundness = saturate(f.roundness + 0.15f); f.chin = 0.0f; f.jaw = fem ? -0.3f : 0.0f; f.cheekHollow = 0.2f; f.cheek = 0.5f;
+            f.headTop = 0.6f; f.wrinkles = g.age > 40 ? 0.55f : 0.25f;
             b.ear = {0.30f, 0.11f, 0.25f, 0.35f, 0.0f};
             hairColor(pickC({{0.62f, 0.36f, 0.44f}, {0.30f, 0.50f, 0.50f}, {0.42f, 0.32f, 0.52f}, {0.42f, 0.50f, 0.30f}, {0.80f, 0.80f, 0.80f},
                              {0.58f, 0.30f, 0.18f}, {0.70f, 0.62f, 0.40f}}));  // dyed, but faded
