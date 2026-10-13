@@ -59,8 +59,10 @@ void applyDecay(Genome& g, float d) {
 // The skeleton, built from the body's own landmarks: it sits inside the flesh at any
 // decay stage and stands alone at full decay.
 void Builder::buildBoneSkeleton() {
-    const float h = m.h, tl = m.torsoLen;
+    const float h = m.h, tl = m.torsoLen, bm = g.body.boneMass, hb = h * bm;  // hb: bone scale
     const RigInfo& r = ch.rig;
+    const bool boneEnds = bonesOnly_ || decay_ >= 0.85f;  // hands and feet already bare
+    const float hl = bonesOnly_ ? hb : 0.72f * hb;  // limb bones inside wasted flesh stay inside it
     const Vec3 boneC = bonesOnly_ ? Vec3{0.70f, 0.65f, 0.54f} : Vec3{0.62f, 0.55f, 0.44f};  // stained while flesh clings
     const Mat bone{boneC, MaterialClass::Horn}, dark{{0.06f, 0.05f, 0.05f}, MaterialClass::Dark};
     Part& first = newPart();
@@ -179,7 +181,7 @@ void Builder::buildBoneSkeleton() {
             for (int j = 0; j < N; ++j) {
                 const float th = headWarp(kTau * float(j) / float(N));
                 Vec2 p = hr.point(th);
-                p.x *= 0.70f;
+                p.x *= 0.70f + 0.45f * smoothstep(0.12f, 0.0f, s);  // a broad chin, not a point
                 p.y = hr.zc + (p.y - hr.zc) * (std::sin(th) > 0 ? 0.80f : 0.30f);
                 ring[size_t(j)] = o + Vec3{p.x, s * h, p.y};
             }
@@ -195,9 +197,9 @@ void Builder::buildBoneSkeleton() {
         // Teeth: two rows of blocks along the jaw line, on the bone surface.
         for (int row = 0; row < 2; ++row) {
             const float sT = row == 0 ? 0.212f : 0.184f;
-            const int n = 10;
+            const int n = 8;
             for (int k = 0; k < n; ++k) {
-                const float xt = ((float(k) + 0.5f) / float(n) * 2.0f - 1.0f) * 0.10f * h * hw;
+                const float xt = ((float(k) + 0.5f) / float(n) * 2.0f - 1.0f) * 0.11f * h * hw;
                 Vec3 best = skullPt(kPi / 2, sT);
                 for (int i = 0; i <= 40; ++i) {
                     const Vec3 q = skullPt(kPi / 2 + (float(i) / 40.0f - 0.5f) * 1.6f, sT);
@@ -207,9 +209,9 @@ void Builder::buildBoneSkeleton() {
                 e.center = best + Vec3{0, 0, -0.004f * h};
                 e.axis = {0, 1, 0};
                 e.up = {0, 0, 1};
-                e.rAxis = 0.019f * h;
-                e.rU = 0.0115f * h;
-                e.rV = 0.011f * h;
+                e.rAxis = 0.024f * h;
+                e.rU = 0.0145f * h;
+                e.rV = 0.013f * h;
                 e.lat = 3;
                 e.lon = 4;
                 const Mat tooth{boneC * 1.08f, MaterialClass::Horn};
@@ -249,9 +251,9 @@ void Builder::buildBoneSkeleton() {
         e.center = c;
         e.axis = {0, 1, 0};
         e.up = {0, 0, 1};
-        e.rAxis = 0.034f * h;
-        e.rU = 0.085f * h;
-        e.rV = 0.07f * h;
+        e.rAxis = 0.034f * hb;
+        e.rU = 0.085f * hb;
+        e.rV = 0.07f * hb;
         e.lat = 3;
         e.lon = 6;
         const SkinW w = spineW(t);
@@ -282,18 +284,18 @@ void Builder::buildBoneSkeleton() {
                 const float tt = t - 0.07f * (1.0f - phi / kPi);  // ribs slope down towards the front
                 pts.push_back(ribPoint(tt, kPi / 2 - sd * phi, 0.84f));
             }
-            tubeOne(pts, 0.03f * h, r.chest, 4, 0.0f);
+            tubeOne(pts, 0.036f * hb, r.chest, 4, 0.0f);
         }
     }
-    tubeOne({ribPoint(0.60f, kPi / 2, 0.86f), ribPoint(0.75f, kPi / 2, 0.86f), ribPoint(0.90f, kPi / 2, 0.86f)}, 0.025f * h, r.chest, 5, 0.2f);
+    tubeOne({ribPoint(0.60f, kPi / 2, 0.86f), ribPoint(0.75f, kPi / 2, 0.86f), ribPoint(0.90f, kPi / 2, 0.86f)}, 0.034f * hb, r.chest, 5, 0.2f);
     for (size_t i = 0; i < m.arms.size(); ++i) {
         const ArmMarks& a = m.arms[i];
         const int root = r.arms[i].root;
         const Vec3 st = ribPoint(0.90f, kPi / 2, 0.86f) + Vec3{a.side * 0.04f * h, 0, 0};
-        tubeOne({st, lerp(st, a.shoulder, 0.5f) + Vec3{0, 0.03f * h, 0.02f * h}, a.shoulder + Vec3{0, 0.06f * h, 0}}, 0.018f * h, root, 5, 0.3f);
+        tubeOne({st, lerp(st, a.shoulder, 0.5f) + Vec3{0, 0.03f * h, 0.02f * h}, a.shoulder + Vec3{0, 0.06f * h, 0}}, 0.026f * hb, root, 5, 0.3f);
         if (a.pair == 0) {
             const Vec3 sc = ribPoint(0.82f, -kPi / 2 + a.side * 0.75f, 0.92f);
-            blob(sc, normalize(Vec3{0, 0, -1}), {0, 1, 0}, 0.018f * h, 0.15f * h, 0.19f * h, root, 3, 5);
+            blob(sc, normalize(Vec3{0, 0, -1}), {0, 1, 0}, 0.024f * hb, 0.15f * h, 0.19f * h, root, 3, 5);
         }
     }
 
@@ -312,16 +314,24 @@ void Builder::buildBoneSkeleton() {
     }
 
     // ---- arms and hands ----
+    // Long bones: shafts stop short of the joint so each joint reads as its own knob
+    // (humeral head, the elbow's condyles and olecranon, the wrist's styloids).
     for (size_t i = 0; i < m.arms.size(); ++i) {
         const ArmMarks& a = m.arms[i];
         const LimbRig& lr = r.arms[i];
-        const float ar = a.radius;
-        tubeOne({a.shoulder, lerp(a.shoulder, a.elbow, 0.5f), a.elbow}, 0.58f * ar, lr.upper, 6, 0.55f);
+        const float k2 = a.pair ? 0.85f : 1.0f, ua = length(a.elbow - a.shoulder);
+        const Vec3 du = normalize(a.elbow - a.shoulder), flex = normalize(cross(a.dir, {0, 0, 1}));
+        blob(a.shoulder, du, {0, 1, 0}, 0.085f * hl * k2, 0.08f * hl * k2, 0.08f * hl * k2, lr.upper, 3, 6);  // humeral head
+        tubeOne({a.shoulder + du * (0.10f * ua), a.shoulder + du * (0.5f * ua), a.elbow - du * (0.07f * ua)}, 0.050f * hl * k2, lr.upper, 6, 0.35f);
+        blob(a.elbow - du * (0.05f * ua), flex, du, 0.085f * hl * k2, 0.045f * hl * k2, 0.05f * hl * k2, lr.upper, 3, 6);  // condyles
         const Vec3 d = normalize(a.wrist - a.elbow), v = orthoFront(d), u = cross(d, v);
+        const float fa = length(a.wrist - a.elbow);
+        blob(a.elbow - d * (0.02f * fa) + normalize(cross(flex, d)) * (0.04f * hl), d, v, 0.045f * hl * k2, 0.035f * hl * k2, 0.035f * hl * k2, lr.lower, 3, 5);  // olecranon
         for (float o : {-1.0f, 1.0f})
-            tubeOne({a.elbow + v * (o * 0.12f * ar), lerp(a.elbow, a.wrist, 0.5f) + v * (o * 0.2f * ar), a.wrist + v * (o * 0.16f * ar)},
-                    0.32f * ar, lr.lower, 5, 0.45f);
-        if (!bonesOnly_) continue;  // in a corpse the hands are still flesh: their bones would poke through
+            tubeOne({a.elbow + d * (0.07f * fa) + v * (o * 0.022f * hl), lerp(a.elbow, a.wrist, 0.5f) + v * (o * 0.036f * hl),
+                     a.wrist - d * (0.03f * fa) + v * (o * 0.034f * hl)},
+                    0.026f * hl * k2, lr.lower, 5, 0.45f);  // radius and ulna
+        if (!boneEnds) continue;  // until the hands rot away, their bones would poke through the flesh
         const float Lh = length(a.handTip - a.wrist);
         const Vec3 palm = u * a.side;
         blob(a.wrist + d * (0.10f * Lh), d, palm, 0.07f * Lh, 0.20f * Lh, 0.09f * Lh, lr.end, 3, 6);  // carpals
@@ -335,7 +345,7 @@ void Builder::buildBoneSkeleton() {
                 p = p + fd * (Lh * (k == 0 ? 0.30f : 0.15f) * (f == 3 ? 0.85f : 1.0f));
                 pts.push_back(p);
             }
-            tubeOne(pts, 0.05f * Lh, lr.end, 4, 0.3f);
+            tubeOne(pts, std::max(0.05f * Lh, 0.016f * hl), lr.end, 4, 0.3f);
         }
         tubeOne({a.wrist + d * (0.15f * Lh) + v * (0.2f * Lh), a.wrist + d * (0.35f * Lh) + v * (0.38f * Lh) + palm * (0.1f * Lh),
                  a.wrist + d * (0.55f * Lh) + v * (0.45f * Lh) + palm * (0.2f * Lh)},
@@ -345,15 +355,23 @@ void Builder::buildBoneSkeleton() {
     // ---- legs and feet ----
     const float T = g.body.thigh * h;
     auto legBones = [&](const LimbRig& lr, Vec3 hip, Vec3 knee, Vec3 ankle, Vec3 ball, float side, bool longFoot, bool hoofed) {
-        const Vec3 kneeDir = normalize(knee - hip), lat{side, 0, 0};
-        tubeOne({hip + Vec3{-side * 0.05f * h, 0.03f * h, 0}, lerp(hip, knee, 0.5f), knee}, 0.34f * T, lr.upper, 6, 0.55f);  // femur
-        blob(knee + Vec3{0, 0.01f * h, 0.12f * T + 0.03f * h}, {0, 0, 1}, {0, 1, 0}, 0.04f * h, 0.07f * h, 0.08f * h, lr.lower, 3, 5);  // patella
-        tubeOne({knee, lerp(knee, ankle, 0.5f), ankle}, 0.28f * T, lr.lower, 6, 0.55f);  // tibia
-        tubeOne({knee + lat * (0.08f * T) + Vec3{0, -0.04f * h, -0.06f * T}, lerp(knee, ankle, 0.5f) + lat * (0.12f * T) + Vec3{0, 0, -0.05f * T},
-                 ankle + lat * (0.12f * T)},
-                0.11f * T, lr.lower, 4, 0.4f);  // fibula
-        (void)kneeDir;
-        if (!bonesOnly_) return;  // feet stay flesh until the end
+        const Vec3 lat{side, 0, 0}, df = normalize(knee - hip), dt = normalize(ankle - knee);
+        const float lf = length(knee - hip), lt = length(ankle - knee);
+        // Femur: head in the socket, neck out to the greater trochanter, shaft, two condyles.
+        blob(hip, df, {0, 0, 1}, 0.095f * hl, 0.09f * hl, 0.09f * hl, lr.upper, 3, 6);
+        blob(hip + lat * (0.10f * hl) + Vec3{0, -0.03f * h, 0}, {0, 1, 0}, {0, 0, 1}, 0.07f * hl, 0.05f * hl, 0.05f * hl, lr.upper, 3, 5);
+        tubeOne({hip + df * (0.10f * lf) + lat * (0.05f * hl), hip + df * (0.5f * lf), knee - df * (0.08f * lf)}, 0.064f * hl, lr.upper, 6, 0.35f);
+        for (float o : {-1.0f, 1.0f})
+            blob(knee - df * (0.05f * lf) + lat * (o * 0.045f * hl), {0, 0, 1}, {0, 1, 0}, 0.07f * hl, 0.045f * hl, 0.06f * hl, lr.upper, 3, 5);
+        blob(knee + Vec3{0, 0.01f * h, 0.075f * hl}, {0, 0, 1}, {0, 1, 0}, 0.035f * hl, 0.05f * hl, 0.06f * hl, lr.lower, 3, 5);  // patella
+        // Tibia (plateau, shaft, malleolus) and the thin fibula outside it.
+        blob(knee + dt * (0.06f * lt), {0, 1, 0}, {0, 0, 1}, 0.04f * hl, 0.11f * hl, 0.075f * hl, lr.lower, 3, 6);
+        tubeOne({knee + dt * (0.10f * lt), knee + dt * (0.5f * lt), ankle - dt * (0.04f * lt)}, 0.054f * hl, lr.lower, 6, 0.35f);
+        tubeOne({knee + dt * (0.10f * lt) + lat * (0.075f * hl) + Vec3{0, 0, -0.02f * hl}, lerp(knee, ankle, 0.5f) + lat * (0.07f * hl),
+                 ankle + lat * (0.07f * hl)},
+                0.022f * hl, lr.lower, 4, 0.5f);
+        for (float o : {-1.0f, 1.0f}) blob(ankle + lat * (o * 0.06f * hl), dt, {0, 0, 1}, 0.04f * hl, 0.03f * hl, 0.03f * hl, lr.lower, 3, 5);  // malleoli
+        if (!boneEnds) return;  // the feet stay flesh until they rot away
         if (longFoot) {  // digitigrade / horse: a long metatarsal, then toes or a hoof bone
             tubeOne({ankle, lerp(ankle, ball, 0.5f), ball + Vec3{0, 0.03f * h, 0}}, 0.09f * T, lr.end, 5, 0.4f);
             if (hoofed) {
@@ -406,7 +424,7 @@ void Builder::buildBoneSkeleton() {
 // Torn flesh: round holes through the skin onto the skeleton, growing with decay, each
 // backed by a dark cavity floor behind the bones.
 void Builder::addDecayHoles() {
-    const float h = m.h, k = smoothstep(0.55f, 0.95f, decay_);
+    const float h = m.h, k = g.species == Species::Undead && decay_ < 0.55f ? 0.0f : smoothstep(0.55f, 0.95f, decay_);
     const float side = (g.seed % 2 == 0) ? 1.0f : -1.0f;
     const float R0 = h * lerp(0.13f, 0.25f, k);
     const float T = g.body.thigh * h, Cf = g.body.calf * h;
@@ -414,7 +432,10 @@ void Builder::addDecayHoles() {
         const float t = clamp(torsoT(q.y), -0.06f, 1.1f);
         return q.y > m.crotchY + 0.02f * h && std::fabs(q.x) < 1.25f * cHw_(t) + 0.03f * h;
     };
-    auto add = [&](Vec3 c, float R, float depth, bool head, std::function<bool(Vec3)> gate) { holes_.push_back({c, R, depth, head, std::move(gate)}); };
+    auto add = [&](Vec3 c, float R, float depth, bool head, std::function<bool(Vec3)> gate) {
+        Vec3 n = head ? headNormalDir(c) : normalize(Vec3{c.x, 0, c.z - cZc_(clamp(torsoT(c.y), -0.06f, 1.1f))}, Vec3{0, 0, 1});
+        holes_.push_back({c, R, depth, head, n, std::move(gate)});
+    };
     add(torsoPoint(0.66f, kPi / 2 - side * 1.25f), R0, 0.30f * h, false, torsoOnly);
     if (k > 0.3f) add(torsoPoint(0.42f, kPi / 2 + side * 0.45f), 0.9f * R0, 0.30f * h, false, torsoOnly);
     if (k > 0.4f) add(torsoPoint(0.60f, -kPi / 2 + side * 0.5f), 0.9f * R0, 0.30f * h, false, torsoOnly);
@@ -430,7 +451,7 @@ void Builder::addDecayHoles() {
         const int ls = side > 0 ? 1 : 0, lo = 1 - ls;
         const Vec3 kd = normalize(m.knee[ls] - m.hipJoint[ls]);
         const Vec3 fw = normalize(Vec3{0, 0, 1} - kd * kd.z);
-        add(lerp(m.hipJoint[ls], m.knee[ls], 0.5f) + fw * (0.95f * T), h * lerp(0.10f, 0.18f, k), 0.9f * T, false,
+        add(lerp(m.hipJoint[ls], m.knee[ls], 0.5f) + fw * (0.95f * T) * 1.0f, h * lerp(0.10f, 0.18f, k), 0.9f * T, false,
             nearSeg(m.hipJoint[ls], m.knee[ls], 1.6f * T));
         if (k > 0.5f) {
             const Vec3 sd2 = normalize(m.ankle[lo] - m.knee[lo]);
@@ -452,16 +473,26 @@ void Builder::addDecayHoles() {
     add(headAt(side * 0.13f, 0.215f), h * lerp(0.07f, 0.12f, k), 0.0f, true, nullptr);
     if (k > 0.7f) add(headAt(-side * 0.24f, 0.66f), 0.08f * h, 0.0f, true, nullptr);
 
+    // Ragged rims: the radius wobbles around each hole (torn, not punched), and a band of
+    // dark, wet flesh lines the edge.
     const Mat hole{{0, 0, 0}, MaterialClass::Count};
+    const Mat rim{{0.24f, 0.10f, 0.09f}, MaterialClass::Dark};
+    int idx = 0;
     for (const Hole& ho : holes_) {
         Part& p = parts[ho.head ? headPart_ : torsoPart_];
-        const Vec3 c = ho.c;
-        const float R = ho.R;
+        const Vec3 c = ho.c, n = ho.n;
+        const Vec3 u = normalize(cross(n, std::fabs(n.y) > 0.9f ? Vec3{1, 0, 0} : Vec3{0, 1, 0})), v = cross(n, u);
+        const float R = ho.R, ph = float((g.seed + uint64_t(idx++) * 7) % 13);
         const auto gate = ho.gate;
-        p.clips.push_back({[=](Vec3 q) {
+        auto field = [=](Vec3 q, float grow) {
             if (gate && !gate(q)) return 1.0f;
-            return length(q - c) - R;
-        }, hole});
+            const Vec3 d = q - c;
+            const float a = std::atan2(dot(d, v), dot(d, u));
+            const float wob = 1.0f + 0.20f * std::sin(5.0f * a + ph) + 0.11f * std::sin(9.0f * a + 2.3f * ph) + 0.06f * std::sin(17.0f * a + ph);
+            return length(d) - R * wob * grow;
+        };
+        p.clips.push_back({[=](Vec3 q) { return field(q, 1.22f); }, rim});
+        p.clips.push_back({[=](Vec3 q) { return field(q, 1.0f); }, hole});
     }
 }
 

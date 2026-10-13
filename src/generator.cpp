@@ -870,6 +870,7 @@ void Builder::buildArms() {
 }
 
 void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
+    if (decay_ >= 0.85f) return;  // extremities skeletonize first: the bone hand replaces it
     const float Lh = length(a.handTip - a.wrist);
     const Vec3 d = a.dir, v = orthoFront(d), u = cross(d, v);
     const Vec3 palm = u * a.side;  // towards the body in the A-pose
@@ -1213,6 +1214,7 @@ void Builder::buildLegs() {
 // Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
     if (g.body.centaur) return;  // the horse legs carry their own hooves
+    if (decay_ >= 0.85f && !g.body.hooves) return;  // bare foot bones (bones.cpp)
     if (g.body.digitigrade) {
         buildDigitigradeFeet();
         return;
@@ -1820,7 +1822,7 @@ Character Builder::build() {
     buildBones();
     applyFur();
     buildFurTufts();
-    if (decay_ >= 0.55f) {  // torn open onto the real skeleton
+    if (decay_ >= 0.55f || g.species == Species::Undead) {  // torn open onto the real skeleton
         buildBoneSkeleton();
         addDecayHoles();
         buildCavityShells();

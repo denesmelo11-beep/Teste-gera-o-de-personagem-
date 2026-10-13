@@ -203,6 +203,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     if (!(pal.skin.x >= pal.skin.y && pal.skin.y >= pal.skin.z)) skinTo(pickSkin(r, false));  // a fantasy hue from the base draw
     switch (sp) {
         case Species::Dwarf:
+            b.boneMass *= 1.3f;
             height(fem ? 1.22f : 1.30f, fem ? 1.36f : 1.45f);
             b.headsTall = r.range(4.7f, 5.0f);
             b.legRatio = 0.40f;
@@ -223,6 +224,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::LongBeard, 3}, {FacialHair::BraidedBeard, 3}, {FacialHair::FullBeard, 2}, {FacialHair::MuttonChops, 0.6f}});
             break;
         case Species::Gnome:
+            b.boneMass *= 0.85f;
             height(fem ? 0.92f : 0.96f, fem ? 1.05f : 1.12f);
             b.headsTall = r.range(3.2f, 3.45f);
             b.legRatio = 0.41f;
@@ -241,6 +243,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
                    {FacialHair::MuttonChops, 1}});
             break;
         case Species::Orc:
+            b.boneMass *= 1.25f;
             height(fem ? 1.75f : 1.88f, fem ? 1.88f : 2.05f);
             b.headsTall = r.range(6.4f, 6.7f);
             widths(fem ? 1.12f : 1.48f, fem ? 1.10f : 1.40f, fem ? 1.10f : 1.30f, 1.05f, fem ? 1.12f : 1.38f);
@@ -263,6 +266,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 2}, {FacialHair::Goatee, 2}, {FacialHair::BraidedBeard, 2}, {FacialHair::ShortBeard, 1}});
             break;
         case Species::Troll:
+            b.boneMass *= 0.95f;
             height(fem ? 1.95f : 2.05f, fem ? 2.10f : 2.22f);
             b.headsTall = r.range(7.0f, 7.3f);
             b.legRatio = 0.52f;
@@ -284,13 +288,14 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 3}, {FacialHair::Goatee, 1}});
             break;
         case Species::Undead:
+            b.boneMass *= 0.95f;
             widths(0.95f, 0.88f, 0.78f, 0.90f, 0.72f);
             b.muscle *= 0.5f; b.belly = 0.0f; b.bust *= 0.6f; b.butt *= 0.6f; b.hunch = std::max(b.hunch, 0.6f);
             b.anat.definition = 0.9f; b.anat.ribcage = 1.0f; b.anat.clavicles = 1.0f; b.anat.scapulae = 1.0f; b.anat.pelvis = 1.0f;
             b.anat.knees = 1.0f; b.anat.elbows = 1.0f;
             // Exposed bones: ribs through the flank, a bared forearm or shin, the jaw.
-            b.bones = (r.chance(0.75f) ? 1 : 0) | (r.chance(0.45f) ? 2 : 0) | (r.chance(0.30f) ? 4 : 0) | (r.chance(0.55f) ? 8 : 0);
-            if (b.bones == 0) b.bones = 1;
+            // Their flesh is torn open on the real skeleton (see Builder: holes over the bones).
+            b.bones = 0;
             b.boneSide = r.chance(0.5f) ? 1 : -1;
             f.cheekHollow = 1.0f; f.eyeDepth = 1.0f; f.eyeBags = 0.7f; f.jowl = 0.0f; f.roundness = 0.0f; f.ruddy = 0.0f;
             f.lipFullness = 0.1f; f.rot = r.range(0.4f, 0.9f);
@@ -303,6 +308,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 3}, {FacialHair::Stubble, 1}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::NightElf:
+            b.boneMass *= 0.95f;
             height(fem ? 1.90f : 2.05f, fem ? 2.02f : 2.20f);
             b.headsTall = r.range(7.1f, 7.4f);
             b.legRatio = 0.52f;
@@ -322,6 +328,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 3}, {FacialHair::LongBeard, 1.2f}, {FacialHair::FullBeard, 0.8f}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::HighElf:
+            b.boneMass *= 0.85f;
             height(fem ? 1.72f : 1.82f, fem ? 1.82f : 1.92f);
             b.headsTall = r.range(7.0f, 7.2f);
             b.legRatio = 0.52f;
@@ -340,6 +347,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 6}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::Draenei:
+            b.boneMass *= 1.1f;
             height(fem ? 2.00f : 2.15f, fem ? 2.12f : 2.30f);
             b.headsTall = r.range(7.2f, 7.4f);
             b.legRatio = 0.52f;
@@ -357,6 +365,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::Tendrils, 6}, {FacialHair::None, 1}});
             break;
         case Species::Tauren:
+            b.boneMass *= 1.45f;
             height(fem ? 2.05f : 2.25f, fem ? 2.20f : 2.50f);
             b.headsTall = r.range(6.0f, 6.3f);
             b.legRatio = 0.46f;
@@ -382,6 +391,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             if (g.facialHair == FacialHair::Goatee || g.facialHair == FacialHair::None) f.stubble = 0.0f;
             break;
         case Species::Goblin:
+            b.boneMass *= 0.85f;
             height(fem ? 0.95f : 0.98f, fem ? 1.06f : 1.12f);
             b.headsTall = r.range(3.6f, 3.9f);
             b.legRatio = 0.42f;
@@ -401,6 +411,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 3}, {FacialHair::Mustache, 1.5f}, {FacialHair::Goatee, 1}, {FacialHair::MuttonChops, 1}});
             break;
         case Species::Worgen: {
+            b.boneMass *= 1.2f;
             height(fem ? 2.00f : 2.15f, fem ? 2.15f : 2.35f);
             b.headsTall = r.range(6.6f, 6.9f);
             b.legRatio = 0.50f;
@@ -429,6 +440,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             break;
         }
         case Species::Ogre: {  // colossus: a towering, top-heavy brute with a small head
+            b.boneMass *= 1.55f;
             height(fem ? 2.45f : 2.65f, fem ? 2.70f : 3.05f);
             b.headsTall = r.range(7.6f, 8.0f);
             b.legRatio = 0.44f;
@@ -452,6 +464,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             break;
         }
         case Species::Centaur: {  // a human torso rising from a horse's chest
+            b.boneMass *= 1.15f;
             height(fem ? 2.15f : 2.30f, fem ? 2.30f : 2.50f);
             b.headsTall = r.range(7.8f, 8.1f);
             b.legRatio = 0.56f;  // the human hip line rides at the horse's withers
@@ -597,6 +610,8 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         b.posture = 0.45f + 0.05f * z(rb);
     }
     b.belly = std::max(0.0f, 0.24f * (fat - 0.5f)) + (elder ? 0.05f : 0.0f);
+    // Bones follow the frame and the muscle they carry (thick shafts and knuckly joints on the strong).
+    b.boneMass = clamp(1.0f + 0.10f * frame + 0.07f * mus, 0.80f, 1.35f) * (fem ? 0.88f : 1.0f);
     b.footSize = b.handSize;
     b.headWidth = 1.0f + 0.045f * z(rb) + 0.02f * std::max(0.0f, fat);
     if (build == 3) { b.legRatio -= 0.02f; b.headsTall -= 0.25f; b.neckLength *= 0.8f; b.handSize *= 1.06f; }

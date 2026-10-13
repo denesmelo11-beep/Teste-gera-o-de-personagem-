@@ -94,6 +94,7 @@ struct EarShape {
 
 struct BodyShape {
     int build = 0;              // 0 average, 1 lean, 2 heavy, 3 stocky, 4 lanky, 5 strong
+    float boneMass = 1.0f;      // skeleton robustness (frame, muscle, people): bone and joint thickness
     float height = 1.68f;      // metres, crown to floor
     float headsTall = 6.9f;    // stylised-realistic 6.6-7.4, chibi 3-4
     float legRatio = 0.50f;    // crotch height / height

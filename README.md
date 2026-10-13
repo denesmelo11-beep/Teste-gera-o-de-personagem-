@@ -36,6 +36,14 @@ Raylib 5.5 (opcional).
 |---|
 | ![decomposição](docs/decomposicao.png) |
 
+| Quatro braços (`--arms 4`, qualquer povo) | Ataque com quatro braços |
+|---|---|
+| ![quatro braços](docs/folha_quatro_bracos.png) | ![ataque](docs/quatro_bracos_ataque.png) |
+
+| Goblins: crânio em domo, queixo em ponta, nariz adunco, olhos miúdos em esclera amarelada, sorriso de presas |
+|---|
+| ![goblins](docs/goblins.png) |
+
 | Esqueleto (povo `skeleton`, olhos em brasa) | Esqueleto correndo (mesmo rig, todas as animações) |
 |---|---|
 | ![esqueleto](docs/folha_esqueleto.png) | ![corrida](docs/esqueleto_corrida.png) |
@@ -140,6 +148,15 @@ Genome (DNA) ──► Builder ──► Character { Skeleton, RigInfo, PhysicsR
   proeminência óssea (`clavicles, ribcage, scapulae, pelvis, knees, elbows, wrists`). O gerador
   amostra todos a partir dos eixos da população; um editor pode sobrescrever qualquer um.
 
+### Rostos característicos dos povos
+Além das proporções, cada povo tem um rosto próprio: `FaceStyle::headTop` (crânio em domo ou baixo),
+`chinPoint` (queixo em ponta), `underbite` (mandíbula projetada), `wrinkles` (rugas no cenho, no
+nariz, pés de galinha e sulcos), `sclera` (esclera amarelada) e `mouthStyle` (sorriso de presas
+intercaladas, ou mordida com dentes inferiores). Goblin: domo, queixo agulha, nariz adunco,
+olhos miúdos e oblíquos, sorriso de presas, rugas; orc: mandíbula projetada, olhos pequenos e
+encapuzados, sobrancelhas pesadas; troll: rosto longo e estreito; ogro: crânio baixo; anão:
+rugas e olhos fundos; elfos: queixo fino.
+
 ### Povos (`Species`)
 Uma passada depois do sorteio remodela a pessoa no cânone do seu povo, mantendo a variação
 individual (altura relativa, tipo de corpo, rosto): proporções (cabeças de altura, pernas, larguras
@@ -191,6 +208,26 @@ tempo passa (mesma semente, mesmo rig, mesmas animações):
   crânio de lobo no worgen, pernas digitígradas e cascos, o esqueleto equino do centauro, chifres e
   presas que ficam, cauda em vértebras.
 - **Povo `skeleton`**: esqueletos que se levantam, com brasas frias nas órbitas.
+- **Ossos proporcionais**: `BodyShape::boneMass` (ossatura e musculatura do indivíduo, vezes o
+  povo: anões, orcs, tauren e ogros robustos; elfos, gnomos e goblins delicados) define a espessura
+  das diáfises e das articulações. As articulações são peças próprias: cabeça do úmero, côndilos e
+  olécrano no cotovelo, cabeça do fêmur e trocânter, côndilos, patela e platô tibial no joelho,
+  maléolos no tornozelo; as diáfises param antes delas, então cada osso se lê separado.
+- **Extremidades primeiro**: a partir de ~0,85 as mãos e os pés já são só ossos.
+- **Bordas rasgadas**: os buracos na carne têm contorno irregular e uma borda de carne escura.
+- **Mortos-vivos** (povo `undead`) mostram o esqueleto real por rasgos pequenos na carne.
+
+### Amplitude de movimento
+`RigInfo::limits` + `cg::limitPose`: cotovelos e joelhos são dobradiças que só dobram para um
+lado (0 a ~150°), ombros, quadris, coluna, pescoço, punhos e tornozelos são cones com limites
+anatômicos. Todas as animações embutidas respeitam os limites, e o jogo pode chamar `limitPose`
+sobre poses próprias (IK, ragdoll).
+
+### Quatro braços
+`GenomeOptions::armPairs = 2` (CLI `--arms 4`) dá a qualquer povo um segundo par de braços,
+nascido de uma segunda cintura escapular nas costelas inferiores e costurado na superfície do
+tronco como o primeiro; o esqueleto ganha clavículas e úmeros extras e as animações movem os dois
+pares (os de baixo em contraponto).
 
 ### Corpo: uma superfície contínua
 - **Tronco + pescoço** são um único *loft* de anéis superelípticos (largura/profundidade por curvas

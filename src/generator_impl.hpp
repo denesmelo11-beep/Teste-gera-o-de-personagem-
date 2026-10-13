@@ -120,6 +120,7 @@ private:
         Vec3 c;
         float R, depth;
         bool head;
+        Vec3 n;  // outward normal (for the ragged rim)
         std::function<bool(Vec3)> gate;
     };
     std::vector<Hole> holes_;
