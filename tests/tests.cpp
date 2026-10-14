@@ -237,6 +237,27 @@ int main() {
         for (const Vertex& v : a.mesh.vertices) glow += v.color[3] / 32 == int(MaterialClass::Glow), metal += v.color[3] / 32 == int(MaterialClass::Metal);
         CHECK(glow > 0 && metal > int(a.mesh.vertices.size()) / 3, "androide: nucleo %d / metal %d", glow, metal);
     }
+    {   // Constructs do not rot: rust (matte patches), dead core, an iron frame at the end.
+        GenOptions go;
+        go.decay = 0.7f;
+        const Character c = generateCharacter(*studyGenome("android_monk", 1), go);
+        int rust = 0;
+        for (const Vertex& v : c.mesh.vertices) rust += v.color[3] / 32 == int(MaterialClass::Leather);
+        CHECK(rust > 200 && !c.genome.face.glowEyes, "constructo sem ferrugem (%d)", rust);
+        go.decay = 1.0f;
+        const Character b = generateCharacter(*studyGenome("android_monk", 1), go);
+        int metal = 0, horn = 0;
+        for (const Vertex& v : b.mesh.vertices) metal += v.color[3] / 32 == int(MaterialClass::Metal), horn += v.color[3] / 32 == int(MaterialClass::Horn);
+        CHECK(metal > horn, "esqueleto do constructo nao e de ferro (%d metal, %d osso)", metal, horn);
+    }
+    {   // Corpses only keep the bones a hole can show.
+        GenOptions a, b;
+        a.decay = 0.5f;
+        b.decay = 1.0f;
+        const Character half = generateCharacter(randomGenome(4), a), bones = generateCharacter(randomGenome(4), b);
+        CHECK(half.mesh.triangleCount() < generateCharacter(randomGenome(4)).mesh.triangleCount() + bones.mesh.triangleCount(),
+              "cadaver sem poda de ossos: %zu", half.mesh.triangleCount());
+    }
     for (uint64_t s = 1; s <= 80; ++s) {
         GenOptions go;
         const Genome g = fuzzGenome(s * 7919, &go);

@@ -159,6 +159,11 @@ Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o),
     cZc_ = Curve{{-0.06f, -0.01f * h * post}, {0.10f, -0.035f * h * post}, {0.20f, -0.035f * h * post},
                  {0.42f, 0.0f}, {0.66f, 0.02f * h * post + 0.05f * stoop}, {0.80f, 0.025f * h * post + 0.12f * stoop},
                  {1.0f, -0.01f * h + 0.06f * hunch + 0.20f * stoop}, {1.10f, -0.02f * h + 0.10f * hunch + 0.28f * stoop}};
+    // Depths are in head units; a torso much shorter than usual for its head (gnomes,
+    // chibi) would stack belly, waist and chest bulges into steep horizontal bands, so
+    // their swing around the mean depth shrinks with the torso's length.
+    torsoD_ = D;
+    profK_ = clamp(m.torsoLen / (2.2f * h), 0.40f, 1.0f);
     initHead();
 }
 
@@ -243,11 +248,14 @@ void Builder::computeMarks() {
             } else {
                 // A second shoulder girdle on the lower ribcage: a little smaller, angled
                 // forward and out, so both pairs can work without colliding.
-                float y = m.crotchY + 0.50f * m.torsoLen;
-                a.shoulder = {a.side * 0.80f * C, y, 0.03f * h};
+                // Centaurs: the human torso is short, so the pair sits lower and reaches
+                // further forward, clear of the upper arms and over the horse's withers.
+                const bool cen = b.centaur;
+                float y = m.crotchY + (cen ? 0.40f : 0.50f) * m.torsoLen;
+                a.shoulder = {a.side * 0.80f * C, y, (cen ? 0.06f : 0.03f) * h};
                 a.clav = {a.side * 0.30f * C, y + 0.06f * h, 0.06f * h};
-                angle = 40.0f;
-                fwd = 0.55f;
+                angle = cen ? 34.0f : 40.0f;
+                fwd = cen ? 0.80f : 0.55f;
             }
             float ar = angle * kPi / 180.0f;
             a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), fwd});
@@ -275,7 +283,13 @@ Part& Builder::newPart(bool flat, SubmeshKind kind) {
 // ---------------- torso surface ----------------
 SuperRing Builder::torsoRing(float t) const {
     float belly = g.body.belly * 0.30f * m.h * bump((t - 0.34f) / 0.26f);
-    return {cHw_(t), cZc_(t), cDf_(t) + belly, cDb_(t), 2.2f, 2.5f};
+    float dF = cDf_(t) + belly, dB = cDb_(t);
+    if (profK_ < 1.0f) {
+        const float k = smoothstep(0.0f, 0.12f, t) * smoothstep(1.0f, 0.88f, t);
+        dF = lerp(dF, 0.84f * torsoD_ + (dF - 0.84f * torsoD_) * profK_, k);
+        dB = lerp(dB, 0.76f * torsoD_ + (dB - 0.76f * torsoD_) * profK_, k);
+    }
+    return {cHw_(t), cZc_(t), dF, dB, 2.2f, 2.5f};
 }
 
 // Angular warp: more samples on the front/back (bust, abs, glutes), fewer on the flat sides.
@@ -307,7 +321,10 @@ float Builder::gluteDepth(float t) const {
 // strength comes from the Anatomy fields (muscle size, bone prominence) and from
 // `definition` (how much body fat softens the forms).
 Vec3 Builder::torsoPoint(float t, float th) const {
-    const float h = m.h, B = g.body.bust, fem = g.femininity;
+    // Relief is sized in head units; big-headed short peoples (gnomes, dwarves, chibi)
+    // have a small torso for their head, so their muscles and bones scale down with it
+    // (else the planes stack into horizontal bands).
+    const float h = m.h * clamp(g.body.headsTall / 6.6f, 0.5f, 1.0f), B = g.body.bust, fem = g.femininity;
     const Anatomy& an = g.body.anat;
     const float def = 0.3f + 0.7f * an.definition;
     SuperRing sr = torsoRing(t);
@@ -676,9 +693,17 @@ void Builder::buildArms() {
         const float r = a.radius;
         // Above the joint (t < 0) the radius closes like a dome: the deltoid cap.
         const float dk = 1.0f + 0.28f * an.deltoids;  // deltoid cap size
-        Curve rc{{-0.21f, 0.62f * dk}, {-0.15f, 0.88f * dk}, {-0.08f, 1.02f * dk}, {0.0f, 1.06f * dk}, {0.07f, 1.04f * dk}, {0.18f, 0.94f + 0.04f * dk},
-                 {0.27f, 0.90f}, {0.35f, 0.88f},
-                 {te - 0.05f, 0.76f}, {te, 0.72f}, {te + 0.10f, 0.84f}, {te + 0.25f, 0.70f}, {0.85f, 0.54f}, {1.0f, 0.48f}, {1.05f, 0.48f}};
+        Curve rcRaw{{-0.21f, 0.62f * dk}, {-0.15f, 0.88f * dk}, {-0.08f, 1.02f * dk}, {0.0f, 1.06f * dk}, {0.07f, 1.04f * dk}, {0.18f, 0.94f + 0.04f * dk},
+                    {0.27f, 0.90f}, {0.35f, 0.88f},
+                    {te - 0.05f, 0.76f}, {te, 0.72f}, {te + 0.10f, 0.84f}, {te + 0.25f, 0.70f}, {0.85f, 0.54f}, {1.0f, 0.48f}, {1.05f, 0.48f}};
+        // Short, thick limbs (gnomes, chibi, giants' forearms) squeeze the same bulges and
+        // pinches into a fraction of the length: soften them in proportion, or the
+        // facets stack into stripes.
+        const float ak = clamp((Ltot / r) / 9.0f, 0.40f, 1.0f);
+        auto rc = [=](float t) {
+            const float v = rcRaw(t), mean = lerp(1.0f, 0.5f, saturate(t));
+            return lerp(v, mean + (v - mean) * ak, smoothstep(0.0f, 0.12f, t));
+        };
         auto relief = [&](float beta, float t, float rr) {
             auto win = [&](float c, float w) { return bump(std::remainder(beta - c, kTau) / w); };
             float o = 0;
@@ -720,7 +745,7 @@ void Builder::buildArms() {
             const float rr = r * rc(t);
             Vec3 radial = uu * (rr * std::cos(al)) + vv * (rr * std::sin(al));
             float beta = a.side > 0 ? al : kPi - al;
-            return a.shoulder + d * (t * Ltot) + radial + normalize(radial, vv) * relief(beta, t, rr);
+            return a.shoulder + d * (t * Ltot) + radial + normalize(radial, vv) * (ak * relief(beta, t, rr));
         };
         {
             // The arm grows out of the torso surface: a patch on the side of the chest
@@ -794,7 +819,9 @@ void Builder::buildArms() {
                 bp.uv.push_back({});
                 return uint32_t(bp.pos.size() - 1);
             };
-            const float t1 = 0.10f;
+            // The junction ends on the first arm ring, a little way down the arm: closer in,
+            // its underside sits above the armpit and the fillet folds back down to it.
+            const float t1 = 0.14f;
             auto armRing = [&](float t) {
                 const float w = smoothstep(t1, t1 + 0.30f, t);
                 std::vector<Vec3> rg(M);
@@ -829,6 +856,10 @@ void Builder::buildArms() {
                 delt[j] = lateral * r * 0.30f * (0.5f + 0.5f * an.deltoids);
             }
             std::vector<uint32_t> prev = loop;
+            // Progress of each column from the torso towards ring1: the fillet rows must
+            // advance monotonically, or (in the armpit, where the torso pushes points back
+            // out) consecutive rows double back over each other and fold.
+            std::vector<float> progress(M, 0.0f);
             for (int kq = 1; kq <= K; ++kq) {
                 const float f = float(kq) / float(K + 1);
                 const float h00 = 2 * f * f * f - 3 * f * f + 1, h10 = f * f * f - 2 * f * f + f, h01 = -2 * f * f * f + 3 * f * f,
@@ -839,6 +870,16 @@ void Builder::buildArms() {
                     Vec3 rad = pnt - (a.shoulder + d * dot(pnt - a.shoulder, d));
                     pnt += normalize(rad, Vec3{a.side, 0, 0}) * (delt[j] * std::sin(kPi * std::min(1.0f, f * 1.15f)));
                     pnt = lerp(pnt, outsideTorso(pnt), 1.0f - f);
+                    {
+                        const Vec3 col = ring1[j] - P0[j];
+                        const float L2 = std::max(dot(col, col), 1e-10f);
+                        // ... and must not run ahead either (rows bunching against ring1 fold too).
+                        const float pr = dot(pnt - P0[j], col) / L2;
+                        const float lo = std::min(progress[j] + 0.6f / float(K + 1), 0.85f), hi = std::max(lo, std::min(f + 0.12f, 0.88f));
+                        const float want = clamp(pr, lo, hi);
+                        pnt += col * (want - pr);
+                        progress[j] = want;
+                    }
                     SkinW w;
                     const SkinW& wl = bp.w[loop[j]];
                     for (int qq = 0; qq < 4; ++qq) w.add(wl.j[qq], wl.w[qq] * (1.0f - f));
@@ -900,7 +941,15 @@ void Builder::buildArms() {
                 if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) {
                     ++folds;
                     if (std::getenv("CHARGEN_CHECK")[0] == '2')
-                        std::fprintf(stderr, "  fold t=%.3f x/h=%.2f z/h=%.2f tris %zu %zu verts %u\n", torsoT(ctr.y), ctr.x / m.h, ctr.z / m.h, e.second[0], e.second[1], tr.a);
+                    {
+                        std::fprintf(stderr, "  fold t=%.3f x/h=%.2f z/h=%.2f tris %zu %zu verts %u (torsoFirst %u N %d rings %zu)\n", torsoT(ctr.y), ctr.x / m.h, ctr.z / m.h, e.second[0], e.second[1], tr.a, torsoFirst_, torsoN_, torsoRingT_.size());
+                        for (size_t q : e.second) {
+                            const auto& tq = bp.tris[q];
+                            for (uint32_t vq : {tq.a, tq.b, tq.c})
+                                std::fprintf(stderr, "     v%u (%.3f %.3f %.3f) t=%.3f%s\n", vq, bp.pos[vq].x / m.h, bp.pos[vq].y / m.h, bp.pos[vq].z / m.h,
+                                             torsoT(bp.pos[vq].y), vq >= torsoFirst_ + uint32_t(torsoRingT_.size() * size_t(torsoN_)) ? " (junction)" : "");
+                        }
+                    }
                 }
             }
             std::fprintf(stderr, "CHECK open=%d folds=%d\n", open, folds);
@@ -1094,9 +1143,15 @@ void Builder::buildLegs() {
         auto shin = [&](float f) { return tk + f * (1.0f - tk); };
         // Thigh: one steady taper from the hip to the knee (no waist on the thigh).
         auto thigh = [&](float f) { return f * tk; };
-        Curve rc{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {thigh(0.22f), lerp(Ttop, T, 0.7f)}, {thigh(0.45f), 0.93f * T},
-                 {thigh(0.68f), lerp(T, K, 0.40f)}, {thigh(0.86f), lerp(T, K, 0.78f)}, {tk - 0.02f, 1.02f * K}, {tk + 0.015f, K}, {shin(0.10f), 0.86f * Cf},
-                 {shin(0.27f), Cf}, {shin(0.42f), 0.84f * Cf}, {shin(0.56f), 0.60f * Cf}, {shin(0.70f), A}, {1.0f, 0.96f * A}, {1.06f, 0.96f * A}};
+        Curve rcRaw{{-0.16f, 0.62f * Ttop}, {-0.06f, 0.88f * Ttop}, {0.0f, Ttop}, {thigh(0.22f), lerp(Ttop, T, 0.7f)}, {thigh(0.45f), 0.93f * T},
+                    {thigh(0.68f), lerp(T, K, 0.40f)}, {thigh(0.86f), lerp(T, K, 0.78f)}, {tk - 0.02f, 1.02f * K}, {tk + 0.015f, K}, {shin(0.10f), 0.86f * Cf},
+                    {shin(0.27f), Cf}, {shin(0.42f), 0.84f * Cf}, {shin(0.56f), 0.60f * Cf}, {shin(0.70f), A}, {1.0f, 0.96f * A}, {1.06f, 0.96f * A}};
+        // Short, thick legs: the knee pinch and calf bulge soften with the leg's aspect.
+        const float lk = clamp((Lt / T) / 7.0f, 0.45f, 1.0f);
+        auto rc = [=](float t) {
+            const float v = rcRaw(t), mean = lerp(Ttop, A, saturate(t));
+            return lerp(v, mean + (v - mean) * lk, smoothstep(0.0f, 0.12f, t));
+        };
         int th = rig.upper, sh = rig.lower, ft = rig.end;
         auto weights = [=](float t) {
             return chainWeights({{tc - 0.03f, hips}, {t1 + 0.07f, th}, {tk - 0.07f, th}, {tk + 0.07f, sh}, {0.95f, sh}, {1.05f, ft}}, t);
@@ -1182,7 +1237,7 @@ void Builder::buildLegs() {
                 Vec2 p = sr.point(a);
                 Vec3 radial = u * p.x + v * p.y;
                 float beta = s == 0 ? a : kPi - a;
-                r[j] = c + radial + normalize(radial, v) * relief(beta, t, rr);
+                r[j] = c + radial + normalize(radial, v) * (lk * relief(beta, t, rr));
             }
             return r;
         };
@@ -1702,6 +1757,7 @@ void Builder::applySkinKind() {
         return acc;
     };
     const float cover = g.body.carapace * 1.25f - 0.12f;
+    const float rust = kind == 1 ? 0.92f * std::pow(smoothstep(0.04f, 1.0f, decay_), 1.25f) : 0.0f;
     const Vec3 hc = headCenter();
     const float faceY0 = m.headOrigin.y + 0.05f * h, faceY1 = m.headOrigin.y + 0.80f * h;
     for (size_t pi = 0; pi < parts.size(); ++pi) {
@@ -1710,11 +1766,22 @@ void Builder::applySkinKind() {
         const bool headish = pi == headPart_ || pi == nosePart_;
         for (auto& tr : p.tris) {
             if (tr.m.cls != MaterialClass::Skin) continue;
+            const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
             if (kind == 1) {
                 tr.m.cls = MaterialClass::Metal;
+                // Decay on a construct is rust: matte patches spreading from seams and
+                // low places, then over most of the shell.
+                if (rust > 0.0f) {
+                    const float n = noise(c / (0.9f * S)) * 0.7f + noise(c / (0.3f * S)) * 0.3f;
+                    const float low = 0.15f * (1.0f - saturate(c.y / m.H));
+                    if (n + low < rust) {
+                        const float k = hash(int(std::floor(c.x / (0.2f * S))), int(std::floor(c.y / (0.2f * S))), int(std::floor(c.z / (0.2f * S))), 7);
+                        tr.m.color = lerp(Vec3{0.38f, 0.20f, 0.11f}, Vec3{0.24f, 0.13f, 0.09f}, k) * lerp(1.0f, 0.75f, saturate(rust - n));
+                        tr.m.cls = MaterialClass::Leather;
+                    }
+                }
                 continue;
             }
-            const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
             if (headish && g.body.carapace < 0.95f && c.z > hc.z + 0.10f * h && c.y > faceY0 && c.y < faceY1) continue;
             // Nearest and second-nearest feature points of the 3D cell grid.
             const Vec3 u = c / S;
@@ -2075,6 +2142,7 @@ Character Builder::build() {
     if (decay_ >= 0.3f || g.species == Species::Undead) {  // torn open onto the real skeleton
         buildBoneSkeleton();
         addDecayHoles();
+        cullHiddenBones();
         buildCavityShells();
     }
     applySkinKind();

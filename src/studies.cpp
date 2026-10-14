@@ -119,7 +119,24 @@ std::optional<Genome> studyGenome(std::string_view name, uint64_t seed, GenOptio
         f.mouthWidth = 1.3f;
         f.mouthRest = 0.012f;
         f.mouthAsym = 0.004f;
-        f.eyeSize = std::min(f.eyeSize, 0.88f);
+        // A grown man's face, not a youth's: narrow heavy-lidded eyes with small irises,
+        // thick low brows, a long straight nose, hollow cheeks and a few lines.
+        g.age = 33.0f;
+        g.ageGroup = AgeGroup::Adult;
+        f.eyeShape = 2;
+        f.eyeSize = 0.80f;
+        f.irisSize = 0.82f;
+        f.restLid = 0.25f;
+        f.lashWeight = 0.15f;
+        f.browThick = 0.80f;
+        f.browHeight = -0.008f;
+        f.noseBridge = 0.85f;
+        f.noseLength = 1.12f;
+        f.noseShape = 1;
+        f.cheekHollow = 0.35f;
+        f.faceWidth = -0.15f;
+        f.ageLines = std::max(f.ageLines, 0.25f);
+        f.roundness = 0.0f;
         f.fang = true;
         f.stubble = 0.0f;
         f.scarType = 0;

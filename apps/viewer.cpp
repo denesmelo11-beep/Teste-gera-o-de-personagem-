@@ -704,6 +704,8 @@ cg::Genome withOverrides(cg::Genome g) {
         g.body.spineSize = sz;
     }
     if (const char* tc = std::getenv("CHARGEN_TUSKCURVE")) g.body.tuskCurve = float(std::atof(tc));
+    if (const char* d = std::getenv("CHARGEN_DEF")) g.body.anat.definition = float(std::atof(d));  // debug: muscle definition
+    if (const char* mu = std::getenv("CHARGEN_MUSCLE")) g.body.muscle = float(std::atof(mu));
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
             if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);

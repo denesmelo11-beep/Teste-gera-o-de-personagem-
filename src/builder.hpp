@@ -32,6 +32,7 @@ using PaintFn = std::function<Mat(float t, float theta)>;
 struct ClipRegion {
     std::function<float(Vec3)> field;
     Mat m;
+    int refine = 2;  // subdivision levels near the boundary before cutting (smoother curves, more triangles)
 };
 using WeightFn = std::function<SkinW(float t, float theta, Vec3 p)>;
 

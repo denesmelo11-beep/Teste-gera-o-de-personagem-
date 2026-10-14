@@ -951,6 +951,14 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f, 0.6f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
     if (opt.armPairs) g.body.armPairs = std::clamp(*opt.armPairs, 1, 2);
+    // Exaggerated proportions, once the people has rescaled them: keep the hips within
+    // what the shoulders carry and the waist below both, or short peoples turn into
+    // blocks with a flared skirt.
+    if (opt.exaggeration > 0.0f) {
+        BodyShape& eb = g.body;
+        eb.hipWidth = std::min(eb.hipWidth, 1.30f * eb.shoulderWidth);
+        eb.waistWidth = std::min(eb.waistWidth, 0.90f * std::max(eb.shoulderWidth, eb.hipWidth));
+    }
     return g;
 }
 

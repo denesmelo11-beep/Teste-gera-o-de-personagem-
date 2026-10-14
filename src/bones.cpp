@@ -22,6 +22,20 @@ void applyDecay(Genome& g, float d) {
     BodyShape& b = g.body;
     FaceStyle& f = g.face;
     Palette& pal = g.palette;
+    if (b.skinKind == 1) {  // constructs do not rot: they power down, rust and break open
+        const float off = smoothstep(0.02f, 0.25f, d);
+        f.glowEyes = false;
+        f.hollowEyes = d > 0.08f;  // dead lenses
+        f.rot = 0.0f, f.ruddy = 0.0f, f.milky = 0.0f;
+        b.coreColor = lerp(b.coreColor, Vec3{0.07f, 0.08f, 0.10f}, off);  // the core goes dark glass
+        pal.skin = pal.skin * (1.0f - 0.18f * d);
+        pal.lips = pal.skin * 0.7f;
+        pal.underwear = lerp(pal.underwear, Vec3{0.24f, 0.21f, 0.17f}, 0.7f * d);
+        pal.hair = grey(pal.hair, 1.0f - 0.5f * d) * (1.0f - 0.25f * d);
+        pal.hairTip = pal.hair * 0.88f;
+        b.bones = 0;
+        return;
+    }
     const Vec3 c0 = pal.skin;
     const Vec3 pallor = grey(c0, 0.45f) * Vec3{0.86f, 0.88f, 0.95f};
     const Vec3 rot = lerp(grey(c0, 0.3f), Vec3{0.44f, 0.46f, 0.31f}, 0.55f);
@@ -65,7 +79,12 @@ void Builder::buildBoneSkeleton() {
     const bool boneEnds = bonesOnly_ || decay_ >= 0.85f;  // hands and feet already bare
     const float hl = bonesOnly_ ? hb : 0.72f * hb;  // limb bones inside wasted flesh stay inside it
     const Vec3 boneC = bonesOnly_ ? Vec3{0.70f, 0.65f, 0.54f} : Vec3{0.62f, 0.55f, 0.44f};  // stained while flesh clings
-    const Mat bone{boneC, MaterialClass::Horn}, dark{{0.06f, 0.05f, 0.05f}, MaterialClass::Dark};
+    // Constructs carry an iron frame instead of bones.
+    const bool iron = g.body.skinKind == 1;
+    const Mat bone = iron ? Mat{lerp(Vec3{0.30f, 0.30f, 0.32f}, Vec3{0.38f, 0.24f, 0.15f}, 0.35f * decay_), MaterialClass::Metal}
+                          : Mat{boneC, MaterialClass::Horn};
+    const Mat dark{{0.06f, 0.05f, 0.05f}, MaterialClass::Dark};
+    boneParts0_ = parts.size();
     Part& first = newPart();
     first.id = bodyGroup_;
     const size_t Pi = parts.size() - 1;
@@ -75,6 +94,7 @@ void Builder::buildBoneSkeleton() {
     auto tube = [&](const std::vector<Vec3>& pts, float r0, const std::function<SkinW(float)>& wf, int sides = 5, float knob = 0.4f) {
         const size_t n = pts.size();
         if (n < 2) return;
+        if (lod.sparseRings) sides = std::max(4, sides - 1);  // lower LODs: leaner shafts
         Loft L;
         for (size_t k = 0; k < n; ++k) {
             const Vec3 d = normalize(pts[std::min(k + 1, n - 1)] - pts[k > 0 ? k - 1 : 0], Vec3{0, 1, 0});
@@ -102,8 +122,8 @@ void Builder::buildBoneSkeleton() {
         e.rAxis = rA;
         e.rU = rU;
         e.rV = rV;
-        e.lat = lat;
-        e.lon = lon;
+        e.lat = lod.sparseRings ? std::max(3, lat - 1) : lat;
+        e.lon = lod.sparseRings ? std::max(5, lon - 1) : lon;
         emitEllipsoid(P(), e, [=](float, float, Vec3) { return one(boneId); }, boneMat);
     };
     auto spineAt = [&](float t) { return Vec3{0, m.crotchY + t * tl, cZc_(t) - 0.42f * cDb_(t)}; };
@@ -121,7 +141,11 @@ void Builder::buildBoneSkeleton() {
             p.x *= 0.86f;
             p.y = hr.zc + (p.y - hr.zc) * (sn > 0 ? 0.88f : 0.90f);
             const float xn = p.x / (h * hw), ax = std::fabs(xn), front = smoothstep(0.2f, 0.7f, sn);
-            {
+            if (g.face.eyePairs >= 2) {  // two stacked orbits per side
+                const float es = (ax - 0.97f * exS) / 0.078f, ev = (s - 0.506f) / 0.058f;
+                const float es2 = (ax - 1.10f * exS) / 0.062f, ev2 = (s - 0.392f) / 0.045f;
+                p.y -= 0.11f * h * front * std::max({0.0f, 1.0f - (es * es + ev * ev), 0.85f * (1.0f - (es2 * es2 + ev2 * ev2))});
+            } else {
                 const float es = (ax - exS) / 0.085f, ev = (s - 0.462f) / 0.075f;
                 p.y -= 0.12f * h * front * std::max(0.0f, 1.0f - (es * es + ev * ev));  // round, deep orbits
             }
@@ -238,7 +262,7 @@ void Builder::buildBoneSkeleton() {
                 e.lat = 3;
                 e.lon = 6;
                 const Vec3 gc = g.face.glow * 1.25f + Vec3{0.15f, 0.15f, 0.15f};
-                const Mat glowM{Vec3{std::min(gc.x, 1.0f), std::min(gc.y, 1.0f), std::min(gc.z, 1.0f)}, MaterialClass::Hair};
+                const Mat glowM{Vec3{std::min(gc.x, 1.0f), std::min(gc.y, 1.0f), std::min(gc.z, 1.0f)}, MaterialClass::Glow};
                 Part& gp = newPart();  // its own part: the orbit clips must not darken it
                 gp.id = bodyGroup_;
                 emitEllipsoid(gp, e, [=](float, float, Vec3) { return one(r.head); }, [=](float, float) { return glowM; });
@@ -426,6 +450,7 @@ void Builder::buildBoneSkeleton() {
             blob({sd * 0.40f * h, m.barrelY + 0.3f * m.barrelHalfH, m.barrelBack + 0.9f * h}, normalize(Vec3{sd, 0, 0.3f}), {0, 1, 0}, 0.04f * h,
                  0.45f * h, 0.30f * h, r.hips, 3, 6);  // horse pelvis
     }
+    boneParts1_ = parts.size();
 }
 
 // Torn flesh: round holes through the skin onto the skeleton, growing with decay, each
@@ -484,7 +509,8 @@ void Builder::addDecayHoles() {
     // Ragged rims: the radius wobbles around each hole (torn, not punched), and a band of
     // dark, wet flesh lines the edge.
     const Mat hole{{0, 0, 0}, MaterialClass::Count};
-    const Mat rim{{0.24f, 0.10f, 0.09f}, MaterialClass::Dark};
+    // Flesh: a dark wet band; a construct's shell: torn plate with a bright scraped edge.
+    const Mat rim = g.body.skinKind == 1 ? Mat{{0.58f, 0.57f, 0.55f}, MaterialClass::Metal} : Mat{{0.24f, 0.10f, 0.09f}, MaterialClass::Dark};
     int idx = 0;
     for (const Hole& ho : holes_) {
         Part& p = parts[ho.head ? headPart_ : torsoPart_];
@@ -499,8 +525,10 @@ void Builder::addDecayHoles() {
             const float wob = 1.0f + 0.20f * std::sin(5.0f * a + ph) + 0.11f * std::sin(9.0f * a + 2.3f * ph) + 0.06f * std::sin(17.0f * a + ph);
             return length(d) - R * wob * grow;
         };
-        p.clips.push_back({[=](Vec3 q) { return field(q, 1.22f); }, rim});
-        p.clips.push_back({[=](Vec3 q) { return field(q, 1.0f); }, hole});
+        // Torn edges are ragged anyway: little refinement (the default doubles a corpse).
+        const int ref = opt.lod == 0 ? 1 : 0;
+        p.clips.push_back({[=](Vec3 q) { return field(q, 1.22f); }, rim, ref});
+        p.clips.push_back({[=](Vec3 q) { return field(q, 1.0f); }, hole, ref});
     }
 }
 
@@ -512,7 +540,7 @@ void Builder::buildCavityShells() {
     Part shell;
     shell.id = bodyGroup_;
     const Part& src = parts[torsoPart_];
-    const Mat flesh{{0.17f, 0.07f, 0.06f}, MaterialClass::Dark};
+    const Mat flesh = g.body.skinKind == 1 ? Mat{{0.07f, 0.07f, 0.08f}, MaterialClass::Dark} : Mat{{0.17f, 0.07f, 0.06f}, MaterialClass::Dark};
     std::vector<int> map(src.pos.size(), -1);
     for (const auto& tr : src.tris) {
         const Vec3 c = (src.pos[tr.a] + src.pos[tr.b] + src.pos[tr.c]) / 3.0f;
@@ -534,6 +562,52 @@ void Builder::buildCavityShells() {
         shell.tris.push_back({ids[0], ids[1], ids[2], flesh});
     }
     if (!shell.tris.empty()) parts.push_back(std::move(shell));
+}
+
+// While flesh still covers most of the body the skeleton is only seen through the
+// holes (and at the bare hands and feet): everything else is culled, which halves a
+// corpse's triangle count without changing a single visible pixel.
+void Builder::cullHiddenBones() {
+    if (bonesOnly_ || boneParts1_ <= boneParts0_) return;
+    const Skeleton& sk = ch.skeleton;
+    const RigInfo& r = ch.rig;
+    const bool boneEnds = decay_ >= 0.85f;
+    std::vector<uint8_t> extremity(sk.bones.size(), 0);
+    if (boneEnds) {
+        std::vector<int> ends;
+        for (const LimbRig& a : r.arms) ends.push_back(a.end);
+        for (const LimbRig& l : r.legs) ends.push_back(l.end);
+        for (size_t i = 0; i < sk.bones.size(); ++i)
+            for (int b = int(i); b >= 0; b = sk.bones[size_t(b)].parent)
+                if (std::find(ends.begin(), ends.end(), b) != ends.end()) {
+                    extremity[i] = 1;
+                    break;
+                }
+    }
+    const float h = m.h;
+    for (size_t pi = boneParts0_; pi < boneParts1_; ++pi) {
+        Part& p = parts[pi];
+        std::vector<Part::Tri> keep;
+        keep.reserve(p.tris.size());
+        for (const auto& tr : p.tris) {
+            const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
+            bool vis = false;
+            for (const Hole& ho : holes_)
+                if (length(c - ho.c) < 1.6f * ho.R + 1.5f * ho.depth + 0.04f * h) {
+                    vis = true;
+                    break;
+                }
+            if (!vis && boneEnds) {
+                const SkinW& w = p.w[tr.a];
+                int best = 0;
+                for (int k = 1; k < 4; ++k)
+                    if (w.w[k] > w.w[best]) best = k;
+                vis = extremity[size_t(w.j[best])] != 0;
+            }
+            if (vis) keep.push_back(tr);
+        }
+        p.tris.swap(keep);
+    }
 }
 
 }  // namespace cg::detail

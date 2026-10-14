@@ -41,6 +41,10 @@ Raylib 5.5 (opcional).
 | ![estudos](docs/estudos.png) |
 | ![estudos, rostos](docs/estudos_rostos.png) |
 
+| Constructos não apodrecem (`skinKind` 1): desligam (olhos e núcleo apagam), enferrujam em manchas foscas que se espalham, as placas rasgam com borda de metal raspado e por dentro aparece a armação de ferro; no fim sobra o esqueleto de ferro |
+|---|
+| ![constructos](docs/constructos_ruina.png) |
+
 | Morte e decomposição (`--decay`): vivo → recém-morto → apodrecendo → putrefato → quase ossada → ossada |
 |---|
 | ![decomposição](docs/decomposicao.png) |
@@ -112,7 +116,8 @@ chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDY
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
-# CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome (forçam variáveis)
+# CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome,
+# CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -357,6 +362,16 @@ coxa/canela/pé/dedo, ossos de busto, cauda, cadeias de cabelo e sockets de equi
 | LOD2 | ~2.800 | ~32 ms |
 
 A camada de pele reaproveita ~400 triângulos da frente da cabeça (um draw a mais, com blend).
+
+Cadáveres: enquanto ainda há carne, só ficam os ossos que algum rasgo deixa ver (e as mãos e pés
+já descarnados); as bordas dos rasgos quase não refinam a malha. Médias (30 personagens):
+
+| decomposição | LOD0 | LOD1 | LOD2 |
+|---|---|---|---|
+| 0 (vivo) | ~5.800 | ~3.400 | ~2.800 |
+| 0,3–0,5 | ~8.100 | ~4.800 | ~4.100 |
+| 0,7–0,96 | ~10.600–11.100 | ~6.200–6.500 | ~5.500–6.000 |
+| 1 (ossada) | ~5.100 | ~4.350 | ~4.350 |
 
 No estilo facetado cada face tem vértices próprios (≈3× vértices por triângulo); se memória de
 vértices importar mais que a contagem de triângulos, gere com `--smooth` e faceteie no shader

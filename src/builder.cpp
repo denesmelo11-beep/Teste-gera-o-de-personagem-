@@ -338,7 +338,7 @@ void applyClips(Part& part, std::vector<std::array<Vec3, 3>>& cn, std::vector<ui
     src.resize(part.tris.size());
     for (size_t t = 0; t < part.tris.size(); ++t) src[t] = uint32_t(t);
     for (const ClipRegion& clip : part.clips) {
-        refineNear(part, cn, src, shade, clip.field, 2);
+        if (clip.refine > 0) refineNear(part, cn, src, shade, clip.field, clip.refine);
         std::vector<float> f(part.pos.size());
         for (size_t i = 0; i < part.pos.size(); ++i) f[i] = clip.field(part.pos[i]);
         std::unordered_map<uint64_t, uint32_t> cut;

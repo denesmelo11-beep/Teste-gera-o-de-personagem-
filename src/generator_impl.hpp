@@ -113,6 +113,7 @@ private:
     void buildBoneSkeleton();
     void addDecayHoles();
     void buildCavityShells();
+    void cullHiddenBones();  // drop skeleton faces no hole can show (most of it while flesh remains)
     void buildTusks();
     void buildEars();
 
@@ -131,6 +132,8 @@ private:
         std::function<bool(Vec3)> gate;
     };
     std::vector<Hole> holes_;
+    float torsoD_ = 0.0f, profK_ = 1.0f;     // torso depth and how much its profile may swing (short torsos)
+    size_t boneParts0_ = 0, boneParts1_ = 0;  // parts built by buildBoneSkeleton
     size_t torsoTriStart_ = 0;           // first torso-loft triangle in the torso part
     uint32_t torsoFirst_ = 0;            // first torso-loft vertex
     int torsoN_ = 0;                     // vertices per torso ring

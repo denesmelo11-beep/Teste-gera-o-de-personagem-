@@ -621,12 +621,14 @@ void paintSkin(CellPainter& cp, const Genome& g) {
         st.bounds(lo, hi);
         cp.fill(st, Vec4(mul * 0.5f, a), lo, hi);
     };
-    const float ex = 0.188f * f.eyeSpacing, ey = 0.462f;
+    const float ex = (f.eyePairs >= 2 ? 0.180f : 0.188f) * f.eyeSpacing, ey = f.eyePairs >= 2 ? 0.506f : 0.462f;
     const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;  // the side scars and marks favour
 
     // Eye sockets: shade under the brow ridge and around the eye, deeper for deep-set eyes.
+    if (f.eyePairs >= 2)  // the lower, smaller pair (the main one is shaded below, moved up)
+        for (float sd : {1.0f, -1.0f}) soft({sd * 0.205f * f.eyeSpacing, 0.398f}, {0.090f, 0.050f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.45f * f.eyeDepth, 0.8f);
     for (float sd : {1.0f, -1.0f}) {
-        soft({sd * ex, ey + 0.020f}, {0.150f, 0.090f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.55f * f.eyeDepth, 0.8f);
+        soft({sd * ex, ey + 0.020f}, {0.150f, f.eyePairs >= 2 ? 0.070f : 0.090f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.55f * f.eyeDepth, 0.8f);
         soft({sd * 0.075f, ey + 0.012f}, {0.050f, 0.060f}, {0.78f, 0.68f, 0.70f}, 0.25f + 0.35f * f.eyeDepth);  // inner corner
         // Tired, puffy under-eyes.
         soft({sd * (ex + 0.005f), ey - 0.062f}, {0.085f, 0.024f}, {0.80f, 0.70f, 0.78f}, 0.55f * f.eyeBags);

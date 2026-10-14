@@ -65,11 +65,19 @@ float Builder::faceRelief(float xn, float s) const {
     const float ax = std::fabs(xn);
     float r = 0;
     r += (0.006f + 0.004f * f.noseBridge) * bump((s - 0.43f) / 0.13f) * bump(xn / 0.07f);
-    // Brow ridge (with the glabella) overhanging the sockets.
-    r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - 0.56f) / 0.045f) * bump(xn / 0.36f);
-    r -= (0.008f + 0.020f * f.eyeDepth) * bump((s - 0.468f) / 0.055f) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
+    // Brow ridge (with the glabella) overhanging the sockets. Four-eyed heads stack two
+    // sockets: the main pair higher under a higher brow, a smaller pair below it set a
+    // little wider, a bony ridge between them and the cheekbones pushed down.
+    const bool four = f.eyePairs >= 2;
+    const float browS = four ? 0.600f : 0.56f, eyeS = four ? 0.506f : 0.468f, cheekS = four ? 0.330f : 0.375f;
+    r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - browS) / 0.045f) * bump(xn / 0.36f);
+    r -= (0.008f + 0.020f * f.eyeDepth) * bump((s - eyeS) / (four ? 0.045f : 0.055f)) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
+    if (four) {
+        r -= (0.007f + 0.014f * f.eyeDepth) * bump((s - 0.392f) / 0.036f) * bump((ax - 0.190f * f.eyeSpacing) / 0.085f);
+        r += 0.009f * bump((s - 0.450f) / 0.020f) * bump((ax - 0.19f * f.eyeSpacing) / 0.11f);
+    }
     // Cheekbones and the hollow beneath them.
-    r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * bump((s - 0.375f) / 0.05f) * bump((ax - 0.235f) / 0.09f);
+    r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * bump((s - cheekS) / 0.05f) * bump((ax - 0.235f) / 0.09f);
     r -= 0.016f * f.cheekHollow * bump((s - 0.27f) / 0.06f) * bump((ax - 0.22f) / 0.08f);
     // Lips, the dip below them, and the chin.
     const float mw = f.mouthWidth;
@@ -164,7 +172,9 @@ void Builder::buildHead() {
     const float h = m.h;
     Loft L;
     // Few rings, each on a landmark (chin, jaw, mouth, nose tip, cheekbone, eyes, brow, cranium).
-    const float ss[] = {0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.34f, 0.40f, 0.47f, 0.56f, 0.64f, 0.76f, 0.88f};
+    const std::vector<float> ss = g.face.eyePairs >= 2  // landmarks of the stacked sockets
+        ? std::vector<float>{0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.335f, 0.392f, 0.45f, 0.506f, 0.60f, 0.68f, 0.78f, 0.88f}
+        : std::vector<float>{0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.34f, 0.40f, 0.47f, 0.56f, 0.64f, 0.76f, 0.88f};
     const int N = lod.headSeg;
     int i = 0;
     for (float s : ss) {
