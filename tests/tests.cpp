@@ -250,6 +250,19 @@ int main() {
         for (const Vertex& v : b.mesh.vertices) metal += v.color[3] / 32 == int(MaterialClass::Metal), horn += v.color[3] / 32 == int(MaterialClass::Horn);
         CHECK(metal > horn, "esqueleto do constructo nao e de ferro (%d metal, %d osso)", metal, horn);
     }
+    {   // A ruined construct loses a forearm: one hand has (almost) nothing skinned to it.
+        GenOptions go;
+        go.decay = 0.7f;
+        const Character c = generateCharacter(*studyGenome("android_monk", 1), go);
+        int hands[2] = {0, 0};
+        for (const Vertex& v : c.mesh.vertices) {
+            int best = 0;
+            for (int k = 1; k < 4; ++k)
+                if (v.weights[k] > v.weights[best]) best = k;
+            for (int a = 0; a < 2; ++a) hands[a] += v.joints[best] == c.rig.arms[size_t(a)].end;
+        }
+        CHECK(std::min(hands[0], hands[1]) * 10 < std::max(hands[0], hands[1]), "constructo sem antebraco arrancado (%d / %d)", hands[0], hands[1]);
+    }
     {   // Corpses only keep the bones a hole can show.
         GenOptions a, b;
         a.decay = 0.5f;

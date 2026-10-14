@@ -41,7 +41,7 @@ Raylib 5.5 (opcional).
 | ![estudos](docs/estudos.png) |
 | ![estudos, rostos](docs/estudos_rostos.png) |
 
-| Constructos não apodrecem (`skinKind` 1): desligam (olhos e núcleo apagam), enferrujam em manchas foscas que se espalham, as placas rasgam com borda de metal raspado e por dentro aparece a armação de ferro; no fim sobra o esqueleto de ferro |
+| Constructos não apodrecem (`skinKind` 1): desligam (olhos e núcleo apagam), levam amassados na carcaça, enferrujam em manchas foscas que se espalham, as placas rasgam com borda de metal raspado e por dentro aparece a armação de ferro; a partir de 0,5 um antebraço é arrancado (corte serrilhado, soquete escuro, ponta da armação e fios rompidos pendurados), e a perda continua na armação de ferro que sobra no fim |
 |---|
 | ![constructos](docs/constructos_ruina.png) |
 
@@ -166,7 +166,13 @@ Variáveis novas no genoma (`BodyShape`): `tailType` (0 simples, 1 réptil pesad
 continua pela cauda) e `tuskCurve` (-1 abertas para fora … +1 curvadas para dentro); `skinKind` (0 carne,
 1 metálica, 2 carapaça em placas facetadas com `carapace` = cobertura e `carapaceColor`), `core` (orbe
 brilhante no abdômen ou no peito, `coreColor`, material emissivo `MaterialClass::Glow`). No rosto:
-`eyePairs` (2 = segundo par de olhos) e `mouthStyle` 3 (sorriso de tubarão, duas fileiras de dentes).
+`eyePairs` (2 = segundo par de olhos, cada um numa órbita esculpida com pálpebras superior e inferior
+modeladas) e `mouthStyle` 3 (sorriso de tubarão, duas fileiras de dentes).
+
+Axilas: a junção braço–tronco é uma grade relaxada e reparada (colunas seguem o ângulo real em torno do
+braço, cantos inferiores arredondados, oco da axila, braços pesados apoiados no flanco em vez de
+afundar nele); `CHARGEN_CHECK=1` conta dobras: zero em 672 combinações de povo × 2/4 braços × seed e em
+todos os presets.
 
 `validateCharacter` confere índices, NaN, normais, pesos, ossos, faixas de submalha, limites e orçamento;
 `fuzzGenome` sorteia genomas muito além da população (todos os povos, presets, quatro braços, caudas,

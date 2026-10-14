@@ -115,6 +115,11 @@ private:
     void addDecayHoles();
     void buildCavityShells();
     void cullHiddenBones();  // drop skeleton faces no hole can show (most of it while flesh remains)
+    // Constructs in ruin (bones.cpp): dents hammered into the shell, and late a forearm
+    // torn off at a jagged edge with the iron frame and torn wiring sticking out.
+    void dentConstruct();
+    void breakConstruct();
+    void applyConstructCut();
     void buildTusks();
     void buildEars();
 
@@ -135,6 +140,8 @@ private:
     std::vector<Hole> holes_;
     float torsoD_ = 0.0f, profK_ = 1.0f;     // torso depth and how much its profile may swing (short torsos)
     size_t boneParts0_ = 0, boneParts1_ = 0;  // parts built by buildBoneSkeleton
+    std::function<float(Vec3)> cutFlesh_, cutFrame_;  // torn-off limb (< 0 removed)
+    size_t wireParts0_ = 0, wireParts1_ = 0;
     size_t torsoTriStart_ = 0;           // first torso-loft triangle in the torso part
     uint32_t torsoFirst_ = 0;            // first torso-loft vertex
     int torsoN_ = 0;                     // vertices per torso ring

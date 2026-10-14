@@ -964,7 +964,11 @@ int runStudies(Scene& s, const std::string& path, uint64_t seed) {
             cam = makeCam({0, hp.y + 0.40f * hh, 0.1f * hh}, sy ? float(std::atof(sy)) : 0.38f, 0.0f, hh * 6.8f / (sz ? float(std::atof(sz)) : 1.0f), 21.0f);
         } else {
             const bool longBody = a.ch.genome.body.centaur || a.ch.genome.body.tail;
-            cam = makeCam({0, H * 0.5f, longBody ? -0.2f * H : 0.0f}, 0.55f, 0.03f, H * (longBody ? 3.4f : 2.9f), 21.0f);
+            const char* sy = std::getenv("CHARGEN_STUDYYAW");
+            const char* sz = std::getenv("CHARGEN_STUDYZOOM");
+            const char* sf = std::getenv("CHARGEN_STUDYY");
+            cam = makeCam({0, H * (sf ? float(std::atof(sf)) : 0.5f), longBody ? -0.2f * H : 0.0f}, sy ? float(std::atof(sy)) : 0.55f, 0.03f,
+                          H * (longBody ? 3.4f : 2.9f) / (sz ? float(std::atof(sz)) : 1.0f), 21.0f);
         }
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);

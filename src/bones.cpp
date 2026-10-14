@@ -610,4 +610,120 @@ void Builder::cullHiddenBones() {
     }
 }
 
+// ---- constructs in ruin ----
+
+// Dents: blows hammered into the shell, more of them as the construct decays.
+void Builder::dentConstruct() {
+    if (g.body.skinKind != 1 || decay_ < 0.08f || bonesOnly_) return;
+    Part& p = parts[torsoPart_];
+    const float h = m.h;
+    std::vector<Vec3> nrm(p.pos.size(), Vec3{});
+    for (const auto& tr : p.tris) {
+        const Vec3 n = cross(p.pos[tr.b] - p.pos[tr.a], p.pos[tr.c] - p.pos[tr.a]);
+        nrm[tr.a] += n, nrm[tr.b] += n, nrm[tr.c] += n;
+    }
+    Rng r(g.seed, 0xDE27);
+    const int count = 2 + int(10.0f * saturate(decay_));
+    for (int k = 0; k < count && !p.tris.empty(); ++k) {
+        const auto& tr = p.tris[size_t(r.rangeInt(0, int(p.tris.size()) - 1))];
+        const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
+        if (c.y < 0.08f * m.H) continue;  // not the soles
+        const float R = r.range(0.16f, 0.32f) * h, depth = r.range(0.5f, 1.0f) * 0.07f * h * (0.5f + decay_);
+        for (size_t v = 0; v < p.pos.size(); ++v) {
+            const float d = length(p.pos[v] - c);
+            if (d >= R) continue;
+            const float fall = 1.0f - (d / R) * (d / R);
+            p.pos[v] -= normalize(nrm[v], {0, 0, 1}) * (depth * fall * fall);
+        }
+    }
+}
+
+// A forearm torn off (late decay): a jagged cut through flesh and frame, a dark socket
+// in the stump, the frame's end sticking out and a spray of torn wires.
+void Builder::breakConstruct() {
+    if (g.body.skinKind != 1 || decay_ < 0.5f || m.arms.empty()) return;  // (bare frames keep the loss too)
+    Rng r(g.seed, 0xB2EA);
+    const ArmMarks& a = m.arms[size_t(r.rangeInt(0, int(std::min<size_t>(2, m.arms.size())) - 1))];
+    const LimbRig& rig = ch.rig.arms[size_t(&a - m.arms.data())];
+    const float h = m.h;
+    const Vec3 dir = normalize(a.wrist - a.elbow, a.dir);
+    const Vec3 c = lerp(a.elbow, a.wrist, r.range(0.30f, 0.65f));
+    const float rr = 0.85f * a.radius;
+    const Vec3 u = normalize(cross(dir, Vec3{0, 0, 1}), {1, 0, 0}), v = cross(dir, u);
+    const Vec3 tip = a.handTip + dir * (0.2f * h);
+    const float ph = r.range(0.0f, 6.0f);
+    auto nearArm = [=](Vec3 q) {
+        const Vec3 ab = tip - c;
+        const float t = clamp(dot(q - c, ab) / dot(ab, ab), 0.0f, 1.0f);
+        return length(q - (c + ab * t)) - 2.2f * rr;
+    };
+    auto plane = [=](Vec3 q, float off) {
+        const Vec3 d = q - c;
+        const float ang = std::atan2(dot(d, v), dot(d, u));
+        const float jag = 0.35f * rr * std::sin(5.0f * ang + ph) + 0.18f * rr * std::sin(11.0f * ang + 2.0f * ph);
+        return dot(d, dir) - off - jag;
+    };
+    cutFlesh_ = [=](Vec3 q) { return std::max(-plane(q, 0.0f), nearArm(q)); };
+    cutFrame_ = [=](Vec3 q) { return std::max(-plane(q, 0.18f * h), nearArm(q)); };
+    // The stump is a hole like any tear: the frame near it is kept, the inside is dark.
+    if (!bonesOnly_) holes_.push_back({c, rr, 0.6f * rr, false, dir, nullptr});
+    // Socket: a dark disc closing the stump just inside the cut.
+    wireParts0_ = parts.size();
+    Part& sp = newPart();
+    const int lo = rig.lower;
+    if (!bonesOnly_) {
+        Ellipsoid e;
+        e.center = c - dir * (0.25f * rr);
+        e.axis = dir;
+        e.up = v;
+        e.rAxis = 0.12f * rr;
+        e.rU = e.rV = 0.92f * rr;
+        e.lat = 2;
+        e.lon = 8;
+        emitEllipsoid(sp, e, [=](float, float, Vec3) { return one(lo); },
+                      [](float, float) { return Mat{{0.06f, 0.06f, 0.07f}, MaterialClass::Dark}; });
+    }
+    // Wires: torn cables spilling out of the stump and drooping.
+    static const Vec3 kWire[] = {{0.50f, 0.10f, 0.07f}, {0.09f, 0.09f, 0.10f}, {0.62f, 0.38f, 0.16f}, {0.16f, 0.24f, 0.45f}, {0.40f, 0.36f, 0.10f}};
+    const int nw = 4 + r.rangeInt(0, 2);
+    for (int k = 0; k < nw; ++k) {
+        const float ang = kTau * float(k) / float(nw) + r.range(-0.3f, 0.3f), rad = r.range(0.25f, 0.6f) * rr;
+        Vec3 p = c + (u * std::cos(ang) + v * std::sin(ang)) * rad - dir * (0.1f * rr);
+        Vec3 d = normalize(dir + (u * std::cos(ang) + v * std::sin(ang)) * r.range(0.2f, 0.6f));
+        const float len = r.range(0.28f, 0.55f) * h, wr = r.range(0.013f, 0.020f) * h;
+        std::vector<Vec3> pts{p};
+        for (int s = 0; s < 4; ++s) {
+            d = normalize(d + Vec3{0, -0.45f, 0} + Vec3{r.range(-0.2f, 0.2f), 0, r.range(-0.2f, 0.2f)});
+            p = p + d * (len / 4.0f);
+            pts.push_back(p);
+        }
+        Loft L;
+        for (size_t s = 0; s < pts.size(); ++s) {
+            const Vec3 dd = normalize(s + 1 < pts.size() ? pts[s + 1] - pts[s] : pts[s] - pts[s - 1], dir);
+            const Vec3 vv = normalize(cross(dd, Vec3{1, 0, 0}), Vec3{0, 1, 0}), uu = cross(dd, vv);
+            L.rings.push_back(makeRing(pts[s], uu, vv, SuperRing{wr, 0, wr, wr}, 4));
+            L.t.push_back(float(s) / float(pts.size() - 1));
+        }
+        L.poleEnd = true;
+        L.endPole = pts.back() + normalize(pts.back() - pts[pts.size() - 2], dir) * wr;
+        const Vec3 col = kWire[size_t(k) % 5];
+        emitLoft(sp, L, [=](float, float, Vec3) { return one(lo); }, [=](float t, float) {
+            return t > 0.9f ? Mat{{0.78f, 0.52f, 0.28f}, MaterialClass::Metal} : Mat{col, MaterialClass::Leather};  // bare copper ends
+        });
+    }
+    wireParts1_ = parts.size();
+}
+
+// The cut applies to every surface (flesh, hand, shells) except the frame, which keeps
+// a stub, and the socket and wires themselves.
+void Builder::applyConstructCut() {
+    if (!cutFlesh_) return;
+    const Mat gone{{0, 0, 0}, MaterialClass::Count};
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (parts[i].kind != SubmeshKind::Body || (i >= wireParts0_ && i < wireParts1_)) continue;
+        const bool frame = i >= boneParts0_ && i < boneParts1_;
+        parts[i].clips.push_back({frame ? cutFrame_ : cutFlesh_, gone, 0});
+    }
+}
+
 }  // namespace cg::detail

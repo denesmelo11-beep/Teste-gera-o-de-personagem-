@@ -2345,6 +2345,8 @@ Character Builder::build() {
         buildTusks();
         buildColliders();
         buildBoneSkeleton();
+        breakConstruct();
+        applyConstructCut();
         finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
         ch.faceAtlas = paintFaceAtlas(g);
         return std::move(ch);
@@ -2368,11 +2370,14 @@ Character Builder::build() {
     buildBones();
     applyFur();
     buildFurTufts();
+    dentConstruct();
     if (decay_ >= 0.3f || g.species == Species::Undead) {  // torn open onto the real skeleton
         buildBoneSkeleton();
         addDecayHoles();
+        breakConstruct();
         cullHiddenBones();
         buildCavityShells();
+        applyConstructCut();
     }
     buildEyelids();
     applySkinKind();
