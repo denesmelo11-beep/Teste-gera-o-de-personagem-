@@ -138,6 +138,11 @@ struct BodyShape {
     int spines = 0;             // dorsal spines along the spine (and the tail): count, 0 none
     float spineSize = 1.0f;
     int spineKind = 0;          // 0 swept-back spikes, 1 bony plates, 2 short knobs
+    int skinKind = 0;           // 0 flesh, 1 metallic (constructs, androids), 2 armoured carapace (hard faceted plates)
+    float carapace = 1.0f;      // carapace coverage 0..1 (plates spread from the limbs and back; >0.95 masks the face too)
+    Vec3 carapaceColor{0.10f, 0.10f, 0.12f};
+    int core = 0;               // a glowing orb set into the body: 0 none, 1 abdomen, 2 chest
+    Vec3 coreColor{0.45f, 0.80f, 1.0f};
     bool hooves = false;
     int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
     bool centaur = false;       // human torso on a horse body (four legs)
@@ -220,9 +225,10 @@ struct FaceStyle {
     float chinPoint = 0.0f;    // 0 .. 1 the lower face narrows to a pointed chin
     float underbite = 0.0f;    // 0 .. 1 the lower jaw juts forward past the upper lip
     float wrinkles = 0.0f;     // 0 .. 1 creased skin (brow, nose bridge, crow's feet, cheek folds)
-    int mouthStyle = 0;        // 0 lips, 1 wide sharp-toothed grin line, 2 underbite with lower teeth
+    int mouthStyle = 0;        // 0 lips, 1 wide sharp-toothed grin line, 2 underbite with lower teeth, 3 shark grin (two rows of pointed teeth)
     Vec3 sclera{0.97f, 0.97f, 0.97f};
     bool hollowEyes = false;   // eyes rotted away: dark sockets
+    int eyePairs = 1;          // 2: a second, smaller pair of eyes below the first
     Vec3 glow{0.8f, 0.9f, 1.0f};
     float rot = 0.0f;          // undead decay: dark patches and stitches 0..1
     Vec3 tattooColor{0.16f, 0.22f, 0.32f};

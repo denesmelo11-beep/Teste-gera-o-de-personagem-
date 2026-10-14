@@ -36,6 +36,11 @@ Raylib 5.5 (opcional).
 |---|
 | ![caudas e presas](docs/caudas_presas.png) |
 
+| Estudos e testes de estresse (`--studies`, `cg::studies()`): andróide monge com núcleo brilhante e pele metálica, homúnculo de sorriso de tubarão e sua forma com escudo de carapaça negra, gigantes de quatro braços e quatro olhos (3–3,5 m), centauro de quatro braços, horror de quitina, golem de ferro, gigante apodrecendo e sua ossada, andróide em ruína, gnomo no exagero máximo |
+|---|
+| ![estudos](docs/estudos.png) |
+| ![estudos, rostos](docs/estudos_rostos.png) |
+
 | Morte e decomposição (`--decay`): vivo → recém-morto → apodrecendo → putrefato → quase ossada → ossada |
 |---|
 | ![decomposição](docs/decomposicao.png) |
@@ -103,10 +108,11 @@ chargen_viewer --races povos.png --seed 5               # cada povo, homem e mul
 chargen_viewer --decay morte.png --seed 12              # estágios de decomposição até a ossada
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
+chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDYFACES=1 retratos; CHARGEN_STUDIES="a b" subconjunto)
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
-# CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1 (forçam as novas variáveis)
+# CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome (forçam variáveis)
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
@@ -128,6 +134,7 @@ chargen_cli info      --seed 9 --species troll --sex male     # chave, descriç�
 chargen_cli info      --key CG1-1400000000001ZR1ZZZZY1000000000F
 chargen_cli family    --seed 7 --species dwarf --children 3   # pais, filhos herdando, o pai envelhecendo
 chargen_cli corpse    --days 30                               # linha do tempo da decomposição e regenerações
+chargen_cli stress    --count 2000                            # fuzz: genomas extremos + validação + tempos
 ```
 
 ## Para a engine do RPG (`chargen/engine.hpp`)
@@ -151,7 +158,15 @@ Tudo o que o jogo precisa em volta do personagem gerado, sem depender do visuali
 
 Variáveis novas no genoma (`BodyShape`): `tailType` (0 simples, 1 réptil pesada, 2 chicote com lâmina, 3 peluda,
 4 maça com espinhos, 5 de rato), `spines` / `spineKind` (espinhos, placas, nós) / `spineSize` (crista dorsal que
-continua pela cauda) e `tuskCurve` (-1 abertas para fora … +1 curvadas para dentro).
+continua pela cauda) e `tuskCurve` (-1 abertas para fora … +1 curvadas para dentro); `skinKind` (0 carne,
+1 metálica, 2 carapaça em placas facetadas com `carapace` = cobertura e `carapaceColor`), `core` (orbe
+brilhante no abdômen ou no peito, `coreColor`, material emissivo `MaterialClass::Glow`). No rosto:
+`eyePairs` (2 = segundo par de olhos) e `mouthStyle` 3 (sorriso de tubarão, duas fileiras de dentes).
+
+`validateCharacter` confere índices, NaN, normais, pesos, ossos, faixas de submalha, limites e orçamento;
+`fuzzGenome` sorteia genomas muito além da população (todos os povos, presets, quatro braços, caudas,
+carapaças, núcleos, olhos extras, sliders extremos, decomposição e LOD). `chargen_cli stress --count 2000`
+passa 100% (média ~50 ms por personagem com atlas; pior caso ~0,3 s num cadáver com ossos e cavidades).
 
 Filtros: `--species human|dwarf|gnome|orc|troll|undead|nightelf|highelf|draenei|tauren|goblin|worgen|ogre|centaur|skeleton|mixed`, `--sex female|male`, `--age young|adult|mature|elder`,
 `--persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble`,
@@ -350,14 +365,15 @@ vértices importar mais que a contagem de triângulos, gere com `--smooth` e fac
 ## Estrutura
 
 ```
-include/chargen/  math, rng, genome, character, animation, physics, image, render, gltf, engine
+include/chargen/  math, rng, genome, character, animation, physics, image, render, gltf, engine, studies
 src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
                   generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, caudas, cristas dorsais, colisores)
                   head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
                   bones.cpp (esqueleto real, decomposição, buracos na carne, esqueletos)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
-                  engine.cpp (chaves, métricas, hitboxes, sockets, malha compacta, decomposição, LOD, famílias)
+                  engine.cpp (chaves, métricas, hitboxes, sockets, malha compacta, decomposição, LOD, famílias, validação, fuzz)
+                  studies.cpp (estudos de personagem e combinações de estresse)
 apps/             chargen_cli.cpp, viewer.cpp (Raylib)
 tests/tests.cpp   docs/ (imagens geradas pelo visualizador)
 ```

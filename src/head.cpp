@@ -155,6 +155,7 @@ Vec3 Builder::collide(Vec3 p, float margin) const {
             if (dl < R && dl > 1e-6f) p = q + dq * (R / dl);
         }
     }
+    p.y = std::max(p.y, margin + 0.06f * h);  // very long hair on short people rests on the ground
     return p;
 }
 

@@ -1509,6 +1509,8 @@ void Builder::buildTail() {
             default: d = {0, lerp(-1.2f, 0.3f, u), -1.0f}; break;
         }
         p += normalize(d) * step;
+        // Long tails on short bodies reach the ground: they trail along it instead.
+        if (p.y < 0.04f * h) p.y = 0.04f * h;
     }
     const int nb = 4;
     int parent = r.hips;
@@ -1635,6 +1637,110 @@ void Builder::buildTail() {
     sc.gravity = type == 1 || type == 4 ? 0.35f : 0.2f;
     sc.hitRadius = rt * 0.6f;
     ch.physics.chains.push_back(sc);
+}
+
+// A glowing orb set into the body (constructs, engines of power): a dark metal
+// socket ring with the emissive sphere bulging out of it.
+void Builder::buildCore() {
+    if (g.body.core <= 0 || bonesOnly_) return;
+    const float h = m.h;
+    const RigInfo& r = ch.rig;
+    const bool chest = g.body.core == 2;
+    const float t = chest ? 0.74f : 0.38f;
+    const Vec3 q = torsoPoint(t, 0.5f * kPi);
+    const Vec3 n{0, 0, 1};
+    const float R = (chest ? 0.17f : 0.20f) * h;
+    const int bone = chest ? r.chest : r.spine;
+    Part& p = newPart();
+    Ellipsoid ring;
+    ring.center = q - n * (0.10f * R);
+    ring.axis = n;
+    ring.up = {0, 1, 0};
+    ring.rAxis = 0.42f * R;
+    ring.rU = ring.rV = 1.40f * R;
+    ring.lat = 3;
+    ring.lon = 10;
+    const Mat socket{lerp(g.palette.skin, Vec3{0.16f, 0.17f, 0.20f}, 0.7f), MaterialClass::Metal};
+    emitEllipsoid(p, ring, [=](float, float, Vec3) { return one(bone); }, [=](float, float) { return socket; });
+    Ellipsoid orb;
+    orb.center = q + n * (0.22f * R);
+    orb.axis = n;
+    orb.up = {0, 1, 0};
+    orb.rAxis = 0.70f * R;
+    orb.rU = orb.rV = R;
+    orb.lat = 4;
+    orb.lon = 10;
+    const Vec3 hc = g.body.coreColor * 0.55f + Vec3{0.45f, 0.45f, 0.45f};
+    const Vec3 hot{std::min(hc.x, 1.0f), std::min(hc.y, 1.0f), std::min(hc.z, 1.0f)};
+    emitEllipsoid(p, orb, [=](float, float, Vec3) { return one(bone); },
+                  [=, cc = g.body.coreColor](float tt, float) { return Mat{lerp(hot, cc, smoothstep(0.35f, 0.9f, tt)), MaterialClass::Glow}; });
+}
+
+// Skin kinds: metallic flesh (androids, golems) keeps the forms and gains a metal
+// sheen; the carapace breaks the surface into hard faceted plates (Voronoi cells)
+// with dark flesh in the seams, leaving the face bare unless coverage is total.
+void Builder::applySkinKind() {
+    const int kind = g.body.skinKind;
+    if (kind == 0 || bonesOnly_) return;
+    const float h = m.h, S = 0.42f * h;
+    const uint64_t seed = g.seed * 0x9E3779B97F4A7C15ull + 77;
+    auto hash = [&](int x, int y, int z, uint64_t k) {
+        uint64_t v = splitmix64(seed ^ (uint64_t(uint32_t(x)) * 73856093ull) ^ (uint64_t(uint32_t(y)) * 19349663ull) ^
+                                (uint64_t(uint32_t(z)) * 83492791ull) ^ (k * 0x632BE59BD9B4E019ull));
+        return float(v >> 40) / float(1ull << 24);
+    };
+    // Smooth value noise (period ~3 plates): partial coverage grows in contiguous
+    // patches, and whole plates are kept or dropped so the edge follows the seams.
+    auto noise = [&](Vec3 q) {
+        const int x0 = int(std::floor(q.x)), y0 = int(std::floor(q.y)), z0 = int(std::floor(q.z));
+        const Vec3 f{smoothstep(0, 1, q.x - x0), smoothstep(0, 1, q.y - y0), smoothstep(0, 1, q.z - z0)};
+        float acc = 0;
+        for (int k = 0; k < 8; ++k) {
+            const int dx = k & 1, dy = (k >> 1) & 1, dz = k >> 2;
+            acc += hash(x0 + dx, y0 + dy, z0 + dz, 9) * (dx ? f.x : 1 - f.x) * (dy ? f.y : 1 - f.y) * (dz ? f.z : 1 - f.z);
+        }
+        return acc;
+    };
+    const float cover = g.body.carapace * 1.25f - 0.12f;
+    const Vec3 hc = headCenter();
+    const float faceY0 = m.headOrigin.y + 0.05f * h, faceY1 = m.headOrigin.y + 0.80f * h;
+    for (size_t pi = 0; pi < parts.size(); ++pi) {
+        Part& p = parts[pi];
+        if (p.kind != SubmeshKind::Body) continue;
+        const bool headish = pi == headPart_ || pi == nosePart_;
+        for (auto& tr : p.tris) {
+            if (tr.m.cls != MaterialClass::Skin) continue;
+            if (kind == 1) {
+                tr.m.cls = MaterialClass::Metal;
+                continue;
+            }
+            const Vec3 c = (p.pos[tr.a] + p.pos[tr.b] + p.pos[tr.c]) / 3.0f;
+            if (headish && g.body.carapace < 0.95f && c.z > hc.z + 0.10f * h && c.y > faceY0 && c.y < faceY1) continue;
+            // Nearest and second-nearest feature points of the 3D cell grid.
+            const Vec3 u = c / S;
+            const int ix = int(std::floor(u.x)), iy = int(std::floor(u.y)), iz = int(std::floor(u.z));
+            float d1 = 1e9f, d2 = 1e9f;
+            int bx = 0, by = 0, bz = 0;
+            Vec3 bf;
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int x = ix + dx, y = iy + dy, z = iz + dz;
+                        const Vec3 f{float(x) + hash(x, y, z, 1), float(y) + hash(x, y, z, 2), float(z) + hash(x, y, z, 3)};
+                        const float d = length(f - u);
+                        if (d < d1) d2 = d1, d1 = d, bx = x, by = y, bz = z, bf = f;
+                        else if (d < d2) d2 = d;
+                    }
+            if (noise(bf * (1.0f / 3.0f)) > cover) continue;  // this plate has not grown (partial coverage)
+            if (d2 - d1 < 0.07f) {  // seam: a dark crack between the plates
+                tr.m.color = lerp(g.body.carapaceColor, tr.m.color, 0.25f) * 0.45f;
+                tr.m.cls = MaterialClass::Dark;
+                continue;
+            }
+            tr.m.color = g.body.carapaceColor * (0.88f + 0.24f * hash(bx, by, bz, 5));
+            tr.m.cls = MaterialClass::Metal;
+        }
+    }
 }
 
 // Dorsal ridge: spikes, plates or knobs along the back midline, biggest between the
@@ -1956,6 +2062,7 @@ Character Builder::build() {
     buildFeet();
     buildTail();
     buildSpines();
+    buildCore();
     buildEars();
     buildHorns();
     buildTusks();
@@ -1970,6 +2077,7 @@ Character Builder::build() {
         addDecayHoles();
         buildCavityShells();
     }
+    applySkinKind();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
     ch.faceAtlas = paintFaceAtlas(g);

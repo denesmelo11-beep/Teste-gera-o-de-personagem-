@@ -22,6 +22,7 @@
 #include "chargen/animation.hpp"
 #include "chargen/character.hpp"
 #include "chargen/physics.hpp"
+#include "chargen/studies.hpp"
 #include "raylib.h"
 #include "rlgl.h"
 
@@ -82,8 +83,9 @@ uniform vec3 skyColor;
 uniform vec3 groundColor;
 uniform int faceted;
 out vec4 finalColor;
-const vec3 shadowTint[7] = vec3[7](vec3(0.78,0.60,0.60), vec3(0.62,0.64,0.74), vec3(0.62,0.58,0.60),
-                                   vec3(0.50,0.52,0.62), vec3(0.58,0.58,0.72), vec3(0.64,0.64,0.70), vec3(0.64,0.62,0.66));
+const vec3 shadowTint[8] = vec3[8](vec3(0.78,0.60,0.60), vec3(0.62,0.64,0.74), vec3(0.62,0.58,0.60),
+                                   vec3(0.50,0.52,0.62), vec3(0.58,0.58,0.72), vec3(0.64,0.64,0.70), vec3(0.64,0.62,0.66),
+                                   vec3(1.0));
 void main() {
     vec3 N = normalize(fragNormal);
     if (faceted != 0) {
@@ -92,8 +94,9 @@ void main() {
     }
     vec3 L = normalize(lightDir);
     vec3 V = normalize(viewPos - fragPos);
-    int cls = clamp(int(fragColor.a * 255.0 / 32.0), 0, 6);
+    int cls = clamp(int(fragColor.a * 255.0 / 32.0), 0, 7);
     vec3 base = fragColor.rgb;
+    if (cls == 7) { finalColor = vec4(min(base * 1.15 + vec3(0.04), vec3(1.0)), 1.0); return; }  // emissive
     float ndl = dot(N, L);
     // Form-revealing ramp: continuous wrap lighting (planes read as distinct tones)
     // blended with a soft terminator for the stylised two-tone read.
@@ -116,6 +119,11 @@ void main() {
     float nh = max(dot(N, H), 0.0);
     if (cls == 4) col += vec3(1.0) * 0.10 * smoothstep(0.80, 0.90, nh) * light;   // hair sheen
     if (cls == 0) col += vec3(1.0, 0.9, 0.85) * 0.04 * pow(nh, 24.0);           // skin
+    if (cls == 3) {                                                                // metal: tight highlight + sky reflection
+        // Tight lobe: on flat facets a wide one lights whole faces and reads as camouflage.
+        col += mix(vec3(1.0, 0.97, 0.92), base * 2.0, 0.35) * 0.30 * smoothstep(0.965, 0.995, nh) * (0.4 + 0.6 * light);
+        col += mix(groundColor, skyColor, clamp(reflect(-V, N).y * 0.5 + 0.5, 0.0, 1.0)) * base * 0.18;
+    }
     // Grade: muted, slightly cool, no candy saturation (grim fantasy).
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(lum), col, 0.80);
@@ -696,6 +704,9 @@ cg::Genome withOverrides(cg::Genome g) {
         g.body.spineSize = sz;
     }
     if (const char* tc = std::getenv("CHARGEN_TUSKCURVE")) g.body.tuskCurve = float(std::atof(tc));
+    if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
+        for (int i = 0; i < int(cg::HairStyle::Count); ++i)
+            if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);
     return g;
 }
 
@@ -892,6 +903,74 @@ int runAnatomy(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         ImageDrawText(&img, P.label, 8, ph - 18, 12, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
+// Character studies (cg::studies): full bodies, or portraits with CHARGEN_STUDYFACES=1.
+// CHARGEN_STUDIES="a b c" picks a subset.
+int runStudies(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    std::vector<std::string> names;
+    if (const char* e = std::getenv("CHARGEN_STUDIES")) {
+        std::string w;
+        for (const char* p = e;; ++p) {
+            if (*p == ' ' || *p == 0) {
+                if (!w.empty()) names.push_back(w), w.clear();
+                if (!*p) break;
+            } else w += *p;
+        }
+    } else
+        for (const cg::Study& st : cg::studies()) names.emplace_back(st.name);
+    const bool faces = std::getenv("CHARGEN_STUDYFACES") != nullptr;
+    const int n = int(names.size()), cols = std::min(n, 6), rows = (n + cols - 1) / cols;
+    const int pw = faces ? 300 : 300, ph = faces ? 330 : 520;
+    Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
+    for (int i = 0; i < n; ++i) {
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenOptions go = gGen;
+        auto g = cg::studyGenome(names[size_t(i)], seed, &go);
+        if (!g) continue;
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(withOverrides(*g), go);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        const float H = a.ch.height;
+        Camera3D cam;
+        if (faces) {
+            const cg::Vec3 hp = a.ch.skeleton.bones[size_t(a.ch.rig.head)].restWorld;
+            const float hh = H - hp.y;
+            cam = makeCam({0, hp.y + 0.40f * hh, 0.1f * hh}, 0.38f, 0.0f, hh * 6.8f, 21.0f);
+        } else {
+            const bool longBody = a.ch.genome.body.centaur || a.ch.genome.body.tail;
+            cam = makeCam({0, H * 0.5f, longBody ? -0.2f * H : 0.0f}, 0.55f, 0.03f, H * (longBody ? 3.4f : 2.9f), 21.0f);
+        }
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        std::string label = names[size_t(i)];
+        for (const cg::Study& st : cg::studies())
+            if (st.name == names[size_t(i)]) label = std::string(st.label);
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%s  %.2fm", label.c_str(), H);
+        ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
         UnloadImage(img);
         UnloadRenderTexture(prt);
@@ -1114,7 +1193,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races, decayOut, anatomy;
+    std::string shots, studio, population, heads, faces, cuts, races, decayOut, anatomy, studiesOut;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -1128,6 +1207,7 @@ int main(int argc, char** argv) {
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
         else if (a == "--decay" && i + 1 < argc) decayOut = argv[++i];
         else if (a == "--anatomy" && i + 1 < argc) anatomy = argv[++i];
+        else if (a == "--studies" && i + 1 < argc) studiesOut = argv[++i];
         else if (a == "--faces" && i + 1 < argc) faces = argv[++i];
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
@@ -1165,6 +1245,12 @@ int main(int argc, char** argv) {
     s.faceted = faceted;
     if (!faces.empty()) {
         int rc = runFaces(s, faces, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!studiesOut.empty()) {
+        int rc = runStudies(s, studiesOut, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

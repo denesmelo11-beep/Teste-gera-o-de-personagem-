@@ -94,6 +94,8 @@ private:
     void buildFurTufts();
     void buildTail();
     void buildSpines();  // dorsal spikes, plates or knobs along the back
+    void buildCore();    // a glowing orb set into the abdomen or chest
+    void applySkinKind();  // metallic skin or armoured carapace plates over the flesh
     void buildColliders();
     void initHead();
     // head.cpp

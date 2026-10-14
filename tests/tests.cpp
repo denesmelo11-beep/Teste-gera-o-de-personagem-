@@ -6,6 +6,7 @@
 #include "chargen/character.hpp"
 #include "chargen/engine.hpp"
 #include "chargen/gltf.hpp"
+#include "chargen/studies.hpp"
 
 using namespace cg;
 
@@ -214,6 +215,34 @@ int main() {
         on.species = Species::Gnome;
         CHECK(physicalTraits(randomGenome(1, og)).size > physicalTraits(randomGenome(1, on)).size, "ogro menor que gnomo");
         CHECK(!describe(fa).empty(), "descricao vazia");
+    }
+    // Studies and fuzzing: hand-made extremes and randomised genomes far outside the
+    // population must still build valid characters the engine utilities can digest.
+    for (const Study& st : studies()) {
+        GenOptions go;
+        auto g = studyGenome(st.name, 3, &go);
+        CHECK(g.has_value(), "estudo %s", std::string(st.name).c_str());
+        if (!g) continue;
+        const Character c = generateCharacter(*g, go);
+        std::string why;
+        CHECK(validateCharacter(c, &why), "estudo %s invalido: %s", std::string(st.name).c_str(), why.c_str());
+        CHECK(hitVolumes(c).size() >= 10, "estudo %s sem hitboxes", std::string(st.name).c_str());
+    }
+    {
+        GenOptions go;
+        const Character c = generateCharacter(*studyGenome("four_armed_giant", 1, &go), go);
+        CHECK(c.rig.arms.size() == 4 && c.genome.face.eyePairs == 2, "gigante sem 4 bracos/olhos");
+        int glow = 0, metal = 0;
+        const Character a = generateCharacter(*studyGenome("android_monk", 1));
+        for (const Vertex& v : a.mesh.vertices) glow += v.color[3] / 32 == int(MaterialClass::Glow), metal += v.color[3] / 32 == int(MaterialClass::Metal);
+        CHECK(glow > 0 && metal > int(a.mesh.vertices.size()) / 3, "androide: nucleo %d / metal %d", glow, metal);
+    }
+    for (uint64_t s = 1; s <= 80; ++s) {
+        GenOptions go;
+        const Genome g = fuzzGenome(s * 7919, &go);
+        const Character c = generateCharacter(g, go);
+        std::string why;
+        CHECK(validateCharacter(c, &why), "fuzz seed %llu: %s", (unsigned long long)(s * 7919), why.c_str());
     }
     if (failures) std::printf("%d falhas\n", failures);
     else std::printf("ok\n");

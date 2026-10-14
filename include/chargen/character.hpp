@@ -15,7 +15,7 @@ namespace cg {
 
 // Stored in COLOR_0.a so a toon shader can pick shadow tint / specular per
 // material without extra textures: alpha = (class * 32 + 16) / 255.
-enum class MaterialClass : uint8_t { Skin, Cloth, Leather, Metal, Hair, Dark, Horn, Count };
+enum class MaterialClass : uint8_t { Skin, Cloth, Leather, Metal, Hair, Dark, Horn, Glow, Count };  // Glow: emissive, unlit
 
 struct Vertex {
     Vec3 pos;

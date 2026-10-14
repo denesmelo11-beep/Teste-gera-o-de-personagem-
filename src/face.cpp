@@ -201,8 +201,16 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     const Palette& pal = g.palette;
     const EyeParams P = eyeParams(expr);
     const EyeShape S = eyeShapeFor(g);
-    const float W = S.W, Hh = S.Hh;
-    const float ey = 0.462f, exOff = 0.188f * f.eyeSpacing;
+    float W = S.W, Hh = S.Hh;
+    float ey = 0.462f, exOff = 0.188f * f.eyeSpacing;
+    // A second pair (four-eyed peoples) sits below and a little wider, smaller and
+    // without brows; the main pair moves up to make room.
+    struct Row {
+        float ey, ex, scale;
+        bool main;
+    };
+    std::vector<Row> rows{{0.462f, 0.188f * f.eyeSpacing, 1.0f, true}};
+    if (f.eyePairs >= 2) rows = {{0.506f, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f, 0.205f * f.eyeSpacing, 0.70f, false}};
     const Vec3 lash = lerp(pal.brow * 0.4f, Vec3{0.08f, 0.05f, 0.05f}, 0.6f);
     const Vec3 skinDark = pal.skin * Vec3{0.70f, 0.56f, 0.54f};
     const float lidDrop = saturate(f.restLid + 0.18f * f.ageLines + (f.eyeShape == 5 ? 0.22f : 0.0f) + P.lidDrop);
@@ -225,6 +233,9 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
         return y + P.lowerLift * Hh * 0.6f * k;
     };
 
+    for (const Row& row : rows) {
+    ey = row.ey, exOff = row.ex, W = S.W * row.scale, Hh = S.Hh * row.scale;
+    const bool mainRow = row.main;
     for (float side : {1.0f, -1.0f}) {
         Vec2 c{side * exOff, ey};
         const float tilt = S.tilt;
@@ -243,7 +254,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
         };
 
         // Brow: a solid tapered shape, the main carrier of expression.
-        {
+        if (mainRow) {
             float by = Hh * (1.0f + S.bow) + 0.034f + f.browHeight + P.browY;
             float tiltB = f.browTilt + P.browAngle;
             Stroke st = curveStroke(
@@ -368,7 +379,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             strokeLocal(lower, Vec4(lerp(pal.skin, Vec3{1, 1, 1}, 0.35f), 0.35f));
         }
         // Age: crow's feet and the under-eye fold.
-        if (f.ageLines > 0.45f) {
+        if (mainRow && f.ageLines > 0.45f) {
             float a = f.ageLines - 0.3f;
             for (int k = 0; k < 2; ++k) {
                 Vec2 p0{W * 1.12f, -0.004f + 0.012f * k}, p1{W * 1.12f + 0.022f, -0.012f + 0.02f * k};
@@ -382,7 +393,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
             strokeLocal(bag, Vec4(skinDark, 0.45f * a));
         }
         // Markings (identity): moles, war paint, eye black, a slit in the brow, a forehead mark.
-        {
+        if (mainRow) {
             const Vec4 mc(f.markColor, 0.92f);
             auto rect = [&](Vec2 a, Vec2 b, float hw, Vec4 col) {
                 Stroke st{{a, b}, {hw, hw * 0.8f}};
@@ -420,7 +431,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                 default: break;
             }
         }
-        if (f.blush) {
+        if (mainRow && f.blush) {
             Vec2 bc{side * 0.20f, 0.37f};
             cp.fill([=](Vec2 p) { return sdEllipse(p, bc, {0.06f, 0.024f}); },
                     [=](Vec2 p) {
@@ -428,7 +439,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                         return Vec4(0.9f, 0.45f, 0.45f, 0.22f * std::sqrt(k));
                     }, bc - Vec2{0.07f, 0.03f}, bc + Vec2{0.07f, 0.03f});
         }
-        if (f.freckles) {
+        if (mainRow && f.freckles) {
             Rng fr(g.seed ^ 0xF4ECull, uint64_t(side > 0 ? 1 : 2));
             for (int k = 0; k < 8; ++k) {
                 Vec2 q{side * fr.range(0.07f, 0.24f), fr.range(0.34f, 0.40f)};
@@ -436,6 +447,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                 cp.fill([=](Vec2 p) { return length(p - q) - rr; }, Vec4(pal.skin * 0.66f, 0.5f), q - Vec2{0.01f, 0.01f}, q + Vec2{0.01f, 0.01f});
             }
         }
+    }
     }
     if (f.scarType == 1 || f.scarType == 5) {  // the scar splits the brow (the rest is in the skin layer)
         const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;
@@ -507,6 +519,34 @@ void paintMouth(CellPainter& cp, const Genome& g, MouthExpr e) {
                     return std::max(std::fabs(p.x - x) - 0.0055f * (1.0f - t), std::max(-t, t - 1.0f) * std::fabs(tipY - base));
                 }, Vec4(teeth * 0.92f, 1), Vec2{x - 0.01f, y - 0.012f}, Vec2{x + 0.01f, y + 0.01f});
             }
+        } else if (f.mouthStyle == 3) {  // a shark's grin: a wide crescent of two interlocking rows of pointed teeth
+            const float gw = mw * 1.2f;
+            auto gu = [=](float x) {
+                const float u = clamp(x / gw, -1.0f, 1.0f);
+                return 1.0f - u * u;
+            };
+            auto hiF = [=](float x) { return yM(x) + 0.003f + 0.005f * gu(x); };
+            auto loF = [=](float x) { return yM(x) - 0.003f - 0.013f * gu(x); };
+            cp.fill([=](Vec2 p) { return sdBetween(p, gw, hiF, loF); }, Vec4(inner * 0.45f, 1), lo, hi);
+            auto fang = [&](float x, float base, float tipY, float halfW) {
+                cp.fill([=](Vec2 p) {
+                    const float t = saturate((p.y - base) / (tipY - base));
+                    return std::max(std::fabs(p.x - x) - halfW * (1.0f - t), std::max(-t, t - 1.0f) * std::fabs(tipY - base));
+                }, Vec4(teeth * 0.95f, 1), Vec2{x - 0.012f, std::min(base, tipY) - 0.002f}, Vec2{x + 0.012f, std::max(base, tipY) + 0.002f});
+            };
+            for (int k = 0; k < 9; ++k) {  // upper row points down past the midline, lower row up between them
+                const float x = lerp(-0.86f * gw, 0.86f * gw, float(k) / 8.0f);
+                fang(x, hiF(x), yM(x) - 0.004f - 0.004f * gu(x), 0.0062f);
+                if (k < 8) {
+                    const float x2 = x + 0.86f * gw / 8.0f;
+                    fang(x2, loF(x2), yM(x2) + 0.002f, 0.0058f);
+                }
+            }
+            Stroke edge = curveStroke([=](float t) {
+                const float x = lerp(-gw, gw, t);
+                return Vec2{x, hiF(x) + 0.0015f};
+            }, [](float t) { return 0.0016f + 0.0012f * std::sin(kPi * t); }, 16);
+            cp.fill(edge, Vec4(line, 1), lo, hi);
         } else if (f.mouthStyle == 2) {  // underbite: the lower lip juts up with two teeth over it
             cp.fill([=](Vec2 p) { return sdBetween(p, 0.9f * mw, [=](float x) { return yM(x) + 0.002f; }, [=](float x) { return yBot(x) - 0.004f; }); },
                     Vec4(lipC * 0.75f, 0.85f), lo, hi);

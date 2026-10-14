@@ -84,6 +84,7 @@ void usage() {
         "  info    --seed N | --key CG1-...                         (chave, descricao, metricas, tracos, hitboxes)\n"
         "  family  --seed N [--children 4] [--species S]           (pais, filhos herdando, e o pai envelhecendo)\n"
         "  corpse  --seed N [--days 30]                            (linha do tempo da decomposicao)\n"
+        "  stress  [--count 1000] [--seed 1]                       (fuzz: genomas extremos, validacao, tempos)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
         "anatomia: --arms 2|4 (dois pares de bracos)\n"
         "morte: --decay 0..1 (0 vivo, 0.15 recem-morto, 0.4 apodrecendo, 0.7 putrefato, 1 ossada)\n"
@@ -371,6 +372,45 @@ int cmdCorpse(const Args& a) {
     return 0;
 }
 
+int cmdStress(const Args& a) {
+    const int count = int(a.num("count", 1000));
+    const uint64_t seed0 = uint64_t(a.num("seed", 1));
+    int bad = 0;
+    double total = 0, worst = 0;
+    uint64_t worstSeed = 0;
+    size_t maxTris = 0;
+    for (int i = 0; i < count; ++i) {
+        const uint64_t seed = seed0 + uint64_t(i);
+        GenOptions go;
+        const Genome g = fuzzGenome(seed, &go);
+        const auto t0 = std::chrono::steady_clock::now();
+        const Character c = generateCharacter(g, go);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        total += ms;
+        if (ms > worst) worst = ms, worstSeed = seed;
+        maxTris = std::max(maxTris, c.mesh.triangleCount());
+        std::string why;
+        bool ok = validateCharacter(c, &why);
+        if (ok) {  // the engine utilities must cope with whatever comes out
+            const BodyMetrics m = measure(c);
+            const auto vols = hitVolumes(c);
+            const PackedMesh pm = packMesh(c.mesh);
+            if (!std::isfinite(m.mass) || m.mass <= 0) ok = false, why = "mass";
+            else if (vols.size() < 10) ok = false, why = "few hit volumes";
+            else if (pm.vertices.size() != c.mesh.vertices.size()) ok = false, why = "pack";
+        }
+        if (!ok) {
+            ++bad;
+            if (bad <= 20)
+                std::printf("FALHA seed %llu (%s, decay %.2f, lod %d): %s\n", (unsigned long long)seed, describe(g).c_str(), go.decay,
+                            go.lod, why.c_str());
+        }
+    }
+    std::printf("%d/%d validos; %.1f ms em media, pior %.1f ms (seed %llu); max %zu tris\n", count - bad, count, total / count, worst,
+                (unsigned long long)worstSeed, maxTris);
+    return bad ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -386,6 +426,7 @@ int main(int argc, char** argv) {
     if (a.cmd == "info") return cmdInfo(a);
     if (a.cmd == "family") return cmdFamily(a);
     if (a.cmd == "corpse") return cmdCorpse(a);
+    if (a.cmd == "stress") return cmdStress(a);
     usage();
     return a.cmd.empty() ? 0 : 1;
 }

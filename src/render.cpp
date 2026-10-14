@@ -137,7 +137,7 @@ void ToonRenderer::drawCharacter(const Character& c, const std::vector<Vec3>& po
     const Vec3 L = normalize(rs_.lightDir);
     static const Vec3 kShadow[] = {{0.86f, 0.64f, 0.66f}, {0.62f, 0.60f, 0.78f}, {0.62f, 0.56f, 0.62f},
                                    {0.45f, 0.46f, 0.58f}, {0.60f, 0.58f, 0.80f}, {0.70f, 0.68f, 0.75f},
-                                   {0.66f, 0.62f, 0.70f}};
+                                   {0.66f, 0.62f, 0.70f}, {1.0f, 1.0f, 1.0f}};
     const Vec2 eyeOff = FaceLayout::eyeUvOffset(face.eyes), mouthOff = FaceLayout::mouthUvOffset(face.mouth);
     for (const Submesh& sm : m.submeshes) {
         const bool decal = sm.kind != SubmeshKind::Body;
@@ -175,8 +175,14 @@ void ToonRenderer::drawCharacter(const Character& c, const std::vector<Vec3>& po
                     color_[idx] = lerp(color_[idx], col, t.w);
                     return;  // keep depth/id of the head underneath
                 }
-                int cls = std::clamp(int(a[11] + 0.5f), 0, 6);
+                int cls = std::clamp(int(a[11] + 0.5f), 0, 7);
                 Vec3 base{a[3], a[4], a[5]};
+                if (cls == int(MaterialClass::Glow)) {  // emissive: unlit
+                    depth_[idx] = z;
+                    id_[idx] = pid;
+                    color_[idx] = base;
+                    return;
+                }
                 if (rs_.style == RenderSettings::Style::LowPoly) {
                     // Soft faceted lighting: wide wrap, cool tinted shadow side, sky fill.
                     float k = smoothstep(-0.65f, 0.95f, ndl);

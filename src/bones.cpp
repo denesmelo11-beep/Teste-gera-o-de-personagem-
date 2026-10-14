@@ -262,10 +262,16 @@ void Builder::buildBoneSkeleton() {
         tube({c, c + Vec3{0, -0.04f * h, -0.10f * h}}, 0.022f * h, [=](float) { return w; }, 4, 0.0f);  // spinous process
     }
     {
-        const Vec3 a = spineAt(1.0f), b2 = m.headOrigin + Vec3{0, 0.18f * h, -0.06f * h};
-        for (int k = 0; k < 4; ++k) {
-            const Vec3 c = lerp(a, b2, (float(k) + 0.5f) / 4.0f);
-            blob(c, {0, 1, 0}, {0, 0, 1}, 0.03f * h, 0.07f * h, 0.06f * h, r.neck, 3, 6);
+        // Cervical column: seven chunky vertebrae on a continuous core up into the skull
+        // (no floating discs, whatever the neck length).
+        const Vec3 a = spineAt(0.93f), b2 = m.headOrigin + Vec3{0, 0.20f * h, -0.06f * h};
+        const Vec3 nd = normalize(b2 - a, {0, 1, 0});
+        const float seg = length(b2 - a) / 7.0f;
+        tubeOne({a, b2}, 0.028f * hb, r.neck, 5, 0.0f);
+        for (int k = 0; k < 7; ++k) {
+            const Vec3 c = lerp(a, b2, (float(k) + 0.5f) / 7.0f);
+            const float wk = lerp(1.0f, 0.8f, float(k) / 6.0f);
+            blob(c, nd, {0, 0, 1}, std::min(0.36f * seg, 0.035f * hb), 0.068f * hb * wk, 0.055f * hb * wk, r.neck, 3, 6);
         }
     }
 

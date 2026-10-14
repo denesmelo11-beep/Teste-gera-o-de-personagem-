@@ -239,13 +239,18 @@ std::vector<HitVolume> hitVolumes(const Character& c) {
         if (s.kind != SubmeshKind::Body) continue;
         for (uint32_t i = s.firstIndex; i < s.firstIndex + s.indexCount; ++i) used[m.indices[i]] = 1;
     }
+    // Hair on spring chains is not a target (fur and beards on the body are).
+    std::vector<uint8_t> hairBone(nb, 0);
+    for (const auto& chain : r.hairChains)
+        for (int b : chain)
+            if (b >= 0 && size_t(b) < nb) hairBone[size_t(b)] = 1;
     for (size_t vi = 0; vi < m.vertices.size(); ++vi) {
         if (!used[vi]) continue;
         const Vertex& v = m.vertices[vi];
-        if (v.color[3] / 32 == int(MaterialClass::Hair)) continue;
         int best = 0;
         for (int k = 1; k < 4; ++k)
             if (v.weights[k] > v.weights[best]) best = k;
+        if (hairBone[v.joints[best]]) continue;
         const int o = owner[v.joints[best]];
         if (o >= 0) pts[size_t(o)].push_back(v.pos);
     }
@@ -703,6 +708,87 @@ std::string describe(const Genome& g) {
     if (g.facialHair != FacialHair::None && g.facialHair != FacialHair::Stubble) fx.emplace_back(toString(g.facialHair));
     for (size_t i = 0; i < fx.size(); ++i) s += (i == 0 ? "; " : ", ") + fx[i];
     return s;
+}
+
+// ---------------------------------------------------------------- validation & stress
+
+bool validateCharacter(const Character& c, std::string* problem) {
+    auto fail = [&](const std::string& why) {
+        if (problem) *problem = why;
+        return false;
+    };
+    const Mesh& m = c.mesh;
+    if (m.vertices.empty() || m.indices.empty() || m.indices.size() % 3) return fail("empty mesh");
+    if (m.triangleCount() > 30000) return fail("over budget: " + std::to_string(m.triangleCount()) + " tris");
+    for (uint32_t i : m.indices)
+        if (i >= m.vertices.size()) return fail("index out of range");
+    for (const Submesh& s : m.submeshes)
+        if (size_t(s.firstIndex) + s.indexCount > m.indices.size()) return fail("submesh out of range");
+    const size_t nb = c.skeleton.bones.size();
+    float minY = 1e9f, maxY = -1e9f;
+    for (const Vertex& v : m.vertices) {
+        if (!std::isfinite(v.pos.x + v.pos.y + v.pos.z + v.normal.x + v.normal.y + v.normal.z)) return fail("NaN vertex");
+        if (std::fabs(length(v.normal) - 1.0f) > 0.02f) return fail("non-unit normal");
+        float sw = 0;
+        for (int k = 0; k < 4; ++k) {
+            if (v.joints[k] >= nb) return fail("bad joint id");
+            if (!(v.weights[k] >= 0.0f)) return fail("negative weight");
+            sw += v.weights[k];
+        }
+        if (std::fabs(sw - 1.0f) > 1e-3f) return fail("weights sum " + std::to_string(sw));
+        minY = std::min(minY, v.pos.y), maxY = std::max(maxY, v.pos.y);
+    }
+    for (const Bone& b : c.skeleton.bones)
+        if (!std::isfinite(b.restWorld.x + b.restWorld.y + b.restWorld.z)) return fail("NaN bone");
+    if (minY < -0.05f * c.height) return fail("below the floor: " + std::to_string(minY));
+    if (maxY > 1.8f * c.height || maxY < 0.8f * c.height) return fail("height mismatch: " + std::to_string(maxY) + " vs " + std::to_string(c.height));
+    if (c.faceAtlas.width != FaceLayout::kAtlasW || c.faceAtlas.height != FaceLayout::kAtlasH) return fail("face atlas size");
+    return true;
+}
+
+Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
+    Rng r(seed, 0xF022);
+    GenomeOptions o;
+    if (r.chance(0.7f)) o.species = Species(r.rangeInt(0, int(Species::Count) - 1));
+    if (r.chance(0.3f)) o.archetype = Archetype(r.rangeInt(0, int(Archetype::Count) - 1));
+    if (r.chance(0.5f)) o.sex = r.chance(0.5f) ? Sex::Female : Sex::Male;
+    if (r.chance(0.5f)) o.age = AgeGroup(r.rangeInt(0, 3));
+    if (r.chance(0.25f)) o.armPairs = 2;
+    o.exaggeration = r.chance(0.3f) ? r.range(0.0f, 2.0f) : 0.0f;
+    Genome g = randomGenome(seed, o);
+    BodyShape& b = g.body;
+    FaceStyle& f = g.face;
+    auto mul = [&](float& v, float lo, float hi) { v *= r.range(lo, hi); };
+    mul(b.height, 0.75f, 1.35f);
+    mul(b.shoulderWidth, 0.75f, 1.35f), mul(b.chestWidth, 0.75f, 1.35f), mul(b.waistWidth, 0.75f, 1.35f);
+    mul(b.hipWidth, 0.8f, 1.25f), mul(b.chestDepth, 0.8f, 1.3f);
+    mul(b.arm, 0.7f, 1.5f), mul(b.thigh, 0.7f, 1.4f), mul(b.calf, 0.7f, 1.4f), mul(b.neckThick, 0.7f, 1.6f);
+    mul(b.neckLength, 0.5f, 1.5f), mul(b.armLength, 0.85f, 1.2f), mul(b.handSize, 0.8f, 1.4f), mul(b.footSize, 0.8f, 1.3f);
+    b.muscle = r.range(0.0f, 1.3f), b.belly = r.chance(0.3f) ? r.range(0.0f, 0.9f) : b.belly;
+    b.boneMass = r.range(0.7f, 1.8f);
+    if (r.chance(0.35f)) {
+        b.tail = true;
+        b.tailType = r.rangeInt(0, 5);
+        b.tailFur = b.tailType == 3;
+        b.tailLength = r.range(0.5f, 1.4f);
+    }
+    if (r.chance(0.3f)) b.spines = r.rangeInt(3, 10), b.spineKind = r.rangeInt(0, 2), b.spineSize = r.range(0.5f, 1.5f);
+    if (r.chance(0.3f)) b.tusks = r.rangeInt(1, 2), b.tuskSize = r.range(0.5f, 1.4f), b.tuskCurve = r.range(-1.0f, 1.0f);
+    if (r.chance(0.25f)) b.horns = 2, b.hornKind = r.rangeInt(-1, 3), b.hornSize = r.range(0.5f, 1.5f);
+    if (r.chance(0.2f)) b.skinKind = r.rangeInt(1, 2), b.carapace = r.range(0.3f, 1.0f);
+    if (r.chance(0.15f)) b.core = r.rangeInt(1, 2);
+    if (r.chance(0.15f)) f.eyePairs = 2;
+    if (r.chance(0.2f)) f.mouthStyle = r.rangeInt(0, 3);
+    if (r.chance(0.3f)) g.hair = HairStyle(r.rangeInt(0, int(HairStyle::Count) - 1));
+    if (r.chance(0.3f)) g.facialHair = FacialHair(r.rangeInt(0, int(FacialHair::Count) - 1));
+    f.eyeSize *= r.range(0.8f, 1.2f), f.jaw = r.range(-1.0f, 1.0f), f.chin = r.range(-1.0f, 1.0f);
+    f.noseLength *= r.range(0.7f, 1.3f), f.headTop = r.range(-1.0f, 1.0f);
+    if (opt) {
+        static constexpr float kDecay[] = {0.0f, 0.0f, 0.0f, 0.15f, 0.4f, 0.7f, 0.9f, 1.0f};
+        opt->decay = kDecay[r.rangeInt(0, 7)];
+        opt->lod = r.rangeInt(0, 2);
+    }
+    return g;
 }
 
 }  // namespace cg

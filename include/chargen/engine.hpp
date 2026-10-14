@@ -185,4 +185,14 @@ PhysicalTraits physicalTraits(const Genome& g);
 // "Orc man, 34, heavy build, 1.94 m; long tusks hooked inwards; spiked dorsal ridge"
 std::string describe(const Genome& g);
 
+// ---------------------------------------------------------------- validation & stress
+
+// Sanity check of a generated character (indices, NaNs, unit normals, skin weights,
+// bone ids, submesh ranges, plausible bounds and budget). Cheap enough to run on load.
+bool validateCharacter(const Character& c, std::string* problem = nullptr);
+// A genome with every knob randomised far beyond the natural population (all peoples,
+// presets, four arms, tails, spines, carapace, cores, extra eyes, extreme sliders), for
+// fuzzing; `opt` receives a random decay and LOD.
+Genome fuzzGenome(uint64_t seed, GenOptions* opt = nullptr);
+
 }  // namespace cg

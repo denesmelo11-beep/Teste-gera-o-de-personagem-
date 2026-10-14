@@ -725,12 +725,18 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     }
 
     const float e = opt.exaggeration;
-    auto ex = [e](float v, float canon) { return canon + (v - canon) * (1.0f + 1.4f * e); };
-    b.shoulderWidth = ex(b.shoulderWidth, 0.75f);
-    b.waistWidth = std::max(0.30f, ex(b.waistWidth, 0.43f));
-    b.hipWidth = ex(b.hipWidth, 0.62f);
-    b.bust *= 1.0f + 0.5f * e;
-    b.butt *= 1.0f + 0.4f * e;
+    // Push away from the population mean of this sex (not a fixed canon, which made
+    // e = 2 explode hips into skirts), and keep the result inside what the torso and
+    // thigh junction can build.
+    auto ex = [e](float v, float canon) { return canon + (v - canon) * (1.0f + 1.0f * e); };
+    const float fm = g.femininity;
+    b.shoulderWidth = clamp(ex(b.shoulderWidth, lerp(0.98f, 0.71f, fm)), 0.55f, 1.45f);
+    b.waistWidth = clamp(ex(b.waistWidth, lerp(0.53f, 0.39f, fm)), 0.30f, 0.95f);
+    b.hipWidth = clamp(ex(b.hipWidth, lerp(0.67f, 0.78f, fm)), 0.50f, 1.0f);
+    // Exaggeration grows soft volumes only up to what the surface builds cleanly
+    // (glutes past ~1 flare into a skirt at the hip line).
+    b.bust = std::min(b.bust * (1.0f + 0.5f * e), std::max(b.bust, 1.4f));
+    b.butt = std::min(b.butt * (1.0f + 0.4f * e), std::max(b.butt, 0.95f));
 
     // ---- fantasy extensions ----
     Rng rx = root.fork(5);
