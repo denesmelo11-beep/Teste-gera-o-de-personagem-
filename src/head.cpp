@@ -73,8 +73,12 @@ float Builder::faceRelief(float xn, float s) const {
     r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - browS) / 0.045f) * bump(xn / 0.36f);
     r -= (0.008f + 0.020f * f.eyeDepth) * bump((s - eyeS) / (four ? 0.045f : 0.055f)) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
     if (four) {
-        r -= (0.007f + 0.014f * f.eyeDepth) * bump((s - 0.392f) / 0.036f) * bump((ax - 0.190f * f.eyeSpacing) / 0.085f);
-        r += 0.009f * bump((s - 0.450f) / 0.020f) * bump((ax - 0.19f * f.eyeSpacing) / 0.11f);
+        // The lower pair sits in a socket as deep as the upper one, under a lid-and-brow
+        // ridge of its own, with a lower-lid pad beneath: each eye is framed in bone.
+        const float ex2 = 0.200f * f.eyeSpacing;
+        r -= (0.012f + 0.020f * f.eyeDepth) * bump((s - 0.392f) / 0.034f) * bump((ax - ex2) / 0.080f);
+        r += 0.013f * bump((s - 0.448f) / 0.024f) * bump((ax - ex2) / 0.12f);
+        r += 0.006f * bump((s - 0.350f) / 0.022f) * bump((ax - ex2) / 0.085f);
     }
     // Cheekbones and the hollow beneath them.
     r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * bump((s - cheekS) / 0.05f) * bump((ax - 0.235f) / 0.09f);
@@ -173,7 +177,7 @@ void Builder::buildHead() {
     Loft L;
     // Few rings, each on a landmark (chin, jaw, mouth, nose tip, cheekbone, eyes, brow, cranium).
     const std::vector<float> ss = g.face.eyePairs >= 2  // landmarks of the stacked sockets
-        ? std::vector<float>{0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.335f, 0.392f, 0.45f, 0.506f, 0.60f, 0.68f, 0.78f, 0.88f}
+        ? std::vector<float>{0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.35f, 0.392f, 0.448f, 0.506f, 0.56f, 0.60f, 0.68f, 0.78f, 0.88f}
         : std::vector<float>{0.0f, 0.05f, 0.10f, 0.16f, 0.22f, 0.28f, 0.34f, 0.40f, 0.47f, 0.56f, 0.64f, 0.76f, 0.88f};
     const int N = lod.headSeg;
     int i = 0;
@@ -290,6 +294,54 @@ Vec3 Builder::outsideHeadMesh(Vec3 p, float margin) const {
 
 // Front-most intersection of a ray along -z (at x, y relative to the head origin)
 // with the built head mesh.
+// Four-eyed heads: each eye gets a modelled upper lid (a faceted crescent that
+// overhangs the painted opening) and a thinner lower lid, so the stacked eyes sit in
+// flesh rather than reading as stickers. Rows match paintEyes.
+void Builder::buildEyelids() {
+    const FaceStyle& f = g.face;
+    if (f.eyePairs < 2 || bonesOnly_) return;
+    const float h = m.h, hw = g.body.headWidth;
+    struct Row {
+        float ey, ex, scale;
+    };
+    const Row rows[] = {{0.506f, 0.180f * f.eyeSpacing, 0.86f}, {0.392f, 0.200f * f.eyeSpacing, 0.78f}};
+    Part& p = newPart();
+    const int head = ch.rig.head;
+    const Mat lid{g.palette.skin * 0.92f, MaterialClass::Skin};
+    for (const Row& r : rows)
+        for (float side : {1.0f, -1.0f}) {
+            const float W = 0.094f * f.eyeSize * r.scale, Hh = 0.050f * f.eyeSize * r.scale;
+            for (int lower = 0; lower < 2; ++lower) {
+                Loft L;
+                const int n = 7;
+                std::vector<Vec3> pts;
+                for (int k = 0; k < n; ++k) {
+                    const float u = -1.08f + 2.16f * float(k) / float(n - 1);
+                    const float xf = side * (r.ex + u * W);
+                    const float s = lower ? r.ey - Hh * (0.72f + 0.12f * (1.0f - u * u)) : r.ey + Hh * (0.92f + 0.30f * (1.0f - u * u)) - 0.10f * Hh * u;
+                    float z;
+                    const float x = xf * h * hw;
+                    if (!headMeshZ(x, s * h, z)) z = headPoint(std::acos(clamp(xf / 0.36f, -1.0f, 1.0f)), s).z;
+                    pts.push_back(Vec3{m.headOrigin.x + x, m.headOrigin.y + s * h, z + 0.004f * h});
+                }
+                for (int k = 0; k < n; ++k) {
+                    const float u = float(k) / float(n - 1);
+                    const Vec3 d = normalize(pts[size_t(std::min(k + 1, n - 1))] - pts[size_t(std::max(k - 1, 0))], Vec3{side, 0, 0});
+                    const Vec3 v = normalize(Vec3{0, 0, 1} - d * d.z, Vec3{0, 0, 1}), uu = cross(d, v);
+                    const float taper = std::sin(kPi * (0.08f + 0.84f * u));
+                    const float th = (lower ? 0.0055f : 0.0120f) * h * r.scale * taper;   // up-down
+                    const float dp = (lower ? 0.0050f : 0.0100f) * h * r.scale * taper;   // standing off the face
+                    L.rings.push_back(makeRing(pts[size_t(k)] + v * (0.5f * dp), uu, v, SuperRing{th, 0, dp, 0.5f * dp, 1.6f, 2.0f}, 4));
+                    L.t.push_back(u);
+                }
+                L.poleStart = L.poleEnd = true;
+                L.startPole = pts.front();
+                L.endPole = pts.back();
+                emitLoft(p, L, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return lid; });
+            }
+        }
+}
+
 bool Builder::headMeshZ(float x, float y, float& z) const {
     const Part& hp = parts[headPart_];
     const Vec3 o = m.headOrigin + Vec3{x, y, 0};

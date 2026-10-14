@@ -102,6 +102,7 @@ private:
     void buildHead();
     void buildNose();
     void buildFaceDecals();
+    void buildEyelids();  // modelled lids over stacked eyes (four-eyed peoples)
     // hair.cpp
     void buildHair();
     void buildFacialHair();

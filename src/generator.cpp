@@ -308,7 +308,9 @@ float Builder::bustField(float t, float th) const {
     float u = std::fabs(sr.point(th).x) / sr.w;
     const float tb = 0.735f - 0.035f * std::min(B, 1.4f) - 0.05f * sag;
     const float ru = 0.36f + 0.10f * std::min(B, 1.4f);
-    const float rt = t < tb ? 0.075f + 0.035f * std::min(B, 1.4f) : 0.17f + 0.08f * sag;
+    // On a torso short for its head the cap spans more of it, so its lower crease keeps
+    // a natural slope instead of stepping like a shelf.
+    const float rt = (t < tb ? 0.075f + 0.035f * std::min(B, 1.4f) : 0.17f + 0.08f * sag) / clamp(1.1f * profK_, 0.6f, 1.0f);
     float du = (u - 0.47f - 0.03f * sag) / ru, dt = (t - tb) / rt;
     float e = 1.0f - du * du - dt * dt;
     if (e <= 0) return 0;
@@ -328,7 +330,9 @@ Vec3 Builder::torsoPoint(float t, float th) const {
     // Relief is sized in head units; big-headed short peoples (gnomes, dwarves, chibi)
     // have a small torso for their head, so their muscles and bones scale down with it
     // (else the planes stack into horizontal bands).
-    const float h = m.h * clamp(g.body.headsTall / 6.6f, 0.5f, 1.0f), B = g.body.bust, fem = g.femininity;
+    // (A torso short for its head also packs each crisp edge, e.g. the pecs', into a
+    // shorter rise: the relief follows the torso's own proportion as well.)
+    const float h = m.h * clamp(std::min(g.body.headsTall / 6.6f, 1.1f * profK_), 0.4f, 1.0f), B = g.body.bust, fem = g.femininity;
     const Anatomy& an = g.body.anat;
     const float def = 0.3f + 0.7f * an.definition;
     SuperRing sr = torsoRing(t);
@@ -2370,6 +2374,7 @@ Character Builder::build() {
         cullHiddenBones();
         buildCavityShells();
     }
+    buildEyelids();
     applySkinKind();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);

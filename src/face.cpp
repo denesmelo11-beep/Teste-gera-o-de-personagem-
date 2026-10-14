@@ -210,7 +210,7 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
         bool main;
     };
     std::vector<Row> rows{{0.462f, 0.188f * f.eyeSpacing, 1.0f, true}};
-    if (f.eyePairs >= 2) rows = {{0.506f, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f, 0.205f * f.eyeSpacing, 0.70f, false}};
+    if (f.eyePairs >= 2) rows = {{0.506f, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f, 0.200f * f.eyeSpacing, 0.78f, false}};
     const Vec3 lash = lerp(pal.brow * 0.4f, Vec3{0.08f, 0.05f, 0.05f}, 0.6f);
     const Vec3 skinDark = pal.skin * Vec3{0.70f, 0.56f, 0.54f};
     const float lidDrop = saturate(f.restLid + 0.18f * f.ageLines + (f.eyeShape == 5 ? 0.22f : 0.0f) + P.lidDrop);
@@ -626,7 +626,7 @@ void paintSkin(CellPainter& cp, const Genome& g) {
 
     // Eye sockets: shade under the brow ridge and around the eye, deeper for deep-set eyes.
     if (f.eyePairs >= 2)  // the lower, smaller pair (the main one is shaded below, moved up)
-        for (float sd : {1.0f, -1.0f}) soft({sd * 0.205f * f.eyeSpacing, 0.398f}, {0.090f, 0.050f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.45f * f.eyeDepth, 0.8f);
+        for (float sd : {1.0f, -1.0f}) soft({sd * 0.200f * f.eyeSpacing, 0.398f}, {0.095f, 0.050f}, {0.78f, 0.68f, 0.72f}, 0.40f + 0.50f * f.eyeDepth, 0.8f);
     for (float sd : {1.0f, -1.0f}) {
         soft({sd * ex, ey + 0.020f}, {0.150f, f.eyePairs >= 2 ? 0.070f : 0.090f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.55f * f.eyeDepth, 0.8f);
         soft({sd * 0.075f, ey + 0.012f}, {0.050f, 0.060f}, {0.78f, 0.68f, 0.70f}, 0.25f + 0.35f * f.eyeDepth);  // inner corner

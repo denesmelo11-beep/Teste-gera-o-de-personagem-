@@ -706,6 +706,9 @@ cg::Genome withOverrides(cg::Genome g) {
     if (const char* tc = std::getenv("CHARGEN_TUSKCURVE")) g.body.tuskCurve = float(std::atof(tc));
     if (const char* d = std::getenv("CHARGEN_DEF")) g.body.anat.definition = float(std::atof(d));  // debug: muscle definition
     if (const char* mu = std::getenv("CHARGEN_MUSCLE")) g.body.muscle = float(std::atof(mu));
+    if (const char* pr = std::getenv("CHARGEN_PAIRS")) g.body.armPairs = std::atoi(pr);
+    if (const char* ep = std::getenv("CHARGEN_EYEPAIRS")) g.face.eyePairs = std::atoi(ep);
+    if (const char* ge = std::getenv("CHARGEN_GLOW")) g.face.glowEyes = std::atoi(ge) != 0;
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
             if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);
@@ -956,7 +959,9 @@ int runStudies(Scene& s, const std::string& path, uint64_t seed) {
         if (faces) {
             const cg::Vec3 hp = a.ch.skeleton.bones[size_t(a.ch.rig.head)].restWorld;
             const float hh = H - hp.y;
-            cam = makeCam({0, hp.y + 0.40f * hh, 0.1f * hh}, 0.38f, 0.0f, hh * 6.8f, 21.0f);
+            const char* sy = std::getenv("CHARGEN_STUDYYAW");
+            const char* sz = std::getenv("CHARGEN_STUDYZOOM");
+            cam = makeCam({0, hp.y + 0.40f * hh, 0.1f * hh}, sy ? float(std::atof(sy)) : 0.38f, 0.0f, hh * 6.8f / (sz ? float(std::atof(sz)) : 1.0f), 21.0f);
         } else {
             const bool longBody = a.ch.genome.body.centaur || a.ch.genome.body.tail;
             cam = makeCam({0, H * 0.5f, longBody ? -0.2f * H : 0.0f}, 0.55f, 0.03f, H * (longBody ? 3.4f : 2.9f), 21.0f);
