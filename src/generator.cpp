@@ -256,6 +256,10 @@ void Builder::computeMarks() {
                 a.clav = {a.side * 0.30f * C, y + 0.06f * h, 0.06f * h};
                 angle = cen ? 34.0f : 40.0f;
                 fwd = cen ? 0.80f : 0.55f;
+                // Short torsos (gnomes, chibi): forward-hanging lower arms would lie on the
+                // belly; they swing out wider and less forward instead.
+                const float shortK = saturate((0.6f - m.torsoLen / (2.2f * h)) / 0.2f);
+                if (!cen) angle += 14.0f * shortK, fwd -= 0.25f * shortK;
             }
             float ar = angle * kPi / 180.0f;
             a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), fwd});
@@ -768,15 +772,17 @@ void Builder::buildArms() {
             const bool four = m.arms.size() > 2;
             int i0, i1;
             if (a.pair == 0) {
-                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), four ? 0.63f : 0.52f, 0.80f));
+                i0 = nearest(clamp(torsoT(a.shoulder.y - 1.55f * Ra), four ? 0.63f : (profK_ < 0.45f ? 0.42f : 0.52f), 0.80f));
                 i1 = nearest(clamp(torsoT(a.shoulder.y + 0.85f * Ra), 0.92f, 1.0f));
                 upperArmI0_ = i0;
             } else {
-                i1 = std::min(nearest(clamp(torsoT(a.shoulder.y + 0.95f * Ra), 0.52f, 0.60f)), upperArmI0_ - 1);
+                i1 = std::min(nearest(clamp(torsoT(a.shoulder.y + 0.95f * Ra), 0.52f, 0.60f)), upperArmI0_ - (profK_ < 0.6f ? 2 : 1));
                 i0 = std::min(nearest(clamp(torsoT(a.shoulder.y - 1.2f * Ra), 0.32f, 0.46f)), i1 - 2);
             }
             if (lod.sparseRings) { if (i1 <= i0) i1 = i0 + 1; }
             else i0 = std::max(1, std::min(i0, i1 - 3));  // at least three rings tall: no pinched armpit
+            i0 = std::max(i0, 1);
+            i1 = std::clamp(i1, i0 + 1, int(torsoRingT_.size()) - 1);
             const float dF = torsoRing(torsoT(a.shoulder.y)).dF;
             const int jw = Ra > 0.62f * dF && N >= 12 ? 2 : 1;
             const int jc = a.side > 0 ? 0 : N / 2, jL = jc - jw, jR = jc + jw;
@@ -787,6 +793,30 @@ void Builder::buildArms() {
                     torsoHoles_.push_back(q);
                     torsoHoles_.push_back(q + 1);
                 }
+            // Round the opening's lower corners (the armpit): a square corner there makes the
+            // fillet fan out from a wide flat bottom and pleat under heavy arms.
+            // Between them the bottom edge is the armpit's hollow: tucked a little up and in,
+            // so the lat's bulge never overhangs the fillet.
+            if (i1 - i0 >= 2) {
+                for (int j : {jL, jR}) {
+                    Vec3& c = bp.pos[vid(i0, j)];
+                    c = outsideTorso(lerp(c, bp.pos[vid(i0 + 1, j)], 0.55f));
+                }
+                // The hollow eases out over the ring below, so the dent itself cannot fold.
+                auto tuck = [&](uint32_t v, float k) {
+                    Vec3& c = bp.pos[v];
+                    const float zc = cZc_(clamp(torsoT(c.y), -0.06f, 1.07f));
+                    c.x *= k;
+                    c.z = zc + (c.z - zc) * k;
+                };
+                for (int j = jL + 1; j < jR; ++j) {
+                    Vec3& c = bp.pos[vid(i0, j)];
+                    c = lerp(c, bp.pos[vid(i0 + 1, j)], 0.25f);
+                    const bool centre = jR - jL == 2 || j == (jL + jR) / 2;
+                    tuck(vid(i0, j), centre ? 0.91f : 0.94f);
+                    if (i0 > 0) tuck(vid(i0 - 1, j), centre ? 0.965f : 0.98f);
+                }
+            }
             std::vector<uint32_t> loop;
             for (int j = jL; j <= jR; ++j) loop.push_back(vid(i0, j));
             for (int i = i0 + 1; i <= i1; ++i) loop.push_back(vid(i, jR));
@@ -812,6 +842,24 @@ void Builder::buildArms() {
                 }
                 const float a0 = angleOf(bp.pos[loop[0]]);
                 for (size_t j = 0; j < M; ++j) alpha[j] = a0 + kTau * acc[j] / std::max(total, 1e-6f);
+                // Blend towards each loop vertex's true angle around the arm axis: a pure
+                // arc-length spacing drifts at the corners of the opening and twists the
+                // columns of the fillet (folds under heavy arms).
+                std::vector<float> ang(M);
+                float prevA = a0;
+                for (size_t j = 0; j < M; ++j) {
+                    float aj = angleOf(bp.pos[loop[j]]);
+                    aj = prevA + std::remainder(aj - prevA, kTau);
+                    ang[j] = aj;
+                    prevA = aj;
+                }
+                const float span = ang[M - 1] + std::remainder(a0 - ang[M - 1], kTau) + (std::remainder(a0 - ang[M - 1], kTau) < 0 ? kTau : 0) - a0;
+                if (std::fabs(span - kTau) < 0.5f) {  // the loop winds once around the axis: angles are usable
+                    const float minGap = 0.35f * kTau / float(M);
+                    for (size_t j = 1; j < M; ++j) ang[j] = std::max(ang[j], ang[j - 1] + minGap);
+                    const float sc = (kTau - minGap) / std::max(ang[M - 1] - ang[0], 1e-3f);
+                    for (size_t j = 0; j < M; ++j) alpha[j] = lerp(alpha[j], a0 + (ang[j] - ang[0]) * std::min(sc, 1.0f), 0.7f);
+                }
             }
             auto addV = [&](Vec3 pnt, const SkinW& w) {
                 bp.pos.push_back(pnt);
@@ -821,14 +869,38 @@ void Builder::buildArms() {
             };
             // The junction ends on the first arm ring, a little way down the arm: closer in,
             // its underside sits above the armpit and the fillet folds back down to it.
-            const float t1 = 0.14f;
+            // (The lower pair of a four-armed body hangs closer to the ribs: further still.)
+            const float t1 = a.pair ? 0.22f + 0.08f * saturate((0.6f - profK_) / 0.2f) : 0.14f;
             auto armRing = [&](float t) {
                 const float w = smoothstep(t1, t1 + 0.30f, t);
                 std::vector<Vec3> rg(M);
                 for (size_t j = 0; j < M; ++j) rg[j] = ringPoint(t, lerp(alpha[j], alpha[0] + kTau * float(j) / float(M), w));
+                // Heavy arms hanging against a wide torso: the upper arm's inner side would
+                // sink into the flank (and the armpit fillet fold over it). It rests on the
+                // flank instead, flattened against it like real soft tissue.
+                if (t < 0.5f) {
+                    const float clear = 0.012f * m.h * smoothstep(0.5f, 0.3f, t);
+                    for (Vec3& q : rg) {
+                        const Vec3 o = outsideTorso(q);
+                        if (length(o - q) < 1e-6f) continue;
+                        const Vec3 out = normalize(Vec3{o.x, 0, o.z - cZc_(clamp(torsoT(o.y), -0.06f, 1.07f))}, Vec3{a.side, 0, 0});
+                        q = lerp(q, o + out * clear, smoothstep(0.5f, 0.35f, t));
+                    }
+                }
                 return rg;
             };
             const std::vector<Vec3> ring1 = armRing(t1);
+            if (std::getenv("CHARGEN_CHECK") && a.pair == 0) {  // debug: arm rings sunk into the torso
+                for (float t : {t1, 0.18f, 0.27f, 0.36f}) {
+                    int inside = 0;
+                    float worst = 0;
+                    for (const Vec3& q : armRing(t)) {
+                        const Vec3 o = outsideTorso(q);
+                        if (length(o - q) > 1e-5f) ++inside, worst = std::max(worst, length(o - q) / m.h);
+                    }
+                    std::fprintf(stderr, "  arm %d ring t=%.2f: %d/%zu inside torso (depth %.3f h)\n", int(k), t, inside, M, worst);
+                }
+            }
             // Junction: a Hermite fillet per column, leaving the torso tangent to its
             // surface and arriving along the arm, plus the deltoid's mass on the outer and
             // upper side (none in the armpit). No creases, no shelf.
@@ -855,7 +927,10 @@ void Builder::buildArms() {
                 float lateral = saturate(dot(radN, normalize(Vec3{a.side, 0.6f, 0})) * 1.2f + 0.2f);
                 delt[j] = lateral * r * 0.30f * (0.5f + 0.5f * an.deltoids);
             }
-            std::vector<uint32_t> prev = loop;
+            // Rows of the fillet, computed first and relaxed as a grid before any vertex
+            // is emitted: the loop (row 0) and ring1 (row K+1) stay fixed.
+            std::vector<std::vector<Vec3>> G(size_t(K + 2), std::vector<Vec3>(M));
+            for (size_t j = 0; j < M; ++j) G[0][j] = P0[j], G[size_t(K + 1)][j] = ring1[j];
             // Progress of each column from the torso towards ring1: the fillet rows must
             // advance monotonically, or (in the armpit, where the torso pushes points back
             // out) consecutive rows double back over each other and fold.
@@ -864,7 +939,6 @@ void Builder::buildArms() {
                 const float f = float(kq) / float(K + 1);
                 const float h00 = 2 * f * f * f - 3 * f * f + 1, h10 = f * f * f - 2 * f * f + f, h01 = -2 * f * f * f + 3 * f * f,
                             h11 = f * f * f - f * f;
-                std::vector<uint32_t> cur(M);
                 for (size_t j = 0; j < M; ++j) {
                     Vec3 pnt = P0[j] * h00 + m0[j] * h10 + ring1[j] * h01 + m1[j] * h11;
                     Vec3 rad = pnt - (a.shoulder + d * dot(pnt - a.shoulder, d));
@@ -880,20 +954,115 @@ void Builder::buildArms() {
                         pnt += col * (want - pr);
                         progress[j] = want;
                     }
+                    // Never back in towards the torso's axis past where the column left the
+                    // flank (a lat bulging below the armpit would otherwise overhang the fillet).
+                    {
+                        const float tz = cZc_(clamp(torsoT(P0[j].y), -0.06f, 1.07f));
+                        const Vec2 r0{P0[j].x, P0[j].z - tz};
+                        const float tz1 = cZc_(clamp(torsoT(pnt.y), -0.06f, 1.07f));
+                        Vec2 r1{pnt.x, pnt.z - tz1};
+                        const float l0 = length(r0), l1 = length(r1);
+                        if (l1 < l0 && l1 > 1e-6f) {
+                            r1 = r1 * (l0 / l1);
+                            pnt.x = r1.x, pnt.z = tz1 + r1.y;
+                        }
+                    }
+                    G[size_t(kq)][j] = pnt;
+                }
+            }
+            // Relaxation: under the arm the torso, the fillet and the arm's underside meet in
+            // a tight crease where columns can cross; smoothing the grid (strongly in the
+            // armpit, barely on the deltoid, whose mass must survive) uncrosses them.
+            for (int it = 0; it < 8; ++it)
+                for (int kq = 1; kq <= K; ++kq) {
+                    std::vector<Vec3> next(M);
+                    for (size_t j = 0; j < M; ++j) {
+                        const Vec3 avg = (G[size_t(kq)][(j + M - 1) % M] + G[size_t(kq)][(j + 1) % M] + G[size_t(kq - 1)][j] + G[size_t(kq + 1)][j]) * 0.25f;
+                        const float wgt = 0.55f * (1.0f - saturate((delt[j] / std::max(1e-6f, r * 0.30f * (0.5f + 0.5f * an.deltoids)) - 0.2f) / 0.8f));
+                        next[j] = lerp(G[size_t(kq)][j], avg, wgt);
+                    }
+                    G[size_t(kq)] = next;
+                }
+            // Fold repair: wherever two neighbouring quads of the fillet (or of its first
+            // strips onto the arm) face opposite ways, relax their corners until they don't.
+            // The loop stays put; ring1 may give a little; the second arm ring is fixed.
+            std::vector<float> tsArm{t1, std::max(0.215f, t1 + 0.07f), std::max(0.29f, t1 + 0.14f), 0.37f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
+            if (lod.sparseRings) tsArm = mergeRings(tsArm, {}, true);
+            G.push_back(armRing(tsArm.size() > 1 ? tsArm[1] : 0.18f));
+            {
+                const int R = int(G.size());
+                // Triangulate exactly as emitQuad will, then look for folded edges.
+                auto id = [&](int rr, size_t j) { return uint32_t(rr) * uint32_t(M) + uint32_t(j % M); };
+                auto P = [&](uint32_t v) -> const Vec3& { return G[v / M][v % M]; };
+                for (int it = 0; it < 300; ++it) {
+                    std::vector<std::array<uint32_t, 3>> tris;
+                    for (int rr = 0; rr + 1 < R; ++rr)
+                        for (size_t j = 0; j < M; ++j) {
+                            const uint32_t qa = id(rr, j), qb = id(rr + 1, j), qc = id(rr + 1, j + 1), qd = id(rr, j + 1);
+                            const Vec3 &A = P(qa), &B = P(qb), &C = P(qc), &D = P(qd);
+                            const float k1 = dot(normalize(cross(B - A, C - A), {0, 0, 0}), normalize(cross(C - A, D - A), {0, 0, 0}));
+                            const float k2 = dot(normalize(cross(B - A, D - A), {0, 0, 0}), normalize(cross(C - B, D - B), {0, 0, 0}));
+                            if (k2 > k1 + 1e-3f) tris.push_back({qa, qb, qd}), tris.push_back({qb, qc, qd});
+                            else tris.push_back({qa, qb, qc}), tris.push_back({qa, qc, qd});
+                        }
+                    std::unordered_map<uint64_t, std::vector<size_t>> edges;
+                    for (size_t t = 0; t < tris.size(); ++t)
+                        for (int e = 0; e < 3; ++e) {
+                            const uint32_t x = tris[t][size_t(e)], y = tris[t][size_t((e + 1) % 3)];
+                            edges[x < y ? (uint64_t(x) << 32 | y) : (uint64_t(y) << 32 | x)].push_back(t);
+                        }
+                    auto tn = [&](size_t t) { return normalize(cross(P(tris[t][1]) - P(tris[t][0]), P(tris[t][2]) - P(tris[t][0])), Vec3{0, 0, 0}); };
+                    std::vector<std::vector<uint8_t>> bad(size_t(R), std::vector<uint8_t>(M, 0));
+                    int nb = 0;
+                    for (auto& e : edges) {
+                        if (e.second.size() != 2 || dot(tn(e.second[0]), tn(e.second[1])) > -0.15f) continue;
+                        ++nb;
+                        if (std::getenv("CHARGEN_CHECK") && it == 299) {
+                            const uint32_t x = uint32_t(e.first >> 32), y = uint32_t(e.first & 0xffffffffu);
+                            std::fprintf(stderr, "    stuck edge r%u c%u - r%u c%u (M %zu, K %d)\n", x / unsigned(M), x % unsigned(M), y / unsigned(M), y % unsigned(M), M, K);
+                            if (std::getenv("CHARGEN_CHECK")[0] == '2')
+                                for (int rr = 0; rr < R; ++rr) {
+                                    std::fprintf(stderr, "      r%d:", rr);
+                                    for (size_t c = (x % M + M - 1); c < x % M + M + 3; ++c) std::fprintf(stderr, " (%.3f %.3f %.3f)", G[size_t(rr)][c % M].x / m.h, G[size_t(rr)][c % M].y / m.h, G[size_t(rr)][c % M].z / m.h);
+                                    std::fprintf(stderr, "\n");
+                                }
+                        }
+                        for (size_t t : e.second)
+                            for (uint32_t v : tris[t]) bad[v / M][v % M] = 1;
+                    }
+                    if (std::getenv("CHARGEN_CHECK") && (it == 0 || it == 299)) std::fprintf(stderr, "  repair it %d: %d folded edges\n", it, nb);
+                    if (!nb) break;
+                    for (int rr = 1; rr <= K + 1; ++rr) {
+                        std::vector<Vec3> next = G[size_t(rr)];
+                        for (size_t j = 0; j < M; ++j) {
+                            if (!bad[size_t(rr)][j]) continue;
+                            const Vec3 avg = (G[size_t(rr)][(j + M - 1) % M] + G[size_t(rr)][(j + 1) % M] + G[size_t(rr - 1)][j] + G[size_t(rr + 1)][j]) * 0.25f;
+                            next[j] = lerp(G[size_t(rr)][j], avg, rr == K + 1 ? 0.35f : 0.7f);
+
+                        }
+                        G[size_t(rr)] = next;
+                    }
+                }
+                G.pop_back();
+            }
+            std::vector<uint32_t> prev = loop;
+            for (int kq = 1; kq <= K; ++kq) {
+                const float f = float(kq) / float(K + 1);
+                std::vector<uint32_t> cur(M);
+                for (size_t j = 0; j < M; ++j) {
                     SkinW w;
                     const SkinW& wl = bp.w[loop[j]];
                     for (int qq = 0; qq < 4; ++qq) w.add(wl.j[qq], wl.w[qq] * (1.0f - f));
                     w.add(up, f);
                     w.normalize();
-                    cur[j] = addV(pnt, w);
+                    cur[j] = addV(G[size_t(kq)][j], w);
                 }
                 emitStrip(bp, prev, cur, skin());
                 prev = cur;
             }
-            std::vector<float> ts{t1, 0.18f, 0.27f, 0.36f, te - 0.06f, te, te + 0.07f, te + 0.18f, 0.85f, 0.95f, 1.05f};
-            if (lod.sparseRings) ts = mergeRings(ts, {}, true);
+            const std::vector<float>& ts = tsArm;
             for (float t : ts) {
-                std::vector<Vec3> rg = armRing(t);
+                std::vector<Vec3> rg = t == t1 ? G[size_t(K + 1)] : armRing(t);
                 std::vector<uint32_t> cur(M);
                 for (size_t j = 0; j < M; ++j) cur[j] = addV(rg[j], armWeights(t));
                 emitStrip(bp, prev, cur, skin());
@@ -916,6 +1085,62 @@ void Builder::buildArms() {
         }
         bp.tris.swap(kept);
         torsoHoles_.clear();
+        // Last resort around the shoulders: wherever two faces still meet folded over
+        // (a pleat the fillet's own repair could not reach because it involves the flank
+        // around the opening), relax the vertices of those faces over the whole surface.
+        {
+            std::vector<Vec3> centres;
+            for (const ArmMarks& am : m.arms) centres.push_back(am.shoulder);
+            for (int it = 0; it < 120; ++it) {
+                std::unordered_map<uint64_t, std::vector<size_t>> edges;
+                std::vector<size_t> near;
+                for (size_t t = 0; t < bp.tris.size(); ++t) {
+                    const auto& tr = bp.tris[t];
+                    const Vec3 c = (bp.pos[tr.a] + bp.pos[tr.b] + bp.pos[tr.c]) / 3.0f;
+                    bool close = false;
+                    for (const Vec3& sc : centres) close |= length(c - sc) < 0.7f * m.h;
+                    if (!close) continue;
+                    near.push_back(t);
+                    const uint32_t v[3] = {tr.a, tr.b, tr.c};
+                    for (int e = 0; e < 3; ++e) {
+                        const uint32_t x = v[e], y = v[(e + 1) % 3];
+                        edges[x < y ? (uint64_t(x) << 32 | y) : (uint64_t(y) << 32 | x)].push_back(t);
+                    }
+                }
+                auto tn = [&](size_t t) {
+                    const auto& tr = bp.tris[t];
+                    return normalize(cross(bp.pos[tr.b] - bp.pos[tr.a], bp.pos[tr.c] - bp.pos[tr.a]), Vec3{0, 0, 0});
+                };
+                std::unordered_map<uint32_t, int> bad;
+                for (auto& e : edges)
+                    if (e.second.size() == 2 && dot(tn(e.second[0]), tn(e.second[1])) < -0.15f)
+                        for (size_t t : e.second) bad[bp.tris[t].a] = 1, bad[bp.tris[t].b] = 1, bad[bp.tris[t].c] = 1;
+                if (std::getenv("CHARGEN_CHECK") && (it == 0 || it == 119)) std::fprintf(stderr, "  relax it %d: %zu verts\n", it, bad.size());
+                if (bad.empty()) break;
+                // Grow the region by one ring of neighbours after a while: a pleat pinned by
+                // its surroundings needs them to give a little too.
+                if (it > 30) {
+                    std::vector<uint32_t> grow;
+                    for (size_t t : near) {
+                        const auto& tr = bp.tris[t];
+                        if (bad.count(tr.a) || bad.count(tr.b) || bad.count(tr.c)) grow.insert(grow.end(), {tr.a, tr.b, tr.c});
+                    }
+                    for (uint32_t v : grow) bad[v] = 1;
+                }
+                std::unordered_map<uint32_t, std::pair<Vec3, int>> acc;
+                for (size_t t : near) {
+                    const auto& tr = bp.tris[t];
+                    const uint32_t v[3] = {tr.a, tr.b, tr.c};
+                    for (int k2 = 0; k2 < 3; ++k2) {
+                        if (!bad.count(v[k2])) continue;
+                        auto& a2 = acc[v[k2]];
+                        a2.first += bp.pos[v[(k2 + 1) % 3]] + bp.pos[v[(k2 + 2) % 3]];
+                        a2.second += 2;
+                    }
+                }
+                for (auto& [v, a2] : acc) bp.pos[v] = lerp(bp.pos[v], a2.first / float(a2.second), 0.5f);
+            }
+        }
         if (std::getenv("CHARGEN_CHECK")) {  // debug: open edges and folds (adjacent faces nearly opposite) near the shoulders
             std::unordered_map<uint64_t, std::vector<size_t>> edges;
             for (size_t t = 0; t < bp.tris.size(); ++t) {
@@ -937,7 +1162,7 @@ void Builder::buildArms() {
                 const auto& tr = bp.tris[e.second[0]];
                 Vec3 ctr = (bp.pos[tr.a] + bp.pos[tr.b] + bp.pos[tr.c]) / 3.0f;
                 bool nearShoulder = false;
-                for (const ArmMarks& am : m.arms) nearShoulder |= am.pair == 0 && length(ctr - am.shoulder) < 0.6f * m.h;
+                for (const ArmMarks& am : m.arms) nearShoulder |= length(ctr - am.shoulder) < 0.6f * m.h;
                 if (nearShoulder && dot(nrm(e.second[0]), nrm(e.second[1])) < -0.2f) {
                     ++folds;
                     if (std::getenv("CHARGEN_CHECK")[0] == '2')
