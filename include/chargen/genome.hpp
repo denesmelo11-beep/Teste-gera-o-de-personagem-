@@ -154,7 +154,8 @@ struct BodyShape {
     int core = 0;               // a glowing orb set into the body: 0 none, 1 abdomen, 2 chest
     Vec3 coreColor{0.45f, 0.80f, 1.0f};
     bool hooves = false;
-    int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up)
+    int hornKind = -1;          // -1 any, 0 swept back, 1 ram, 2 upright, 3 bovine (out, then up), 4 corkscrew,
+                                // 5 forward hook, 6 antlers, 7 crown of spikes, 8 single brow horn, 9 along the skull
     bool centaur = false;       // human torso on a horse body (four legs)
     bool skeletal = false;      // nothing but bones (risen skeletons): always built at full decay
     bool digitigrade = false;   // walks on the toes: high hock behind, long metatarsal (draenei, worgen)
@@ -246,7 +247,8 @@ struct FaceStyle {
     bool darkNose = false;     // a dark, wet animal nose (worgen)
     float milky = 0.0f;        // clouded, dead eyes 0..1
     // Trait features (beaks and mouthparts replace the nose and mouth they cover).
-    int beak = 0;              // 0 none, 1 hooked raptor, 2 long straight (heron, arakkoa), 3 short and stout (owl, turtle)
+    int beak = 0;              // 0 none, 1 hooked raptor, 2 long straight (heron, arakkoa), 3 short and stout (owl, turtle),
+                               // 4 parrot, 5 duck bill, 6 hornbill casque, 7 crow
     bool mandibles = false;    // insect mouthparts: two curved pincers at the mouth corners
     int antennae = 0;          // 0 none, 1 segmented whips, 2 feathery (moth)
     float antennaLength = 1.0f;

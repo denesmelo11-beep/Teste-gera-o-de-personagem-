@@ -504,7 +504,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             else widths(1.35f, 1.32f, 1.18f, 1.02f, 1.28f);
             b.muscle = saturate(b.muscle + 0.3f); b.belly = 0.0f; b.bust *= 0.55f; b.butt *= 0.8f; b.neckThick *= 1.25f;
             b.muzzle = fem ? 0.80f : 0.92f; b.snout = 2; b.skinKind = 3; b.claws = true; b.ears = EarStyle::None;
-            b.horns = 2; b.hornKind = r.chance(0.6f) ? 0 : 2; b.hornSize = fem ? 0.9f : 1.15f;
+            b.horns = 2; b.hornKind = std::array{0, 9, 2, 7}[size_t(r.rangeInt(0, 3))]; b.hornSize = fem ? 0.9f : 1.15f;  // swept, along the skull, upright, a crown
             if (r.chance(0.45f)) { b.spines = r.rangeInt(6, 9); b.spineKind = 1; b.spineSize = r.range(0.7f, 1.0f); }
             if (r.chance(0.40f)) { b.tail = true; b.tailType = 1; b.tailLength = r.range(0.8f, 1.1f); }
             if (r.chance(0.25f)) { b.wings = 1; b.wingsFolded = r.chance(0.5f); b.wingSize = r.range(0.85f, 1.05f); }
@@ -555,7 +555,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.ears = EarStyle::None; b.digitigrade = true; b.feet = 1; b.hands = r.chance(0.6f) ? 1 : 0; b.furPattern = 2;
             b.wings = 2; b.wingsFolded = r.chance(0.35f); b.wingSize = r.range(0.85f, 1.05f);
             if (r.chance(0.7f)) { b.crest = 2; b.crestSize = r.range(0.6f, 1.1f); }
-            f.beak = r.weighted({1.2f, 1.0f, 1.0f}) + 1;
+            f.beak = r.weighted({1.2f, 1.0f, 1.0f, 0.8f, 0.5f, 0.6f, 1.0f}) + 1;  // raptor, long, stout, parrot, duck, hornbill, crow
             f.eyeShape = 1; f.eyeSize = 1.2f; f.irisSize = 1.25f; f.browThick = 0.15f; f.lashWeight = 0.05f; f.stubble = 0.0f;
             f.chinPoint = 0.4f; f.headTop = 0.3f; f.cheek = 0.0f;
             const Vec3 feather = pickC({{0.35f, 0.24f, 0.16f}, {0.18f, 0.17f, 0.20f}, {0.55f, 0.48f, 0.38f}, {0.62f, 0.60f, 0.56f},
@@ -667,7 +667,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.legRatio = 0.52f;
             if (fem) widths(1.0f, 1.0f, 0.95f, 1.05f, 1.0f);
             else widths(1.28f, 1.25f, 1.05f, 1.0f, 1.20f), b.muscle = saturate(b.muscle + 0.3f);
-            b.horns = 2; b.hornKind = r.rangeInt(0, 2); b.hornSize = fem ? 0.9f : 1.2f;
+            b.horns = 2; b.hornKind = std::array{0, 1, 2, 4, 5}[size_t(r.rangeInt(0, 4))]; b.hornSize = fem ? 0.9f : 1.2f;  // swept, ram, upright, corkscrew, hooked
             b.tail = true; b.tailType = 2; b.tailLength = r.range(0.9f, 1.2f);
             if (r.chance(0.6f)) b.digitigrade = true, b.hooves = true;
             if (r.chance(0.7f)) b.wings = 1, b.wingsFolded = r.chance(0.3f), b.wingSize = r.range(0.85f, 1.1f);
@@ -751,7 +751,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.muscle = saturate(b.muscle + 0.35f); b.belly = 0.0f; b.bust *= 0.6f;
             b.skinKind = 5; b.ears = EarStyle::None;
             b.crystalColor = pickC({{1.0f, 0.50f, 0.12f}, {1.0f, 0.32f, 0.10f}, {0.95f, 0.75f, 0.25f}});
-            if (r.chance(0.6f)) b.horns = 2, b.hornKind = r.rangeInt(0, 2), b.hornSize = r.range(0.8f, 1.2f);
+            if (r.chance(0.6f)) b.horns = 2, b.hornKind = std::array{0, 2, 5, 7}[size_t(r.rangeInt(0, 3))], b.hornSize = r.range(0.8f, 1.2f);
             if (r.chance(0.3f)) b.core = 2, b.coreColor = b.crystalColor;
             if (r.chance(0.3f)) { b.spines = r.rangeInt(5, 8); b.spineKind = 2; b.spineSize = 0.8f; }
             glow(b.crystalColor);

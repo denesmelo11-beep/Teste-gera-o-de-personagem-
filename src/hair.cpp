@@ -1175,44 +1175,200 @@ void Builder::buildFacialHair() {
     }
 }
 
+// Horns grow out of a raised socket of skin (the base sinks into the skull and the skin
+// rises around it), then follow one of ten centre lines:
+//   0 swept back   1 ram curl     2 upright      3 bovine (out, then up)   4 corkscrew
+//   5 forward hook 6 antlers      7 crown of spikes  8 single brow horn  9 laid along the skull
+// Each character varies the curl, length, girth, oval section and ridging, and an old
+// fighter may carry a broken one.
 void Builder::buildHorns() {
     if (g.body.horns == 0) return;
-    const float h = m.h, size = g.body.hornSize;
+    const float h = m.h;
     const int head = ch.rig.head;
     Rng r = Rng(g.seed).fork(57);
-    const int rk = r.rangeInt(0, 2);
-    const int kind = g.body.hornKind >= 0 ? g.body.hornKind : rk;  // 0 swept back, 1 curled ram, 2 straight up, 3 bovine
-    for (float sd : {1.0f, -1.0f}) {
-        const bool bov = kind == 3;
-        float th = bov ? (sd > 0 ? 28 * kPi / 180 : 152 * kPi / 180) : sd > 0 ? 62 * kPi / 180 : 118 * kPi / 180;
-        Vec3 p = headSurface(th, bov ? 0.80f : 0.86f, -0.01f * h);
-        Vec3 dir = bov ? normalize(Vec3{sd * 1.0f, 0.10f, 0.15f}) : kind == 2 ? normalize(Vec3{sd * 0.3f, 1, 0.1f}) : normalize(Vec3{sd * 0.5f, 0.7f, -0.3f});
-        const int n = 6;
-        float seg = 0.55f * h * size / n;
-        std::vector<Vec3> pts{p};
-        for (int k = 0; k < n; ++k) {
-            Quat bend = bov ? Quat::axisAngle({0, 0, 1}, sd * 0.30f) * Quat::axisAngle({1, 0, 0}, -0.05f)
-                      : kind == 1 ? Quat::axisAngle({sd, 0, 0}, -0.55f) : Quat::axisAngle({1, 0, 0}, kind == 0 ? -0.18f : 0.05f);
-            dir = normalize(rotate(bend, dir));
-            p = p + dir * seg;
-            pts.push_back(p);
-        }
+    const int rk = r.rangeInt(0, 9);
+    const int kind = g.body.hornKind >= 0 ? std::min(g.body.hornKind, 9) : rk;
+    const float curl = r.range(0.75f, 1.3f), lenK = r.range(0.85f, 1.2f), thick = r.range(0.8f, 1.25f);
+    const float flat = kind == 1 || kind == 4 ? r.range(1.25f, 1.6f) : r.range(1.0f, 1.25f);
+    const float ridge = kind == 1 || kind == 4 || kind == 8 ? r.range(0.07f, 0.14f) : r.chance(0.4f) ? r.range(0.03f, 0.08f) : 0.0f;
+    const float broken = r.chance(0.08f) ? (r.chance(0.5f) ? 1.0f : -1.0f) : 0.0f;
+    const float brokenAt = r.range(0.4f, 0.7f);
+    const float size = g.body.hornSize * lenK;
+    const Vec3 col = g.palette.horn;
+    const Mat skinM = bonesOnly_ ? Mat{col * 0.9f, MaterialClass::Horn} : skin();
+    auto paint = [=](float t, float) { return t < 0.0f ? skinM : Mat{col * (1.0f - 0.3f * saturate(t)), MaterialClass::Horn}; };
+    auto weight = [=](float, float, Vec3) { return one(head); };
+    // Outward normal of the head surface at (theta, s).
+    auto normalAt = [&](float th, float s) {
+        const Vec3 a = headPoint(th + 0.02f, s) - headPoint(th - 0.02f, s), b = headPoint(th, s + 0.01f) - headPoint(th, s - 0.01f);
+        Vec3 n = normalize(cross(a, b), {0, 1, 0});
+        if (dot(n, headPoint(th, s) - headCenter()) < 0) n = -n;
+        return n;
+    };
+    // One horn: socket rings around `p` along the normal, then the centre line `pts`
+    // (starting just above the skin). `cut` < 1 snaps it off.
+    auto horn = [&](Vec3 p, Vec3 N, const std::vector<Vec3>& pts, float r0, float taper, float cut) {
+        const size_t n = pts.size();
+        const size_t last = cut < 1.0f ? std::max<size_t>(3, size_t(cut * float(n - 1))) : n - 1;
         Loft L;
-        float r0 = 0.09f * h * std::sqrt(size);
-        for (int k = 0; k < n; ++k) {
-            float t = float(k) / n;
-            Vec3 d = normalize(pts[size_t(k + 1)] - pts[size_t(k)]);
-            Vec3 v = normalize(cross(d, {1, 0, 0}) * sd, {0, 0, 1});
-            Vec3 u = cross(d, v);
-            float rr = r0 * (1 - 0.85f * t);
-            L.rings.push_back(makeRing(pts[size_t(k)], u, v, SuperRing{rr, 0, rr, rr}, 8));
+        Vec3 T = N, v = normalize(Vec3{0, 0, 1} - N * N.z, {1, 0, 0});
+        auto ring = [&](Vec3 c, Vec3 tan, SuperRing sr, float t) {
+            const Quat q = fromTo(T, tan);
+            v = normalize(rotate(q, v));
+            T = tan;
+            v = normalize(v - T * dot(v, T), orthoFront(T));
+            L.rings.push_back(makeRing(c, cross(T, v), v, sr, 8));
             L.t.push_back(t);
+        };
+        ring(p - N * (0.6f * r0), N, SuperRing{0.9f * r0, 0, 0.9f * r0, 0.9f * r0}, -0.12f);
+        ring(p + N * (0.02f * r0), N, SuperRing{1.55f * r0, 0, 1.45f * r0, 1.45f * r0}, -0.06f);  // the skin rises around it
+        for (size_t k = 0; k <= last; ++k) {
+            const float t = float(k) / float(n - 1);
+            const Vec3 tan = normalize(pts[std::min(k + 1, n - 1)] - pts[k > 0 ? k - 1 : 0], N);
+            float rr = r0 * (1.08f - (1.0f - taper) * std::pow(t, 0.85f));
+            if (k > 0 && k % 2 == 1 && t < 0.85f) rr *= 1.0f - ridge;
+            const float wq = std::sqrt(flat);
+            ring(pts[k], tan, SuperRing{rr * wq, 0, rr / wq, rr / wq, kind == 1 ? 1.6f : 2.0f, 2.0f}, t);
         }
         L.poleEnd = true;
-        L.endPole = pts.back();
-        Vec3 col = g.palette.horn;
-        emitLoft(newPart(), L, [=](float, float, Vec3) { return one(head); },
-                 [=](float t, float) { return Mat{col * (1.0f - 0.25f * t), MaterialClass::Horn}; });
+        if (last == n - 1) {
+            L.endPole = pts.back() + T * (0.45f * length(pts.back() - pts[n - 2]));
+            L.tEnd = 1;
+            emitLoft(newPart(), L, weight, paint);
+        } else {  // snapped off: a rough, paler stump
+            L.endPole = pts[last] + T * (0.15f * r0);
+            L.tEnd = 1.5f;
+            emitLoft(newPart(), L, weight, [=](float t, float a) { return t > 1.2f ? Mat{lerp(col, Vec3{0.85f, 0.8f, 0.7f}, 0.5f), MaterialClass::Horn} : paint(t, a); });
+        }
+    };
+    // Centre line from a start point and direction, bending by `bend` each step, kept out of the head.
+    auto grow = [&](Vec3 q, Vec3 dir, float len, int n, Quat bend, Vec3 drift, float r0, float taper) {
+        std::vector<Vec3> pts{q};
+        const float seg = len / float(n);
+        for (int k = 0; k < n; ++k) {
+            dir = normalize(rotate(bend, dir));
+            q = q + dir * seg + drift * seg;
+            const float t = float(k + 1) / float(n);
+            q = collide(q, r0 * (1.0f - (1.0f - taper) * t) * 1.1f);
+            pts.push_back(q);
+        }
+        return pts;
+    };
+    const float r0 = 0.085f * h * std::sqrt(g.body.hornSize) * thick;
+    for (float sd : {1.0f, -1.0f}) {
+        const float cut = broken == sd ? brokenAt : 1.0f;
+        auto sideTh = [&](float deg) { return sd > 0 ? deg * kPi / 180 : kPi - deg * kPi / 180; };
+        auto base = [&](float deg, float s, Vec3& p, Vec3& N) {
+            p = headPoint(sideTh(deg), s);
+            N = normalAt(sideTh(deg), s);
+        };
+        Vec3 p, N;
+        switch (kind) {
+            case 0: default: {  // swept back
+                base(62, 0.86f, p, N);
+                const Vec3 q = p + N * (0.3f * r0);
+                horn(p, N, grow(q, normalize(Vec3{sd * 0.5f, 0.7f, -0.3f}), 0.6f * h * size, 12, Quat::axisAngle({1, 0, 0}, -0.095f * curl), {}, r0, 0.12f), r0, 0.12f, cut);
+                break;
+            }
+            case 1: {  // ram: back, down past the ear and forward, spiralling outwards
+                base(32, 0.82f, p, N);
+                const float R = 0.2f * h * size * (0.85f + 0.3f * (curl - 0.75f)), rr = 1.2f * r0;
+                const float turns = std::min(kTau * 0.95f, 1.6f * kPi * curl);
+                std::vector<Vec3> pts;
+                const int n = 16;
+                const Vec3 q0 = p + N * (0.3f * rr);
+                for (int k = 0; k <= n; ++k) {
+                    const float a = turns * float(k) / float(n), Rr = R * (1.0f - 0.45f * a / kTau);
+                    Vec3 q{q0.x + sd * R * 1.5f * std::min(1.0f, a / 1.4f), q0.y - R + Rr * std::cos(a), q0.z - 0.05f * h - Rr * std::sin(a) + 0.05f * h * std::cos(std::min(a, kPi))};
+                    if (k == 0) q = q0;
+                    pts.push_back(k > 0 ? collide(q, rr * (1.0f - 0.8f * float(k) / float(n)) * 1.1f) : q);
+                }
+                horn(p, N, pts, rr, 0.22f, cut);
+                break;
+            }
+            case 2: {  // upright, tips leaning in
+                base(65, 0.88f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.3f, 1, 0.1f}), 0.55f * h * size, 10,
+                                Quat::axisAngle({1, 0, 0}, 0.02f * curl) * Quat::axisAngle({0, 0, 1}, sd * 0.03f * curl), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+            case 3: {  // bovine
+                base(28, 0.80f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd, 0.1f, 0.15f}), 0.6f * h * size, 12,
+                                Quat::axisAngle({0, 0, 1}, sd * 0.15f * curl) * Quat::axisAngle({1, 0, 0}, -0.025f), {}, r0, 0.12f),
+                     r0, 0.12f, cut);
+                break;
+            }
+            case 4: {  // corkscrew (markhor, kudu)
+                base(55, 0.86f, p, N);
+                const Vec3 A = normalize(Vec3{sd * 0.35f, 0.85f, -0.4f});
+                const Vec3 e1 = normalize(cross(A, Vec3{0, 0, 1}), {1, 0, 0}), e2 = cross(A, e1);
+                const float len = 0.75f * h * size, turns = 2.2f * curl;
+                std::vector<Vec3> pts;
+                const int n = 18;
+                const Vec3 q0 = p + N * (0.3f * r0);
+                for (int k = 0; k <= n; ++k) {
+                    const float t = float(k) / float(n), ph = sd * turns * kTau * t, rho = 0.12f * len * (1.0f - 0.6f * t);
+                    const Vec3 q = q0 + A * (len * t) + (e1 * std::cos(ph) + e2 * std::sin(ph) - e1) * rho;
+                    pts.push_back(k > 0 ? collide(q, r0 * (1.0f - 0.85f * t) * 1.1f) : q);
+                }
+                horn(p, N, pts, r0, 0.12f, cut);
+                break;
+            }
+            case 5: {  // forward hook (bull, fiend)
+                base(35, 0.82f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.85f, 0.45f, -0.1f}), 0.62f * h * size, 12,
+                                Quat::axisAngle({0, 0, 1}, sd * 0.10f * curl) * Quat::axisAngle({0, 1, 0}, -sd * 0.11f * curl), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+            case 6: {  // antlers: a beam rising back and out, tines towards the front
+                base(60, 0.88f, p, N);
+                const float rb = 0.6f * r0;
+                const auto pts = grow(p + N * (0.3f * rb), normalize(Vec3{sd * 0.45f, 0.85f, -0.25f}), 0.85f * h * size, 12,
+                                      Quat::axisAngle({1, 0, 0}, 0.045f * curl) * Quat::axisAngle({0, 0, 1}, -sd * 0.03f), {}, rb, 0.35f);
+                horn(p, N, pts, rb, 0.35f, cut);
+                const Mat tineM{col * 0.85f, MaterialClass::Horn};
+                const int tines = 2 + int(curl > 1.0f);
+                for (int k = 0; k <= tines; ++k) {
+                    const size_t at = size_t(k == 0 ? 2 : 4 + (k - 1) * 3);
+                    if (at >= pts.size() - 1 || float(at) / float(pts.size() - 1) > cut) continue;
+                    const Vec3 d = normalize(k == 0 ? Vec3{sd * 0.25f, 0.25f, 1.0f} : Vec3{sd * 0.25f, 0.75f, 0.65f});
+                    const float lt = 0.32f * h * size * (k == 0 ? 0.8f : 1.0f - 0.15f * float(k));
+                    emitSpike(newPart(), pts[at], d, {0, 1, 0}, lt, rb * 0.75f * (1.0f - 0.08f * float(at)), 0, one(head), tineM);
+                }
+                break;
+            }
+            case 7: {  // a crown of short spikes from the brow back over the crown
+                const float spots[3][2] = {{72, 0.78f}, {52, 0.88f}, {32, 0.93f}};
+                for (int k = 0; k < 3; ++k) {
+                    base(spots[k][0], spots[k][1], p, N);
+                    const float rs = r0 * (0.75f - 0.1f * float(k));
+                    const Vec3 d = normalize(N + Vec3{0, 0.5f, -0.35f});
+                    horn(p, N, grow(p + N * (0.3f * rs), d, (0.24f + 0.06f * float(k)) * h * size, 6, Quat::axisAngle({1, 0, 0}, -0.08f * curl), {}, rs, 0.05f),
+                         rs, 0.05f, k == 1 ? cut : 1.0f);
+                }
+                break;
+            }
+            case 8: {  // one horn from the middle of the brow
+                if (sd < 0) break;
+                const float th = 0.5f * kPi, s = 0.76f;
+                p = headPoint(th, s);
+                N = normalAt(th, s);
+                const float ru = 0.85f * r0;
+                horn(p, N, grow(p + N * (0.3f * ru), normalize(Vec3{0, 0.55f, 0.85f}), 0.7f * h * size, 12, Quat::axisAngle({1, 0, 0}, -0.035f * curl), {}, ru, 0.06f),
+                     ru, 0.06f, broken != 0 ? brokenAt : 1.0f);
+                break;
+            }
+            case 9: {  // laid back along the skull, the tips lifting
+                base(30, 0.74f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.3f, 0.12f, -1.0f}), 0.75f * h * size, 12,
+                                Quat::axisAngle({1, 0, 0}, 0.035f * curl) * Quat::axisAngle({0, 1, 0}, sd * 0.015f), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+        }
     }
 }
 

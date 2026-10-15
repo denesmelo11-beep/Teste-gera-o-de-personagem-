@@ -699,7 +699,7 @@ std::string describe(const Genome& g) {
         static constexpr std::string_view kLower[] = {"", "serpent coil", "wraith wisp"};
         static constexpr std::string_view kHands[] = {"", "taloned hands", "crab pincers", "tendril hands"};
         static constexpr std::string_view kCrest[] = {"", "head fin", "feather crest", "bony frill", "cobra hood"};
-        static constexpr std::string_view kBeak[] = {"", "raptor beak", "long beak", "short beak"};
+        static constexpr std::string_view kBeak[] = {"", "raptor beak", "long beak", "short beak", "parrot beak", "duck bill", "hornbill casque", "crow beak"};
         static constexpr std::string_view kSkin[] = {"", "metal skin", "carapace", "scales", "crystal hide", "magma crust"};
         if (b.wings > 0 && b.wings <= 3) fx.emplace_back(kWings[size_t(b.wings)]);
         if (b.lowerBody > 0 && b.lowerBody <= 2) fx.emplace_back(kLower[size_t(b.lowerBody)]);
@@ -710,7 +710,7 @@ std::string describe(const Genome& g) {
         if (b.crest > 0 && b.crest <= 4) fx.emplace_back(kCrest[size_t(b.crest)]);
         if (b.skinKind > 0 && b.skinKind <= 5) fx.emplace_back(kSkin[size_t(b.skinKind)]);
         if (b.shards > 0) fx.push_back("crystal shards");
-        if (g.face.beak > 0 && g.face.beak <= 3) fx.emplace_back(kBeak[size_t(g.face.beak)]);
+        if (g.face.beak > 0 && g.face.beak <= 7) fx.emplace_back(kBeak[size_t(g.face.beak)]);
         if (g.face.mandibles) fx.push_back("mandibles");
         if (g.face.antennae) fx.push_back("antennae");
         if (g.face.eyeKind == 1) fx.push_back("compound eyes");
@@ -800,7 +800,7 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     }
     if (r.chance(0.3f)) b.spines = r.rangeInt(3, 10), b.spineKind = r.rangeInt(0, 2), b.spineSize = r.range(0.5f, 1.5f);
     if (r.chance(0.3f)) b.tusks = r.rangeInt(1, 2), b.tuskSize = r.range(0.5f, 1.4f), b.tuskCurve = r.range(-1.0f, 1.0f);
-    if (r.chance(0.25f)) b.horns = 2, b.hornKind = r.rangeInt(-1, 3), b.hornSize = r.range(0.5f, 1.5f);
+    if (r.chance(0.25f)) b.horns = 2, b.hornKind = r.rangeInt(-1, 9), b.hornSize = r.range(0.5f, 1.5f);
     if (r.chance(0.2f)) b.skinKind = r.rangeInt(1, 2), b.carapace = r.range(0.3f, 1.0f);
     if (r.chance(0.15f)) b.core = r.rangeInt(1, 2);
     if (r.chance(0.15f)) f.eyePairs = 2;
@@ -813,7 +813,7 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.08f)) b.shell = true;
     if (r.chance(0.12f)) b.crest = r.rangeInt(1, 4), b.crestSize = r.range(0.6f, 1.4f);
     if (r.chance(0.10f)) b.skinKind = r.rangeInt(3, 5), b.shards = r.chance(0.5f) ? r.rangeInt(0, 16) : 0;
-    if (r.chance(0.12f)) f.beak = r.rangeInt(1, 3);
+    if (r.chance(0.12f)) f.beak = r.rangeInt(1, 7);
     if (r.chance(0.08f)) f.mandibles = true;
     if (r.chance(0.08f)) f.antennae = r.rangeInt(1, 2), f.antennaLength = r.range(0.6f, 1.5f);
     if (r.chance(0.06f)) f.eyeKind = 1;

@@ -84,7 +84,7 @@ void usage() {
         "          [--fps 25] [--cell 300] [--samescale] [--hills] [--stiffness 1] [--overlap 1] [--out motion.gif|.png]\n"
         "          (animacao procedural com fisica: walk:s run:s circle:s idle:s hit:lado combo death:lado e qualquer clipe)\n"
         "  sheet   --seed N [--archetype A] [--out sheet.png]      (turnaround: frente, 3/4, perfil, costas)\n"
-        "  portraits --seed N --count K [--out portraits.png]      (variedade de rostos)\n"
+        "  portraits --seed N --count K [--yaw 0.35] [--zoom 4.6] [--out portraits.png]  (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
         "  info    --seed N | --key CG1-...                         (chave, descricao, metricas, tracos, hitboxes)\n"
@@ -92,7 +92,7 @@ void usage() {
         "  corpse  --seed N [--days 30]                            (linha do tempo da decomposicao)\n"
         "  stress  [--count 1000] [--seed 1]                       (fuzz: genomas extremos, validacao, tempos)\n"
         "filtros: --sex female|male --age young|adult|mature|elder --persona heroic|villainous|cute|sexy|stern|gentle|rogue|noble\n"
-        "anatomia: --arms 2|4 (dois pares de bracos)\n"
+        "anatomia: --arms 2|4 (dois pares de bracos); --horns 0..9 e --beak 1..7 forcam o formato; --bald raspa o cabelo\n"
         "morte: --decay 0..1 (0 vivo, 0.15 recem-morto, 0.4 apodrecendo, 0.7 putrefato, 1 ossada)\n"
         "estilo: padrao low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave; --toon = cel com contorno\n"
         "presets: natural bombshell dorito brute amazon slender chibi monster\n"
@@ -111,6 +111,10 @@ RenderSettings style(const Args& a) {
 Character make(const Args& a, uint64_t seed) {
     Genome g = randomGenome(seed, genomeOpts(a));
     if (a.flag("nude")) g.underwear = false;
+    // Force a trait shape (to compare shapes on the same faces).
+    if (a.flag("horns")) g.body.horns = 2, g.body.hornKind = int(a.num("horns", -1));
+    if (a.flag("beak")) g.face.beak = int(a.num("beak", 1));
+    if (a.flag("bald")) g.hair = HairStyle::Bald;
     return generateCharacter(g, genOpts(a));
 }
 
@@ -254,8 +258,8 @@ int cmdPortraits(const Args& a) {
         float hh = c.height / c.genome.body.headsTall;
         Vec3 target = head + Vec3{0, 0.30f * hh, 0.1f * hh};
         ToonRenderer r(cell, cell, 2, style(a));
-        float yaw = 0.35f;
-        r.setCamera(target + Vec3{std::sin(yaw), 0.06f, std::cos(yaw)} * (hh * 4.6f), target, 0.45f);
+        float yaw = a.flt("yaw", 0.35f);
+        r.setCamera(target + Vec3{std::sin(yaw), 0.06f, std::cos(yaw)} * (hh * float(a.num("zoom", 4.6))), target, 0.45f);
         r.clearSky({0.30f, 0.29f, 0.31f}, {0.20f, 0.19f, 0.21f});
         r.drawCharacter(c, pos, nrm, Mat4::identity(), FaceState{}, 10);
         r.drawText(std::string(toString(c.genome.persona)) + " " + std::string(toString(c.genome.ageGroup)) + " #" + std::to_string(c.genome.seed), 6, cell - 18, 1, {0.85f, 0.85f, 0.85f});

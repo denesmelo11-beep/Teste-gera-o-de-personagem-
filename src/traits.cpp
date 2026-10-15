@@ -882,57 +882,115 @@ void Builder::buildTalonFeet() {
 
 // ---------------------------------------------------------------- head traits
 
-// Beak over the nose and mouth: an upper mandible (culmen ridge, hooked or straight
-// tip) closing over a shorter lower one. 1 raptor, 2 long and straight, 3 short and stout.
+// Beak over the nose and mouth. It grows out of a low dome of bare skin (the cere of a
+// raptor, the facial skin of a crow) that sinks into the face, so the keratin never sits
+// on the face like a mask. The upper mandible has a rounded culmen and closes over a
+// shorter lower one; small nostrils sit near the base.
+//   1 hooked raptor  2 long and straight (heron, arakkoa)  3 short and stout (owl, turtle)
+//   4 parrot (deep, strongly hooked)  5 broad and flat (duck)  6 hornbill (a casque on top)
+//   7 crow (strong, straight, slightly curved)
+// Each character varies length, depth, width and hook a little.
 void Builder::buildBeak() {
-    const int kind = std::clamp(g.face.beak, 0, 3);
+    const int kind = std::clamp(g.face.beak, 0, 7);
     if (!kind) return;
     const float h = m.h;
     const int head = ch.rig.head;
+    Rng r = Rng(g.seed).fork(61);
     const Vec3 bc = bonesOnly_ ? kBoneM.color : g.palette.beak;
-    const float len[] = {0, 0.48f, 0.95f, 0.30f}, hook[] = {0, 0.55f, 0.05f, 0.30f}, wid[] = {0, 0.15f, 0.11f, 0.19f};
-    const float L = len[kind] * h, W = wid[kind] * h;
-    const Vec3 c0 = headPoint(0.5f * kPi, 0.33f) - Vec3{0, 0, 0.08f * h};
+    //                       -    raptor long  stout parrot duck  hornbill crow
+    const float len[] =   {0, 0.48f, 0.95f, 0.30f, 0.38f, 0.58f, 0.80f, 0.58f};
+    const float hook[] =  {0, 0.55f, 0.05f, 0.30f, 1.05f, -0.05f, 0.25f, 0.12f};
+    const float wid[] =   {0, 0.15f, 0.11f, 0.19f, 0.16f, 0.21f, 0.14f, 0.13f};
+    const float dep[] =   {0, 0.09f, 0.09f, 0.13f, 0.17f, 0.045f, 0.12f, 0.11f};
+    const float droopK[] = {0, 0.12f, 0.18f, 0.12f, 0.28f, 0.02f, 0.2f, 0.12f};
+    const float lowK[] =  {0, 0.72f, 0.88f, 0.88f, 0.55f, 0.95f, 0.88f, 0.9f};
+    const float L = len[kind] * h * r.range(0.88f, 1.15f), W = wid[kind] * h * r.range(0.9f, 1.1f);
+    const float D = dep[kind] * h * r.range(0.92f, 1.15f), hk = hook[kind] * r.range(0.8f, 1.2f), droop = droopK[kind] * r.range(0.8f, 1.25f);
+    const float taperE = kind == 2 ? 0.7f : kind == 5 ? 0.25f : 0.85f;
+    const bool twoTone = r.chance(0.45f);
+    const Vec3 tipC = twoTone ? (r.chance(0.5f) ? bc * 0.45f : lerp(bc, Vec3{0.92f, 0.86f, 0.62f}, 0.6f)) : bc * 0.65f;
+    const Vec3 cereC = bonesOnly_ ? kBoneM.color
+                     : kind == 1 || kind == 4 ? lerp(bc, Vec3{0.9f, 0.75f, 0.3f}, 0.4f)
+                     : lerp(g.palette.skin, bc, 0.3f) * 0.85f;
+    // Face centre line, where the beak meets it.
+    const float zf = headPoint(0.5f * kPi, 0.33f).z;
+    const Vec3 c0 = Vec3{0, headPoint(0.5f * kPi, 0.33f).y, zf - 0.08f * h};
     Part& p = newPart();
     p.id = headPartId_;
-    auto mandible = [&](Vec3 base, float lenM, float widM, float depth, float down, float hk, bool upper, const Vec3& col) {
+    auto weight = [=](float, float, Vec3) { return one(head); };
+    // The skin dome: deep inside the face, flaring at the surface, closing just in front.
+    {
         Loft Lf;
-        const int n = 7;
+        const float yc = c0.y + 0.01f * h, top = 0.10f * h + 0.3f * D, bot = 0.10f * h;
+        const float zs[] = {zf - 0.06f * h, zf + 0.004f * h, zf + 0.03f * h};
+        const float ws[] = {1.15f, 1.45f, 1.15f}, hs[] = {0.95f, 1.1f, 0.85f};
+        for (int k = 0; k < 3; ++k) {
+            Lf.rings.push_back(makeRing({0, yc, zs[k]}, {-1, 0, 0}, {0, 1, 0}, SuperRing{W * ws[k], 0, top * hs[k], bot * hs[k], 2.4f, 2.4f}, 10));
+            Lf.t.push_back(float(k) / 3.0f);
+        }
+        Lf.poleEnd = true;
+        Lf.endPole = {0, yc, zf + 0.045f * h};
+        Lf.tEnd = 1;
+        emitLoft(p, Lf, weight, [=](float, float) { return Mat{cereC, bonesOnly_ ? MaterialClass::Horn : MaterialClass::Skin}; });
+    }
+    auto mandible = [&](Vec3 base, float lenM, float widM, float depth, float down, float hkM, bool upper, const Vec3& col) {
+        Loft Lf;
+        const int n = 8;
+        auto centre = [=](float t) { return base + Vec3{0, -down * t * lenM - hkM * lenM * std::pow(t, 3.0f) * 0.6f, t * lenM}; };
         for (int k = 0; k < n; ++k) {
             const float t = float(k) / float(n);
-            // Down-curving centre line, hooking at the tip for raptors.
-            const Vec3 c = base + Vec3{0, -down * t * lenM - hk * lenM * std::pow(t, 3.0f) * 0.6f, t * lenM};
-            const float taper = std::pow(1.0f - t, kind == 2 ? 0.7f : 0.85f);
-            const float w = widM * taper, dd = depth * (0.35f + 0.65f * taper);
+            const float taper = std::pow(1.0f - t, taperE);
+            float w = widM * taper, dd = depth * (0.35f + 0.65f * taper);
+            if (kind == 5) w = widM * (1.0f - 0.25f * t);  // a broad, round-ended bill
             // Upper: a rounded ridge on top, flat underneath; lower: the reverse.
             SuperRing sr = upper ? SuperRing{w, 0, dd, 0.25f * dd, 1.6f, 3.0f} : SuperRing{w, 0, 0.25f * dd, dd, 3.0f, 1.6f};
-            Lf.rings.push_back(makeRing(c, {-1, 0, 0}, {0, 1, 0}, sr, 8));  // loft along +z: u = cross(+z, +y) = -x
+            if (kind == 5) sr.nF = sr.nB = 3.0f;
+            Lf.rings.push_back(makeRing(centre(t), {-1, 0, 0}, {0, 1, 0}, sr, 8));  // loft along +z: u = cross(+z, +y) = -x
             Lf.t.push_back(t);
         }
         Lf.poleStart = true;
         Lf.startPole = base - Vec3{0, 0, 0.05f * h};
         Lf.tStart = 0;
         Lf.poleEnd = true;
-        Lf.endPole = base + Vec3{0, -down * lenM - hk * lenM * 0.6f - (upper ? 0.35f : 0.0f) * hk * 0.15f * lenM, lenM * (1.0f - 0.04f * hk)};
+        Lf.endPole = centre(1.0f) + Vec3{0, -(upper ? 0.35f : 0.0f) * std::max(0.0f, hkM) * 0.15f * lenM, -0.04f * std::max(0.0f, hkM) * lenM};
         Lf.tEnd = 1;
-        emitLoft(p, Lf, [=](float, float, Vec3) { return one(head); },
-                 [=](float t, float) { return Mat{col * (t > 0.8f ? 0.65f : 1.0f), MaterialClass::Horn}; });
+        emitLoft(p, Lf, weight, [=](float t, float) { return Mat{t > 0.72f ? tipC : col, MaterialClass::Horn}; });
+        return centre;
     };
-    const float droop = kind == 2 ? 0.18f : 0.12f;
-    mandible(c0 + Vec3{0, 0.055f * h, 0}, L, W, (kind == 3 ? 0.13f : 0.09f) * h, droop, hook[kind], true, bc);
-    mandible(c0 - Vec3{0, 0.065f * h, 0}, L * (kind == 1 ? 0.72f : 0.88f), W * 0.86f, (kind == 3 ? 0.08f : 0.055f) * h, droop * 1.1f, 0.0f, false,
-             bc * 0.82f);
-    if (kind == 1 && !bonesOnly_) {  // the fleshy cere where the beak meets the face
+    // The lower mandible closes against the upper one along its whole length.
+    const float Dl = D * (kind == 4 ? 0.75f : 0.6f);
+    const Vec3 ub = c0 + Vec3{0, 0.04f * h, 0}, lb = ub - Vec3{0, 0.25f * (D + Dl) + 0.004f * h, 0};
+    auto up = mandible(ub, L, W, D, droop, hk, true, bc);
+    mandible(lb, L * lowK[kind], W * (kind == 5 ? 0.95f : 0.86f), Dl, droop, kind == 4 ? 0.2f : 0.0f, false, bc * 0.82f);
+    if (bonesOnly_) return;
+    // Nostrils, on the sides of the culmen near the base.
+    for (float sd : {1.0f, -1.0f}) {
+        const float tn = kind == 2 ? 0.12f : 0.2f;
+        const float taper = std::pow(1.0f - tn, taperE);
         Ellipsoid e;
-        e.center = c0 + Vec3{0, 0.07f * h, 0.03f * h};
+        e.center = up(tn) + Vec3{sd * 0.55f * W * taper, 0.55f * D * (0.35f + 0.65f * taper), 0};
         e.axis = {0, 0, 1};
         e.up = {0, 1, 0};
-        e.rAxis = 0.07f * h;
-        e.rU = W * 1.05f;
-        e.rV = 0.06f * h;
-        e.lat = 3;
+        e.rAxis = 0.035f * h;
+        e.rU = 0.012f * h;
+        e.rV = 0.016f * h;
+        e.lat = 2;
+        e.lon = 5;
+        emitEllipsoid(p, e, weight, [=](float, float) { return Mat{bc * 0.25f, MaterialClass::Horn}; });
+    }
+    if (kind == 6) {  // the hornbill's casque, riding the culmen
+        const float t = 0.3f, taper = std::pow(1.0f - t, taperE), dd = D * (0.35f + 0.65f * taper);
+        Ellipsoid e;
+        e.center = up(t) + Vec3{0, 0.8f * dd + 0.35f * D, -0.02f * L};
+        e.axis = normalize(up(0.45f) - up(0.15f));
+        e.up = {0, 1, 0};
+        e.rAxis = 0.32f * L;
+        e.rU = 0.55f * W;
+        e.rV = 0.75f * D;
+        e.lat = 4;
         e.lon = 8;
-        emitEllipsoid(p, e, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return Mat{lerp(bc, Vec3{0.9f, 0.75f, 0.3f}, 0.4f), MaterialClass::Skin}; });
+        const Vec3 cc = twoTone ? tipC : lerp(bc, Vec3{0.85f, 0.25f, 0.1f}, 0.35f);
+        emitEllipsoid(p, e, weight, [=](float, float) { return Mat{cc, MaterialClass::Horn}; });
     }
 }
 
