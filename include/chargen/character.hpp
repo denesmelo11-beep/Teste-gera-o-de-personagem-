@@ -80,6 +80,13 @@ struct RigInfo {
     int bustL = -1, bustR = -1;
     std::vector<int> tail;
     std::vector<std::vector<int>> hairChains;
+    // Species traits. Wings: root = wing shoulder on the scapula, upper = humerus, lower =
+    // forearm, end = hand (the finger spars / primaries hang from it), side as for arms.
+    std::vector<LimbRig> wings;
+    std::vector<int> serpent;                     // naga coil / wraith wisp, hips to tip (the legs' bones stay, unskinned)
+    std::vector<std::vector<int>> tentacles;      // back tentacles, root to tip (spring chains)
+    std::vector<std::vector<int>> antennae;       // L, R (spring chains)
+    std::vector<int> pincers;                     // movable claw finger per arm (-1 when that arm has none); rotate to open
     // Equipment sockets (bone ids): weapons, shield, back, belt.
     int socketHandR = -1, socketHandL = -1, socketBack = -1, socketHip = -1;
     std::vector<JointLimit> limits;  // applied by cg::limitPose (every built-in clip respects them)

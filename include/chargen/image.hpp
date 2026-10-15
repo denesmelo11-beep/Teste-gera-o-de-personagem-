@@ -26,5 +26,8 @@ struct Image {
 
 std::vector<uint8_t> encodePng(const Image& img);
 bool writePng(const std::string& path, const Image& img);
+// Animated GIF (one shared median-cut palette, unchanged pixels left transparent, loops forever).
+std::vector<uint8_t> encodeGif(const std::vector<Image>& frames, int delayCentiseconds);
+bool writeGif(const std::string& path, const std::vector<Image>& frames, int delayCentiseconds);
 
 }  // namespace cg

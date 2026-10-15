@@ -18,11 +18,13 @@ add_library(chargen
   src/physics.cpp
   src/face.cpp
   src/animation.cpp
+  src/motion.cpp
   src/image.cpp
   src/render.cpp
   src/gltf.cpp
   src/engine.cpp
-  src/studies.cpp)
+  src/studies.cpp
+  src/traits.cpp)
 target_include_directories(chargen PUBLIC include)
 find_package(Threads REQUIRED)
 target_link_libraries(chargen PUBLIC Threads::Threads)
