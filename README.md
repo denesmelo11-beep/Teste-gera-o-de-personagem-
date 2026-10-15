@@ -84,6 +84,57 @@ Raylib 5.5 (opcional).
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
 
+## Animação procedural com física (`chargen/motion.hpp`)
+
+Os clipes são escritos como **frases de movimento**: antecipação (o peso vai para trás, o tronco
+enrola), ação explosiva, contato segurado, *follow-through* e recuperação solta, com poses-chave
+fortes. Por cima disso, `cg::Animator` faz o corpo se mover com física:
+
+- **Músculos-mola**: cada junta persegue o clipe com uma mola amortecida em vez de copiá-lo. Juntas
+  proximais são rígidas, as distais mais soltas, então o movimento quebra junta após junta e os
+  membros passam do ponto e assentam. A frequência escala com o tamanho como um pêndulo: o ogro
+  balança pesado e lento, o gnomo estala. Cada clipe tem uma curva de **tensão** (golpe rígido,
+  recuperação solta).
+- **Inércia**: a aceleração de cada junta balança o segmento pendurado nela (a cabeça chicoteia
+  quando o peito para, os braços atrasam na virada) e o corpo inclina na aceleração e nas curvas.
+- **Impactos**: `hit(direção, força, ponto)` injeta momento angular na cadeia a partir do ponto
+  atingido, cambaleia o quadril e soma uma reação direcional por cima de qualquer ação.
+- **IK**: pés no chão (qualquer função de altura), presos durante o apoio, inclinados na rampa, com
+  o quadril descendo quando uma perna não alcança; olhar com coluna e cabeça; alcançar com qualquer
+  braço. Duas ou quatro pernas, dois ou quatro braços.
+- **Ragdoll**: corpo de partículas Verlet (uma por junta e ponta de membro, pelve e caixa torácica
+  rígidas), limites anatômicos do rig, colisão consigo mesmo, atrito com o chão e um tônus muscular
+  que se apaga — a morte desaba em vez de cair como tábua. Cabelo e cauda continuam nas molas e
+  descansam no chão. O corpo dorme quando para.
+- **Eventos** para jogo e som: `contact`, `release`, `roar`, `footL`/`footR`, `land`, `impact`, `ragdoll`.
+
+Novas ações: `hit` (recuo pela direção do golpe), `death`, `cast` (magia: junta no quadril, canaliza
+tremendo diante do peito, empurra as palmas — o segundo par de braços abre e acompanha) e `roar`
+(grito de guerra: inspira, afunda numa base larga com o peito para fora e os braços flexionados).
+Para engines que só tocam clipes, `makeDefaultClips` passa todos pelo modelo muscular
+(`bakePhysical`, loops continuam sem emenda) e a morte é um ragdoll simulado e gravado
+(`bakeDeathClip`); `makeAuthoredClips` devolve as poses como desenhadas. Custo: ~0,08 ms por
+personagem por quadro.
+
+```cpp
+cg::Animator anim(personagem);
+anim.setBase(idle);
+anim.play(ataque, 0.15f);
+// a cada quadro:
+anim.update(dt, posicaoNoMundo, rotacaoNoMundo);   // inclui cabelo, cauda e busto
+cg::poseMatrices(personagem.skeleton, anim.pose(), global, skin);
+anim.hit(direcaoDoGolpe, 1.0f, pontoAtingido);
+anim.die(direcaoDoGolpe);
+```
+
+| Frases de movimento e ragdoll (`chargen_cli motion`) | Corpos variados: 4 braços, centauro, worgen com cauda |
+|---|---|
+| ![combo](docs/anim_combo.gif) | ![corpos](docs/anim_corpos.gif) |
+| **Peso pela escala**: gnomo, humano e ogro no mesmo ataque e na mesma sequência de golpes | **Andar e correr em círculo**: inclinação na curva, pés presos no apoio, cabelo e cauda |
+| ![peso](docs/anim_peso.gif) | ![corrida](docs/anim_corrida.gif) |
+
+![poses](docs/anim_frases.png)
+
 ## Compilar
 
 ```bash
@@ -121,7 +172,7 @@ chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDY
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
-Teclas: `N` novos personagens · `1-5` idle/walk/run/attack/dodge · `R` correr em círculo ·
+Teclas: `N` novos personagens · `1-9` idle/walk/run/attack/dodge/hit/cast/roar/death · `R` correr em círculo ·
 `E` expressões · `W` vento · `L` baixa resolução · `Espaço` pausa · arrastar = câmera.
 Headless funciona com `xvfb-run -a chargen_viewer --shots out`.
 
@@ -139,7 +190,9 @@ chargen_cli info      --seed 9 --species troll --sex male     # chave, descriç�
 chargen_cli info      --key CG1-1400000000001ZR1ZZZZY1000000000F
 chargen_cli family    --seed 7 --species dwarf --children 3   # pais, filhos herdando, o pai envelhecendo
 chargen_cli corpse    --days 30                               # linha do tempo da decomposição e regenerações
-chargen_cli stress    --count 2000                            # fuzz: genomas extremos + validação + tempos
+chargen_cli stress    --count 2000                            # fuzz: genomas extremos + validação + tempos (+ animação/ragdoll)
+chargen_cli motion    --actors "orc,ogre@4,study:centaur_warlord" --script "idle:1,attack,hit:front,cast,roar,death:back"
+                      [--fps 25] [--samescale] [--stiffness 1] [--overlap 1] [--out motion.gif|.png]
 ```
 
 ## Para a engine do RPG (`chargen/engine.hpp`)

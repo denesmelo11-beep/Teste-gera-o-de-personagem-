@@ -18,6 +18,7 @@ add_library(chargen
   src/physics.cpp
   src/face.cpp
   src/animation.cpp
+  src/motion.cpp
   src/image.cpp
   src/render.cpp
   src/gltf.cpp

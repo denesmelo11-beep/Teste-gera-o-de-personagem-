@@ -6,6 +6,7 @@
 #include "chargen/character.hpp"
 #include "chargen/engine.hpp"
 #include "chargen/gltf.hpp"
+#include "chargen/motion.hpp"
 #include "chargen/studies.hpp"
 
 using namespace cg;
@@ -20,6 +21,70 @@ static int failures = 0;
             std::printf("\n");                              \
         }                                                   \
     } while (0)
+
+static bool finitePose(const Pose& p) {
+    for (size_t i = 0; i < p.rot.size(); ++i)
+        if (!std::isfinite(p.rot[i].x + p.rot[i].y + p.rot[i].z + p.rot[i].w + p.trans[i].x + p.trans[i].y + p.trans[i].z)) return false;
+    return true;
+}
+
+// Drives the physics animator through every action and checks it stays sane: finite poses,
+// planted feet, the gameplay events, a ragdoll that falls, stays on the ground and comes to rest.
+static void checkMotion(const Character& c, const char* name) {
+    const auto clips = makeAuthoredClips(c);
+    auto clip = [&](const char* n) -> const Clip& {
+        for (const Clip& k : clips)
+            if (k.name == n) return k;
+        return clips[0];
+    };
+    Animator an(c);
+    an.setBase(clip("idle"));
+    Vec3 pos{};
+    an.reset(pos, Quat{});
+    const float dt = 1.0f / 30.0f;
+    bool ok = true, contact = false, release = false, rag = false;
+    auto run = [&](float secs, float speed) {
+        for (int f = 0; f < int(secs / dt); ++f) {
+            pos.z += speed * dt;
+            an.update(dt, pos, Quat{});
+            ok = ok && finitePose(an.pose());
+            for (const std::string& e : an.events()) contact |= e == "contact", release |= e == "release", rag |= e == "ragdoll";
+        }
+    };
+    run(0.5f, 0);
+    // Idle: feet planted at their rest height.
+    std::vector<Mat4> g, sk;
+    poseMatrices(c.skeleton, an.pose(), g, sk);
+    for (const LimbRig& l : c.rig.legs) {
+        const float y = g[size_t(l.end)].point({0, 0, 0}).y, rest = c.skeleton.bones[size_t(l.end)].restWorld.y;
+        CHECK(std::fabs(y - rest) < 0.03f * c.height, "%s: pe fora do chao em idle (%f vs %f)", name, y, rest);
+    }
+    an.play(clip("walk"), 0.2f);
+    run(1.5f, clipGroundSpeed(c, clip("walk")));
+    for (const char* act : {"attack", "cast", "roar", "dodge"}) {
+        an.play(clip(act), 0.15f);
+        run(clip(act).duration() + 0.3f, 0);
+    }
+    an.hit({0, 0, -1}, 1.0f);
+    run(0.4f, 0);
+    an.hit({1, 0, 0}, 1.5f, Vec3{pos.x, 0.8f * c.height, pos.z});
+    run(0.8f, 0);
+    CHECK(ok, "%s: pose com NaN", name);
+    CHECK(contact && release, "%s: eventos contact/release ausentes", name);
+    const Vec3 before = an.bodyCenter();
+    an.die({0, 0, -1});
+    run(8.0f, 0);
+    const Vec3 after = an.bodyCenter();
+    CHECK(ok && rag && an.isRagdoll(), "%s: ragdoll nao comecou", name);
+    CHECK(an.settled(), "%s: ragdoll nao parou", name);
+    CHECK(after.y > 0 && after.y < 0.45f * c.height, "%s: corpo nao caiu (%f de %f)", name, after.y, c.height);
+    CHECK(std::hypot(after.x - before.x, after.z - before.z) < 1.2f * c.height, "%s: corpo deslizou %f", name,
+          std::hypot(after.x - before.x, after.z - before.z));
+    poseMatrices(c.skeleton, an.pose(), g, sk);
+    float low = 1e9f;
+    for (const Mat4& m : g) low = std::min(low, m.point({0, 0, 0}).y);
+    CHECK(low > -0.05f * c.height, "%s: osso abaixo do chao %f", name, low);
+}
 
 static void validate(const Character& c, uint64_t seed) {
     const Mesh& m = c.mesh;
@@ -277,6 +342,60 @@ int main() {
         const Character c = generateCharacter(g, go);
         std::string why;
         CHECK(validateCharacter(c, &why), "fuzz seed %llu: %s", (unsigned long long)(s * 7919), why.c_str());
+    }
+    // ---- physics animation ----
+    {
+        GenomeOptions o;
+        o.species = Species::Human;
+        checkMotion(generateCharacter(randomGenome(4, o)), "humano");
+        o.species = Species::Worgen;  // digitigrade legs, tail
+        checkMotion(generateCharacter(randomGenome(5, o)), "worgen");
+        o.species = Species::Centaur;  // four legs
+        checkMotion(generateCharacter(randomGenome(6, o)), "centauro");
+        o.species = Species::Gnome;
+        o.armPairs = 2;  // four arms, small body
+        checkMotion(generateCharacter(randomGenome(7, o)), "gnomo 4 bracos");
+        for (const char* st : {"four_armed_giant", "centaur_warlord", "chitin_horror"}) {
+            GenOptions go;
+            checkMotion(generateCharacter(*studyGenome(st, 2, &go), go), st);
+        }
+        for (uint64_t s = 1; s <= 6; ++s) {
+            GenOptions go;
+            const Character c = generateCharacter(fuzzGenome(s * 104729, &go), go);
+            checkMotion(c, "fuzz");
+        }
+    }
+    {   // IK reaches, baked clips stay valid and loops close.
+        const Character c = generateCharacter(randomGenome(9));
+        Pose p = restPose(c.skeleton);
+        const LimbRig& arm = c.rig.arms[1];
+        const Vec3 goal = c.skeleton.bones[size_t(arm.upper)].restWorld + Vec3{0.1f, 0.15f, 0.3f} * (c.height / 1.8f);
+        twoBoneIK(c.skeleton, p, arm.upper, arm.lower, arm.end, goal, {0, 0, -1});
+        std::vector<Mat4> g, sk;
+        poseMatrices(c.skeleton, p, g, sk);
+        CHECK(length(g[size_t(arm.end)].point({0, 0, 0}) - goal) < 0.01f, "IK nao alcancou");
+        const auto clips = makeDefaultClips(c);
+        CHECK(clips.size() == 9, "clipes padrao: %zu", clips.size());
+        for (const Clip& k : clips) {
+            bool fin = true;
+            for (const Pose& f : k.frames) fin = fin && finitePose(f);
+            CHECK(fin && !k.frames.empty(), "clipe %s invalido", k.name.c_str());
+        }
+        const Clip& walk = clips[1];
+        float seam = 0;
+        for (size_t i = 0; i < walk.frames[0].rot.size(); ++i) {
+            const Quat a = walk.frames.back().rot[i], b = walk.frames[0].rot[i], m = walk.frames[walk.frames.size() - 2].rot[i];
+            // The step over the seam should look like any other step.
+            const float over = 1 - std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+            const float inner = 1 - std::fabs(a.x * m.x + a.y * m.y + a.z * m.z + a.w * m.w);
+            seam = std::max(seam, over - 4 * inner);
+        }
+        CHECK(seam < 1e-3f, "loop do walk com emenda %f", seam);
+        CHECK(exportGlb(c, clips, "test_motion.glb"), "export com clipes fisicos falhou");
+        Image a(8, 8), b(8, 8);
+        a.set(1, 1, {1, 0, 0, 1});
+        const auto gif = encodeGif({a, b}, 4);
+        CHECK(gif.size() > 30 && gif[0] == 'G' && gif.back() == 0x3B, "gif");
     }
     if (failures) std::printf("%d falhas\n", failures);
     else std::printf("ok\n");

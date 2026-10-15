@@ -1328,7 +1328,7 @@ int main(int argc, char** argv) {
     while (!WindowShouldClose()) {
         float dt = paused ? 0.0f : GetFrameTime();
         if (IsKeyPressed(KEY_N)) spawn(s, seed += uint64_t(count), count, opt, 1.1f);
-        for (int k = 0; k < 5; ++k)
+        for (int k = 0; k < 9; ++k)
             if (IsKeyPressed(KEY_ONE + k))
                 for (Actor& a : s.actors) a.clip = std::min(k, int(a.clips.size()) - 1), a.time = 0;
         if (IsKeyPressed(KEY_R))

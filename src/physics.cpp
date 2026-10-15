@@ -154,7 +154,7 @@ void SecondaryMotion::substep(Pose& pose, float dt, Vec3 rootDelta) {
             if (dt > 0) {
                 // Inertia relative to the body; drag only damps that relative motion.
                 Vec3 rel = (cur - prev) - prevDelta_ * carry;
-                next = cur + rootDelta * carry + rel * (1.0f - sc.drag) + restDir * (sc.stiffness * len * dt * 6.0f) +
+                next = cur + rootDelta * carry + rel * (1.0f - sc.drag) + restDir * (sc.stiffness * stiffnessScale * len * dt * 6.0f) +
                        (gravity * sc.gravity + wind) * (dt * dt);
             }
             next = X.p + normalize(next - X.p, restDir) * len;
@@ -166,6 +166,10 @@ void SecondaryMotion::substep(Pose& pose, float dt, Vec3 rootDelta) {
                     next = q + d * (R / dl);
                     next = X.p + normalize(next - X.p, restDir) * len;
                 }
+            }
+            if (next.y < floorY + sc.hitRadius) {
+                next.y = floorY + sc.hitRadius;
+                next = X.p + normalize(next - X.p, restDir) * len;
             }
             // Angle limit around the styled direction.
             Vec3 dir = normalize(next - X.p, restDir);

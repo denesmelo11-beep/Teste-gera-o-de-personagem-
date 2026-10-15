@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 
 #include "chargen/animation.hpp"
@@ -11,8 +12,10 @@
 #include "chargen/engine.hpp"
 #include "chargen/genome.hpp"
 #include "chargen/gltf.hpp"
+#include "chargen/motion.hpp"
 #include "chargen/physics.hpp"
 #include "chargen/render.hpp"
+#include "chargen/studies.hpp"
 
 using namespace cg;
 
@@ -76,7 +79,10 @@ void usage() {
         "  lineup  --seed N --count K [--archetype A] [--exaggeration E] [--smooth] [--out lineup.png]\n"
         "  export  --seed N [--archetype A] [--lod 0|1|2] [--smooth] [--out personagem.glb]\n"
         "  faces   --seed N [--archetype A] [--out faces.png]      (folha de expressoes)\n"
-        "  anim    --seed N --clip idle|walk|run|attack [--frames 8] [--yaw 0.9] [--out anim.png]\n"
+        "  anim    --seed N --clip idle|walk|run|attack|dodge|hit|cast|roar|death [--frames 8] [--yaw 0.9] [--authored] [--out anim.png]\n"
+        "  motion  --actors \"human,ogre@4,study:centaur_warlord\" --script \"idle:1,attack,hit:front,cast,roar,death:back\"\n"
+        "          [--fps 25] [--cell 300] [--samescale] [--hills] [--stiffness 1] [--overlap 1] [--out motion.gif|.png]\n"
+        "          (animacao procedural com fisica: walk:s run:s circle:s idle:s hit:lado combo death:lado e qualquer clipe)\n"
         "  sheet   --seed N [--archetype A] [--out sheet.png]      (turnaround: frente, 3/4, perfil, costas)\n"
         "  portraits --seed N --count K [--out portraits.png]      (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
@@ -164,8 +170,9 @@ int cmdFaces(const Args& a) {
 int cmdAnim(const Args& a) {
     Character c = make(a, uint64_t(a.num("seed", 1)));
     std::string name = a.get("clip", "walk");
-    Clip clip = name == "idle" ? makeIdleClip(c) : name == "run" ? makeRunClip(c) : name == "attack" ? makeAttackClip(c)
-              : name == "dodge" ? makeDodgeClip(c) : makeWalkClip(c);
+    Clip clip = makeWalkClip(c);
+    for (Clip& k : a.flag("authored") ? makeAuthoredClips(c) : makeDefaultClips(c))
+        if (k.name == name) clip = k;
     int frames = int(a.num("frames", 8));
     const int cw = 240, chh = 400;
     Image strip(cw * frames, chh);
@@ -357,6 +364,187 @@ int cmdFamily(const Args& a) {
     return 0;
 }
 
+// ---- motion: physics-driven animation scripts rendered to an animated GIF ----
+
+struct Actor {
+    std::string label;
+    Character ch;
+    std::unique_ptr<Animator> anim;
+    std::vector<Clip> clips;
+    Vec3 pos;
+    float yaw = 0;
+    const Clip& clip(const std::string& n) const {
+        for (const Clip& k : clips)
+            if (k.name == n) return k;
+        return clips[0];
+    }
+};
+
+// Actor tokens: [study:]name[@4][#seed], e.g. "orc", "ogre@4#7", "study:centaur_warlord".
+bool makeActor(const Args& a, const std::string& tok, uint64_t seed, Actor& out) {
+    std::string t = tok;
+    int arms = 0;
+    if (auto h = t.find('#'); h != std::string::npos) seed = std::strtoull(t.substr(h + 1).c_str(), nullptr, 10), t = t.substr(0, h);
+    if (auto at = t.find('@'); at != std::string::npos) arms = std::atoi(t.substr(at + 1).c_str()), t = t.substr(0, at);
+    GenOptions go = genOpts(a);
+    Genome g;
+    if (t.rfind("study:", 0) == 0) {
+        auto sg = studyGenome(t.substr(6), seed, &go);
+        if (!sg) return std::fprintf(stderr, "estudo desconhecido: %s\n", t.c_str()), false;
+        g = *sg;
+    } else {
+        GenomeOptions o = genomeOpts(a);
+        if (!t.empty() && t != "random") {
+            if (!(o.species = speciesFromString(t))) return std::fprintf(stderr, "especie desconhecida: %s\n", t.c_str()), false;
+        }
+        if (arms) o.armPairs = arms >= 4 ? 2 : 1;
+        g = randomGenome(seed, o);
+    }
+    out.label = t.rfind("study:", 0) == 0 ? t.substr(6) : (t.empty() ? std::string("random") : t);
+    out.ch = generateCharacter(g, go);
+    return true;
+}
+
+std::vector<std::string> split(const std::string& s, char sep) {
+    std::vector<std::string> v;
+    size_t i = 0;
+    while (i <= s.size()) {
+        size_t j = s.find(sep, i);
+        if (j == std::string::npos) j = s.size();
+        if (j > i) v.push_back(s.substr(i, j - i));
+        i = j + 1;
+    }
+    return v;
+}
+
+int cmdMotion(const Args& a) {
+    const uint64_t seed = uint64_t(a.num("seed", 1));
+    std::vector<Actor> actors;
+    for (const std::string& tok : split(a.get("actors", "human"), ',')) {
+        Actor ac;
+        if (!makeActor(a, tok, seed, ac)) return 1;
+        actors.push_back(std::move(ac));
+    }
+    const std::vector<std::string> script = split(a.get("script", "idle:1,attack,hit:front,cast,roar,death:front"), ',');
+    const int fps = int(a.num("fps", 25));
+    const float dt = 1.0f / float(fps);
+    const int cw = int(a.num("cell", 300)), chh = int(a.num("cellh", cw * 4 / 3));
+    const bool sameScale = a.flag("samescale");
+    const float yawCam = a.flt("yaw", 0.75f);
+    float maxH = 0;
+    for (Actor& ac : actors) maxH = std::max(maxH, ac.ch.height * (ac.ch.rig.legs.size() > 2 ? 1.25f : 1.0f));
+    for (size_t i = 0; i < actors.size(); ++i) {
+        Actor& ac = actors[i];
+        ac.clips = makeAuthoredClips(ac.ch);
+        MotionSettings ms;
+        ms.stiffness = a.flt("stiffness", 1.0f);
+        ms.overlap = a.flt("overlap", 1.0f);
+        ms.footIK = !a.flag("nofootik");
+        ms.footLock = !a.flag("nofootlock");
+        if (a.flag("hills")) ms.ground = [](float x, float z) { return 0.18f * std::sin(1.3f * x) * std::cos(0.9f * z) + 0.06f * z; };
+        ac.anim = std::make_unique<Animator>(ac.ch, ms);
+        ac.anim->setBase(ac.clip("idle"));
+        ac.pos = {0, ms.ground ? ms.ground(0, 0) : 0.0f, 0};
+        ac.anim->reset(ac.pos, Quat{});
+    }
+    std::vector<Image> frames;
+    std::vector<Mat4> global, skin;
+    std::vector<Vec3> pos, nrm;
+    auto render = [&](const std::string& caption) {
+        Image img(cw * int(actors.size()), chh);
+        for (size_t i = 0; i < actors.size(); ++i) {
+            Actor& ac = actors[i];
+            poseMatrices(ac.ch.skeleton, ac.anim->pose(), global, skin);
+            skinMesh(ac.ch.mesh, skin, pos, nrm);
+            const float H = sameScale ? maxH : ac.ch.height * (ac.ch.rig.legs.size() > 2 ? 1.25f : 1.0f);
+            ToonRenderer r(cw, chh, 2, style(a));
+            const Vec3 ctr = ac.anim->bodyCenter();
+            const Vec3 target{ctr.x, ac.pos.y + H * 0.45f, ctr.z};
+            r.setCamera(target + Vec3{std::sin(yawCam), 0.2f, std::cos(yawCam)} * (H * 2.5f), target, 0.5f);
+            r.clearSky({0.93f, 0.93f, 0.95f}, {0.99f, 0.99f, 0.99f});
+            r.drawFloor(40, 0.5f * std::max(1.0f, H / 1.8f), {0.90f, 0.90f, 0.91f}, {0.95f, 0.95f, 0.96f},
+                        {{ctr.x, ctr.z, ac.ch.height * 0.2f}});
+            const Mat4 model = Mat4::trs(ac.pos, Quat::axisAngle({0, 1, 0}, ac.yaw));
+            r.drawCharacter(ac.ch, pos, nrm, model, ac.anim->face(), 10);
+            r.drawText(ac.label, 8, 8, 2, {0.35f, 0.35f, 0.4f});
+            if (i == 0 && !caption.empty()) r.drawText(caption, 8, chh - 24, 2, {0.55f, 0.2f, 0.2f});
+            img.blit(r.finish(), int(i) * cw, 0);
+        }
+        frames.push_back(std::move(img));
+    };
+    auto stepAll = [&](float secs, const std::string& caption, float speed, float turn) {
+        const int n = std::max(1, int(secs * fps + 0.5f));
+        for (int f = 0; f < n; ++f) {
+            for (Actor& ac : actors) {
+                ac.yaw += turn * dt;
+                const Vec3 fwd{std::sin(ac.yaw), 0, std::cos(ac.yaw)};
+                if (speed != 0) {
+                    const float v = speed * clipGroundSpeed(ac.ch, ac.anim->clip() ? *ac.anim->clip() : ac.clips[0]);
+                    ac.pos += fwd * (v * dt);
+                }
+                if (ac.anim->settings.ground) ac.pos.y = ac.anim->settings.ground(ac.pos.x, ac.pos.z);
+                ac.anim->update(dt, ac.pos, Quat::axisAngle({0, 1, 0}, ac.yaw));
+            }
+            render(caption);
+        }
+    };
+    auto blowDir = [](const Actor& ac, const std::string& from) {
+        Vec3 d{0, 0, -1};  // from the front: the blow travels backwards
+        if (from == "back") d = {0, 0, 1};
+        else if (from == "left") d = {-1, 0, 0};
+        else if (from == "right") d = {1, 0, 0};
+        return rotate(Quat::axisAngle({0, 1, 0}, ac.yaw), d);
+    };
+    for (const std::string& step : script) {
+        const auto parts = split(step, ':');
+        const std::string act = parts.empty() ? "idle" : parts[0];
+        const std::string arg = parts.size() > 1 ? parts[1] : "";
+        const float secs = arg.empty() ? -1.0f : std::strtof(arg.c_str(), nullptr);
+        if (act == "idle") {
+            for (Actor& ac : actors) ac.anim->play(ac.clip("idle"), 0.3f);
+            stepAll(secs > 0 ? secs : 1.0f, "", 0, 0);
+        } else if (act == "walk" || act == "run") {
+            for (Actor& ac : actors) ac.anim->play(ac.clip(act), 0.3f);
+            stepAll(secs > 0 ? secs : 2.0f, act, 1.0f, 0);
+        } else if (act == "circle") {  // run in a circle: leaning into the turn
+            for (Actor& ac : actors) ac.anim->play(ac.clip("run"), 0.3f);
+            stepAll(secs > 0 ? secs : 3.0f, "run", 1.0f, 1.6f);
+        } else if (act == "hit") {
+            for (Actor& ac : actors) ac.anim->hit(blowDir(ac, arg.empty() ? "front" : arg), a.flt("strength", 1.0f));
+            stepAll(0.9f, "hit", 0, 0);
+        } else if (act == "combo") {  // three blows in quick succession from different sides
+            for (const char* side : {"front", "left", "right"}) {
+                for (Actor& ac : actors) ac.anim->hit(blowDir(ac, side), 0.8f);
+                stepAll(0.35f, "hit", 0, 0);
+            }
+            stepAll(0.6f, "hit", 0, 0);
+        } else if (act == "death" || act == "die") {
+            for (Actor& ac : actors) ac.anim->die(blowDir(ac, arg.empty() ? "front" : arg), a.flt("strength", 1.0f));
+            stepAll(secs > 0 ? secs : 3.0f, "death", 0, 0);
+        } else {
+            float longest = 0;
+            for (Actor& ac : actors) {
+                const Clip& k = ac.clip(act);
+                ac.anim->play(k, 0.15f);
+                longest = std::max(longest, k.duration());
+            }
+            stepAll(longest + (secs > 0 ? secs : 0.35f), act, 0, 0);
+        }
+    }
+    const std::string out = a.get("out", "motion.gif");
+    if (out.size() > 4 && out.substr(out.size() - 4) == ".png") {  // contact sheet of every Nth frame
+        const int every = int(a.num("every", 6)), cols = int(a.num("cols", 8));
+        const int count = (int(frames.size()) + every - 1) / every, rows = (count + cols - 1) / cols;
+        const int fw = frames[0].width, fh = frames[0].height;
+        Image sheet(fw * std::min(cols, count), fh * rows);
+        for (int k = 0; k < count; ++k) sheet.blit(frames[size_t(k * every)], (k % cols) * fw, (k / cols) * fh);
+        return writePng(out, sheet) ? (std::printf("%s (%d quadros)\n", out.c_str(), count), 0) : 1;
+    }
+    if (!writeGif(out, frames, 100 / fps)) return 1;
+    std::printf("%s (%zu quadros, %.1f s)\n", out.c_str(), frames.size(), frames.size() * dt);
+    return 0;
+}
+
 int cmdCorpse(const Args& a) {
     const float days = a.flt("days", 30.0f);
     float built = 0.0f;
@@ -379,6 +567,8 @@ int cmdStress(const Args& a) {
     double total = 0, worst = 0;
     uint64_t worstSeed = 0;
     size_t maxTris = 0;
+    double motionMs = 0;
+    int motionRuns = 0;
     for (int i = 0; i < count; ++i) {
         const uint64_t seed = seed0 + uint64_t(i);
         GenOptions go;
@@ -399,6 +589,35 @@ int cmdStress(const Args& a) {
             else if (vols.size() < 10) ok = false, why = "few hit volumes";
             else if (pm.vertices.size() != c.mesh.vertices.size()) ok = false, why = "pack";
         }
+        if (ok && i % int(a.num("motionevery", 10)) == 0) {  // physics animation: every action, then death to rest
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto clips = makeAuthoredClips(c);
+            Animator an(c);
+            an.setBase(clips[0]);
+            an.reset({}, Quat{});
+            int updates = 0;
+            auto finite = [&]() {
+                for (size_t b = 0; b < an.pose().rot.size(); ++b) {
+                    const Quat q = an.pose().rot[b];
+                    const Vec3 t = an.pose().trans[b];
+                    if (!std::isfinite(q.x + q.y + q.z + q.w + t.x + t.y + t.z)) return false;
+                }
+                return true;
+            };
+            for (const Clip& k : clips) {
+                if (k.name == "death") continue;
+                an.play(k, 0.15f);
+                for (int f = 0; f < 30 && ok; ++f, ++updates) an.update(1.0f / 30.0f, {}, Quat{}), ok = finite();
+                if (k.name == "hit") an.hit({0, 0, -1}, 1.5f);
+            }
+            an.die({1, 0, 0});
+            for (int f = 0; f < 300 && ok && !an.settled(); ++f, ++updates) an.update(1.0f / 30.0f, {}, Quat{}), ok = finite();
+            if (!ok) why = "motion NaN";
+            else if (!an.settled()) ok = false, why = "ragdoll never settled";
+            else if (an.bodyCenter().y > 0.5f * c.height || an.bodyCenter().y < 0) ok = false, why = "ragdoll off the ground";
+            motionMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count() / std::max(1, updates);
+            ++motionRuns;
+        }
         if (!ok) {
             ++bad;
             if (bad <= 20)
@@ -408,6 +627,8 @@ int cmdStress(const Args& a) {
     }
     std::printf("%d/%d validos; %.1f ms em media, pior %.1f ms (seed %llu); max %zu tris\n", count - bad, count, total / count, worst,
                 (unsigned long long)worstSeed, maxTris);
+    if (motionRuns)
+        std::printf("animacao com fisica: %d personagens, %.3f ms por quadro (30 fps) em media\n", motionRuns, motionMs / motionRuns);
     return bad ? 1 : 0;
 }
 
@@ -427,6 +648,7 @@ int main(int argc, char** argv) {
     if (a.cmd == "family") return cmdFamily(a);
     if (a.cmd == "corpse") return cmdCorpse(a);
     if (a.cmd == "stress") return cmdStress(a);
+    if (a.cmd == "motion") return cmdMotion(a);
     usage();
     return a.cmd.empty() ? 0 : 1;
 }
