@@ -140,6 +140,24 @@ mantém no esqueleto) ficam fora dos músculos, do IK e do ragdoll.
 
 ![especies](docs/anim_especies.gif)
 
+**Quatro braços**: o par de baixo tem pose própria. Em repouso fica pendurado ao lado
+do quadril com os antebraços à frente; no ataque guarda a barriga e solta um gancho
+atrasado; na magia alimenta o feitiço com as palmas baixas; no rugido contrai os punhos
+na frente do quadril.
+
+![quatro braços](docs/anim_quatro_bracos.gif)
+
+**Chifres e bicos** saem de uma base de pele afundada no crânio (no bico, uma cúpula de
+pele nua como a cera de uma ave de rapina). Há dez formatos de chifre (`hornKind`): para
+trás, carneiro, reto, bovino, saca-rolhas, gancho para frente, galhada, coroa de
+espinhos, chifre único na testa e rente ao crânio. Cada personagem também varia na
+curvatura, no comprimento, na espessura, na seção oval, nos anéis e, às vezes, tem um
+chifre quebrado. Há sete bicos (`beak`): rapina, longo, curto, papagaio, pato, calau com
+casco e corvo. `chargen_cli portraits --horns K --beak K --bald` força o formato.
+
+![chifres](docs/chifres.png)
+![bicos](docs/bicos.png)
+
 ![poses](docs/anim_frases.png)
 
 ## Compilar

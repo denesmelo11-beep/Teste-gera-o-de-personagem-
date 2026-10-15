@@ -137,6 +137,13 @@ struct Author {
         Vec3 flex = normalize(cross(a.restDir, {0, 0, 1}));
         rot(a.lower, Quat::axisAngle(flex, elbow));
     }
+    // The extra (lower) pair at rest: hanging along the flanks with the forearms brought
+    // forward, hands by the hips. `fwd` swings it forward (+) / back, `out` away from the body.
+    Vec3 hang(size_t i, float fwd = 0, float out = 0) const {
+        const float sd = i < r.arms.size() ? r.arms[i].side : 1.0f;
+        return normalize(Vec3{sd * (0.28f + out), -0.93f, 0.22f + fwd});
+    }
+    void lowerArm(size_t i, float fwd, float out, float elbow) { aim(i, hang(i, fwd, out), elbow); }
     // Tail: raise (+) / drop, swing sideways, spread along the chain (curl > 0 bends the tip more).
     void tail(float lift, float sway, float curl = 0.5f) {
         const size_t n = r.tail.size();
@@ -314,7 +321,8 @@ Clip makeIdleClip(const Character& c) {
         for (size_t i = 0; i < a.r.arms.size(); ++i) {
             bool lower = i >= 2;
             float sd = (i % 2 == 0) ? 1.0f : -1.0f;
-            a.arm(i, lower ? 0.25f : 0.62f, 0.05f * std::sin(ph + sd) - (lower ? 0.3f : 0.0f), 0.25f + 0.05f * breath);
+            if (lower) a.lowerArm(i, 0.06f * std::sin(ph + 1.7f + sd), 0.03f * breath, 0.75f + 0.06f * breath);  // own rhythm, not a copy
+            else a.arm(i, 0.62f, 0.05f * std::sin(ph + sd), 0.25f + 0.05f * breath);
             if (i < 2) a.euler(a.r.arms[i].root, 0, 0, 0.015f * sd * breath);
         }
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
@@ -352,7 +360,8 @@ Clip makeWalkClip(const Character& c) {
         for (size_t i = 0; i < a.r.arms.size(); ++i) {
             float k = (i % 2 == 0) ? 1.0f : -1.0f;
             float sw = 0.42f * s * k * (i >= 2 ? -0.8f : 1.0f);
-            a.arm(i, i >= 2 ? 0.25f : 0.66f, sw, 0.25f + 0.25f * std::max(0.0f, -sw));
+            if (i >= 2) a.lowerArm(i, 0.55f * sw, 0.0f, 0.8f + 0.3f * std::max(0.0f, sw));
+            else a.arm(i, 0.66f, sw, 0.25f + 0.25f * std::max(0.0f, -sw));
         }
         a.tail(0.05f, -0.3f * s, 0.8f);
         a.wings(0.04f * co, 0);
@@ -382,7 +391,8 @@ Clip makeRunClip(const Character& c) {
         for (size_t i = 0; i < a.r.arms.size(); ++i) {
             float k = (i % 2 == 0) ? 1.0f : -1.0f;
             float sw = 0.75f * s * k * (i >= 2 ? -0.8f : 1.0f);
-            a.arm(i, i >= 2 ? 0.3f : 0.62f, sw - 0.1f, 1.35f + 0.25f * std::max(0.0f, -sw));
+            if (i >= 2) a.lowerArm(i, 0.2f + 0.6f * sw, 0.05f, 1.35f + 0.2f * std::max(0.0f, sw));
+            else a.arm(i, 0.62f, sw - 0.1f, 1.35f + 0.25f * std::max(0.0f, -sw));
         }
         a.tail(0.3f, -0.35f * s, 0.6f);
         a.wings(-0.12f, -0.2f);
@@ -420,8 +430,9 @@ Clip makeAttackClip(const Character& c) {
               lerp(0.3f, 2.1f, std::min(1.0f, t * 5)));
         if (a.r.arms.size() > 2) {  // lower pair: delayed uppercut + guard
             float k3 = phrase({{0.35f, 0.0f}, {0.5f, 1.0f, Ease::Snap}, {0.7f, 1.0f}, {1.0f, 0.0f}}, t);
-            a.aim(3, lerp(a.r.arms[3].restDir, normalize(Vec3{-0.1f, 0.5f, 1.0f}), k3), lerp(0.4f, 0.6f, k3));
-            a.arm(2, 0.3f, -0.6f, 1.6f);
+            const float g = std::min(1.0f, t * 4);
+            a.aim(3, normalize(lerp(a.hang(3, -0.2f * g), normalize(Vec3{-0.1f, 0.5f, 1.0f}), k3)), lerp(0.75f + 0.5f * g, 0.9f, k3));
+            a.aim(2, normalize(lerp(a.hang(2), normalize(Vec3{0.12f, -0.5f, 0.8f}), g)), lerp(0.75f, 1.8f, g));  // fist up, guarding the belly
         }
         a.tail(0.15f + 0.3f * std::max(0.0f, lunge), -0.9f * twist, 0.7f);
         a.wings(0.35f * std::max(0.0f, lunge), 0.3f * std::max(0.0f, lunge));
@@ -453,7 +464,8 @@ Clip makeDodgeClip(const Character& c) {
         }
         for (size_t i = 0; i < a.r.arms.size(); ++i) {
             float k = (i % 2 == 0) ? 1.0f : -1.0f;
-            a.arm(i, 0.35f - 0.5f * air, -0.4f * crouch + 0.3f * k * air, 0.6f + 0.6f * crouch, 0.3f * air);
+            if (i >= 2) a.lowerArm(i, 0.25f * crouch - 0.2f * k * air, 0.45f * air, 0.9f + 0.5f * crouch);
+            else a.arm(i, 0.35f - 0.5f * air, -0.4f * crouch + 0.3f * k * air, 0.6f + 0.6f * crouch, 0.3f * air);
         }
         a.tail(0.4f * air - 0.1f * crouch, -0.6f * twist, 0.6f);
         a.wings(0.5f * air, 0.3f * air);
@@ -485,8 +497,8 @@ void recoil(Author& a, Vec3 push, float k, float kh, float s, float stepLift) {
     a.tilt(a.r.head, axis, 0.3f * kh * s);
     for (size_t i = 0; i < a.r.arms.size(); ++i) {
         const float sd = a.r.arms[i].side;
-        a.arm(i, (i >= 2 ? 0.25f : 0.62f) - 0.45f * k * s, 0.6f * k * s * push.z - (i >= 2 ? 0.3f : 0.0f), 0.3f + 0.7f * k * s,
-              0.45f * k * s * std::max(0.0f, -sd * push.x));
+        if (i >= 2) a.lowerArm(i, 0.5f * k * s * push.z, 0.35f * k * s + 0.4f * k * s * std::max(0.0f, -sd * push.x), 0.75f + 0.5f * k * s);
+        else a.arm(i, 0.62f - 0.45f * k * s, 0.6f * k * s * push.z, 0.3f + 0.7f * k * s, 0.45f * k * s * std::max(0.0f, -sd * push.x));
     }
     for (size_t i = 0; i < a.r.legs.size(); ++i) {
         const float sd = a.r.legs[i].side;
@@ -579,11 +591,12 @@ Clip makeCastClip(const Character& c) {
         }
         for (size_t i = 2; i < a.r.arms.size(); ++i) {
             const float sd = a.r.arms[i].side;
-            const Vec3 spread = normalize(Vec3{sd * 0.95f, -0.25f, 0.2f});
-            const Vec3 drive = normalize(Vec3{sd * 0.55f, -0.05f, 0.85f});
-            Vec3 d = lerp(a.r.arms[i].restDir, spread, std::max(gather * 0.5f, channel));
+            // Palms low and open at the sides, feeding the spell, then a shove forward.
+            const Vec3 spread = normalize(Vec3{sd * 0.75f, -0.6f, 0.3f});
+            const Vec3 drive = normalize(Vec3{sd * 0.45f, -0.35f, 0.85f});
+            Vec3 d = lerp(a.hang(i), spread, std::max(gather * 0.5f, channel));
             d = lerp(d, drive, thrust);
-            a.aim(i, normalize(d), lerp(0.4f, 0.25f, thrust));
+            a.aim(i, normalize(d), lerp(lerp(0.75f, 0.95f, std::max(gather * 0.5f, channel)), 0.45f, thrust));
         }
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
             const bool front = i % 2 == 0;
@@ -633,7 +646,10 @@ Clip makeRoarClip(const Character& c) {
                 d = lerp(d, flare, roar);
                 a.aim(i, normalize(d), 0.3f + 0.4f * inhale + 1.55f * roar);
             } else {
-                a.arm(i, 0.25f - 0.45f * roar, -0.3f + 0.1f * roar, 0.4f + 1.2f * roar, 0.4f * roar);
+                // The lower pair draws back on the breath, then flexes: fists in front of the hips.
+                Vec3 d = lerp(a.hang(i), a.hang(i, -0.35f, 0.15f), inhale);
+                d = lerp(d, a.hang(i, 0.25f, 0.3f), roar);
+                a.aim(i, normalize(d), 0.75f + 0.25f * inhale + 1.0f * roar);
             }
         }
         for (size_t i = 0; i < a.r.legs.size(); ++i) {
