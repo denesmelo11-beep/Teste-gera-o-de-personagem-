@@ -764,15 +764,38 @@ void Animator::startRagdoll(Vec3 impulse) {
     std::vector<Quat> rot;
     fk(out_, pos, rot);
     const float hipY = c_.rig.hips >= 0 ? bones[size_t(c_.rig.hips)].restWorld.y : 0.5f * c_.height;
+    const BodyShape& body = c_.genome.body;
+    const bool beast = body.stance == 1 && !body.centaur && !body.lowerBody && c_.rig.legs.size() >= 4;
     for (size_t k = 0; k < nodes_.size(); ++k) {
         Node& nd = nodes_[k];
         const size_t b = size_t(nd.bone);
         const Vec3 local = pos[b] + (nd.tip ? rotate(rot[b], nd.tipOffset) : Vec3{});
         nd.p = lastWorld_ + rotate(lastRot_, local);
         Vec3 v = clampLen(rotate(lastRot_, jv_[b]) + vel_, 6.0f);
-        const float up = bones[b].restWorld.y > hipY ? 1.0f : 0.4f;
+        // A quadruped's trunk is long and level: push it as one body, more gently, so the
+        // shove tips it over instead of flipping it legs-up.
+        const float up = beast ? 0.6f : bones[b].restWorld.y > hipY ? 1.0f : 0.4f;
         v += impulse * up;
         nd.prev = nd.p - v * kDt;
+    }
+    // Untangle the starting pose (folded limbs overlap, feet dip below the ground) by moving
+    // positions and history together, so the overlaps add no velocity.
+    for (int it = 0; it < 6; ++it) {
+        auto shift = [](Node& nd, Vec3 d) { nd.p += d, nd.prev += d; };
+        for (const auto& pr : pairs_) {
+            Node &a = nodes_[size_t(pr.first)], &b = nodes_[size_t(pr.second)];
+            const Vec3 d = b.p - a.p;
+            const float R = 0.85f * (a.radius + b.radius), len = length(d);
+            if (len >= R || len < 1e-6f) continue;
+            const float wsum = a.invMass + b.invMass;
+            const Vec3 corr = d * ((len - R) / len / wsum);
+            shift(a, corr * a.invMass);
+            shift(b, corr * -b.invMass);
+        }
+        for (Node& nd : nodes_) {
+            const float lift = flatGround(settings, nd.p.x, nd.p.z) + nd.radius - nd.p.y;
+            if (lift > 0) shift(nd, Vec3{0, lift, 0});
+        }
     }
     for (size_t i = 0; i < bones.size(); ++i) ragLocal_[i] = q_[i];
     rag_ = true;

@@ -126,7 +126,13 @@ void Builder::buildBoneSkeleton() {
         e.lon = lod.sparseRings ? std::max(5, lon - 1) : lon;
         emitEllipsoid(P(), e, [=](float, float, Vec3) { return one(boneId); }, boneMat);
     };
-    auto spineAt = [&](float t) { return Vec3{0, m.crotchY + t * tl, cZc_(t) - 0.42f * cDb_(t)}; };
+    auto spineAt = [&](float t) {
+        if (beast_) {  // along the top of the trunk
+            const BeastRing br = beastRing(t);
+            return Vec3{0, br.y + 0.62f * br.top, beastZ(t)};
+        }
+        return Vec3{0, m.crotchY + t * tl, cZc_(t) - 0.42f * cDb_(t)};
+    };
     auto spineW = [&](float t) { return chainWeights({{0.10f, r.hips}, {0.45f, r.spine}, {0.75f, r.chest}}, t); };
 
     // ---- skull: cranium with deep sockets, nasal cavity and the upper teeth ----
@@ -274,8 +280,8 @@ void Builder::buildBoneSkeleton() {
         const Vec3 c = spineAt(t);
         Ellipsoid e;
         e.center = c;
-        e.axis = {0, 1, 0};
-        e.up = {0, 0, 1};
+        e.axis = beast_ ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
+        e.up = beast_ ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
         e.rAxis = 0.034f * hb;
         e.rU = 0.085f * hb;
         e.rV = 0.07f * hb;
@@ -283,7 +289,8 @@ void Builder::buildBoneSkeleton() {
         e.lon = 6;
         const SkinW w = spineW(t);
         emitEllipsoid(P(), e, [=](float, float, Vec3) { return w; }, boneMat);
-        tube({c, c + Vec3{0, -0.04f * h, -0.10f * h}}, 0.022f * h, [=](float) { return w; }, 4, 0.0f);  // spinous process
+        const Vec3 sp = beast_ ? Vec3{0, 0.10f * h, -0.04f * h} : Vec3{0, -0.04f * h, -0.10f * h};
+        tube({c, c + sp}, 0.022f * h, [=](float) { return w; }, 4, 0.0f);  // spinous process
     }
     {
         // Cervical column: seven chunky vertebrae on a continuous core up into the skull
@@ -305,7 +312,7 @@ void Builder::buildBoneSkeleton() {
         const Vec2 q = rr.point(th);
         return Vec3{q.x * k, m.crotchY + t * tl, rr.zc + (q.y - rr.zc) * k};
     };
-    for (int k = 0; k < 7; ++k) {
+    for (int k = 0; k < 7 && !beast_; ++k) {
         const float t = 0.865f - 0.045f * float(k);
         const float phiEnd = k < 5 ? 0.13f * kPi : 0.42f * kPi;  // the last two float
         for (float sd : {1.0f, -1.0f}) {
@@ -318,8 +325,8 @@ void Builder::buildBoneSkeleton() {
             tubeOne(pts, 0.036f * hb, r.chest, 4, 0.0f);
         }
     }
-    tubeOne({ribPoint(0.60f, kPi / 2, 0.86f), ribPoint(0.75f, kPi / 2, 0.86f), ribPoint(0.90f, kPi / 2, 0.86f)}, 0.034f * hb, r.chest, 5, 0.2f);
-    for (size_t i = 0; i < m.arms.size(); ++i) {
+    if (!beast_) tubeOne({ribPoint(0.60f, kPi / 2, 0.86f), ribPoint(0.75f, kPi / 2, 0.86f), ribPoint(0.90f, kPi / 2, 0.86f)}, 0.034f * hb, r.chest, 5, 0.2f);
+    for (size_t i = 0; i < m.arms.size() && !beast_; ++i) {
         const ArmMarks& a = m.arms[i];
         const int root = r.arms[i].root;
         const Vec3 st = ribPoint(0.90f, kPi / 2, 0.86f) + Vec3{a.side * 0.04f * h, 0, 0};
@@ -331,7 +338,7 @@ void Builder::buildBoneSkeleton() {
     }
 
     // ---- pelvis ----
-    {
+    if (!beast_) {
         const float yP = m.crotchY + 0.10f * tl, P0 = g.body.hipWidth * h;
         for (float sd : {1.0f, -1.0f}) {  // ilium: a flared bowl wing from the sacrum out to the hip crest
             const Vec3 c{sd * 0.40f * P0, yP + 0.02f * h, cZc_(0.1f) - 0.10f * h};
@@ -347,7 +354,7 @@ void Builder::buildBoneSkeleton() {
     // ---- arms and hands ----
     // Long bones: shafts stop short of the joint so each joint reads as its own knob
     // (humeral head, the elbow's condyles and olecranon, the wrist's styloids).
-    for (size_t i = 0; i < m.arms.size(); ++i) {
+    for (size_t i = 0; i < m.arms.size() && !beast_; ++i) {  // (a beast's arm bones are folded away unseen)
         const ArmMarks& a = m.arms[i];
         const LimbRig& lr = r.arms[i];
         const float k2 = a.pair ? 0.85f : 1.0f, ua = length(a.elbow - a.shoulder);
@@ -411,7 +418,8 @@ void Builder::buildBoneSkeleton() {
                 for (int k = 0; k < 4; ++k) {
                     const float off = (float(k) - 1.5f) / 1.5f;
                     const Vec3 b0 = ball + Vec3{off * 0.07f * h, 0.03f * h, 0};
-                    tubeOne({b0, b0 + Vec3{off * 0.02f * h, -0.02f * h, 0.12f * h}}, 0.022f * h, lr.tip, 4, 0.3f);
+                    const float drop = beast_ ? b0.y - 0.03f * h : 0.02f * h;  // a beast's toes reach down to the ground
+                    tubeOne({b0, b0 + Vec3{off * 0.02f * h, -drop, 0.12f * h}}, 0.022f * h, lr.tip, 4, 0.3f);
                 }
             }
             return;
@@ -426,9 +434,31 @@ void Builder::buildBoneSkeleton() {
             tubeOne({b0, b1, b1 + fwd * (0.12f * h * (1.0f - 0.12f * std::fabs(off)))}, 0.022f * h * (k == 2 ? 1.2f : 1.0f), lr.tip, 4, 0.3f);
         }
     };
-    const bool longFoot = g.body.digitigrade || g.body.centaur;
+    const bool longFoot = g.body.digitigrade || g.body.centaur || beast_;
     for (int s = 0; s < 2 && g.body.lowerBody == 0; ++s)  // serpent and wraith bodies have no legs to bare
         legBones(r.legs[size_t(s)], m.hipJoint[s], m.knee[s], m.ankle[s], m.ball[s], s == 0 ? 1.0f : -1.0f, longFoot, g.body.hooves);
+    if (beast_) {
+        for (int s = 0; s < 2; ++s)
+            legBones(r.legs[size_t(s + 2)], m.hindHip[s], m.hindKnee[s], m.hindAnkle[s], m.hindBall[s], s == 0 ? 1.0f : -1.0f, true, g.body.hooves);
+        // Ribs hooped round the chest, sloping back; the pelvis over the hind legs.
+        for (int k = 0; k < 8; ++k) {
+            const float t = lerp(0.50f, 0.93f, float(k) / 7.0f);
+            const BeastRing br = beastRing(t);
+            const Vec3 c{0, br.y, beastZ(t)};
+            for (float sd : {1.0f, -1.0f}) {
+                std::vector<Vec3> pts;
+                for (int i = 0; i <= 6; ++i) {
+                    const float a = lerp(-0.42f * kPi, 0.40f * kPi, float(i) / 6.0f);
+                    const Vec3 q = torsoPoint(t, sd > 0 ? a : kPi - a);
+                    pts.push_back(c + (q - c) * 0.84f - Vec3{0, 0, 0.03f * m.H * float(i) / 6.0f});
+                }
+                tubeOne(pts, 0.026f * hb, r.chest, 4, 0.0f);
+            }
+        }
+        for (int s = 0; s < 2; ++s)
+            blob(m.hindHip[s] + Vec3{-0.4f * m.hindHip[s].x, 0.06f * m.H, 0.02f * m.H}, normalize(Vec3{0.3f * m.hindHip[s].x, 0.4f, 1.0f}), {0, 1, 0},
+                 0.10f * m.H, 0.03f * m.H, 0.05f * m.H, r.hips, 3, 6);
+    }
     if (g.body.centaur) {
         for (int s = 0; s < 2; ++s)
             legBones(r.legs[size_t(s + 2)], m.hindHip[s], m.hindKnee[s], m.hindAnkle[s], m.hindBall[s], s == 0 ? 1.0f : -1.0f, true, true);
@@ -462,11 +492,17 @@ void Builder::addDecayHoles() {
     const float R0 = h * lerp(0.13f, 0.25f, k);
     const float T = g.body.thigh * h, Cf = g.body.calf * h;
     auto torsoOnly = [this, h](Vec3 q) {
+        if (beast_) {  // on the trunk, clear of the legs
+            const float t = (q.z - m.beastZR) / (m.beastZF - m.beastZR);
+            return t > 0.0f && t < 1.0f && std::fabs(q.x) < 1.1f * beastRing(t).w;
+        }
         const float t = clamp(torsoT(q.y), -0.06f, 1.1f);
         return q.y > m.crotchY + 0.02f * h && std::fabs(q.x) < 1.25f * cHw_(t) + 0.03f * h;
     };
     auto add = [&](Vec3 c, float R, float depth, bool head, std::function<bool(Vec3)> gate) {
-        Vec3 n = head ? headNormalDir(c) : normalize(Vec3{c.x, 0, c.z - cZc_(clamp(torsoT(c.y), -0.06f, 1.1f))}, Vec3{0, 0, 1});
+        Vec3 n = head ? headNormalDir(c)
+                 : beast_ ? normalize(Vec3{c.x, c.y - beastRing((c.z - m.beastZR) / (m.beastZF - m.beastZR)).y, 0}, Vec3{1, 0, 0})
+                          : normalize(Vec3{c.x, 0, c.z - cZc_(clamp(torsoT(c.y), -0.06f, 1.1f))}, Vec3{0, 0, 1});
         holes_.push_back({c, R, depth, head, n, std::move(gate)});
     };
     add(torsoPoint(0.66f, kPi / 2 - side * 1.25f), R0, 0.30f * h, false, torsoOnly);
@@ -480,7 +516,7 @@ void Builder::addDecayHoles() {
             return length(q - (a + ab * t)) < rad;
         };
     };
-    if (!g.body.centaur) {
+    if (!g.body.centaur && !beast_) {
         const int ls = side > 0 ? 1 : 0, lo = 1 - ls;
         const Vec3 kd = normalize(m.knee[ls] - m.hipJoint[ls]);
         const Vec3 fw = normalize(Vec3{0, 0, 1} - kd * kd.z);
@@ -493,7 +529,7 @@ void Builder::addDecayHoles() {
         }
     }
     for (const ArmMarks& a : m.arms) {
-        if (a.pair != 0) continue;
+        if (a.pair != 0 || beast_) continue;
         const Vec3 lat = normalize(Vec3{a.side, 0.3f, -0.2f});
         if (a.side == side)
             add(lerp(a.shoulder, a.elbow, 0.55f) + lat * (0.95f * a.radius), h * lerp(0.07f, 0.12f, k), 0.9f * a.radius, false,
@@ -641,7 +677,7 @@ void Builder::dentConstruct() {
 // A forearm torn off (late decay): a jagged cut through flesh and frame, a dark socket
 // in the stump, the frame's end sticking out and a spray of torn wires.
 void Builder::breakConstruct() {
-    if (g.body.skinKind != 1 || decay_ < 0.5f || m.arms.empty()) return;  // (bare frames keep the loss too)
+    if (g.body.skinKind != 1 || decay_ < 0.5f || m.arms.empty() || beast_) return;  // (bare frames keep the loss too)
     Rng r(g.seed, 0xB2EA);
     const ArmMarks& a = m.arms[size_t(r.rangeInt(0, int(std::min<size_t>(2, m.arms.size())) - 1))];
     const LimbRig& rig = ch.rig.arms[size_t(&a - m.arms.data())];

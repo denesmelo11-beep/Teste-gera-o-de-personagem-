@@ -53,6 +53,11 @@ Clip makeDeathClip(const Character& c, Vec3 push = {0, 0, -1});
 Clip makeCastClip(const Character& c);
 // War cry: inhale, then a wide stance with chest out, arms flung back and a held roar.
 Clip makeRoarClip(const Character& c);
+// Beasts on all fours (stance 1) get their own set: walk is a four-beat walk, run a rotary
+// gallop, attack a lunging bite, cast a howl, roar a snarl, plus a trot and a forepaw swipe.
+// On other bodies these two fall back to the run and the attack.
+Clip makeTrotClip(const Character& c);
+Clip makeSwipeClip(const Character& c);
 // idle, walk, run, attack, dodge, hit, cast, roar, death. With `physical` every clip is
 // run through the muscle model (cg::bakePhysical) and the death is a baked ragdoll.
 std::vector<Clip> makeDefaultClips(const Character& c, bool physical = true);

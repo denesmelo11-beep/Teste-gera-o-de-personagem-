@@ -476,6 +476,21 @@ std::vector<std::string> split(const std::string& s, char sep) {
     return v;
 }
 
+// Middle of the body along its length (character space z): a beast's hips are far behind it.
+float frameMidZ(const Character& c) {
+    float z0 = 1e9f, z1 = -1e9f;
+    for (const Vertex& v : c.mesh.vertices) z0 = std::min(z0, v.pos.z), z1 = std::max(z1, v.pos.z);
+    const int h = c.rig.hips;
+    return 0.5f * (z0 + z1) - (h >= 0 ? c.skeleton.bones[size_t(h)].restWorld.z : 0.0f);
+}
+
+// Size to frame a body by: its height, or its length for long bodies on all fours.
+float frameSize(const Character& c) {
+    float z0 = 1e9f, z1 = -1e9f;
+    for (const Vertex& v : c.mesh.vertices) z0 = std::min(z0, v.pos.z), z1 = std::max(z1, v.pos.z);
+    return std::max(c.height * (c.rig.legs.size() > 2 ? 1.25f : 1.0f), 1.25f * (z1 - z0));
+}
+
 int cmdMotion(const Args& a) {
     const uint64_t seed = uint64_t(a.num("seed", 1));
     std::vector<Actor> actors;
@@ -491,7 +506,7 @@ int cmdMotion(const Args& a) {
     const bool sameScale = a.flag("samescale");
     const float yawCam = a.flt("yaw", 0.75f);
     float maxH = 0;
-    for (Actor& ac : actors) maxH = std::max(maxH, ac.ch.height * (ac.ch.rig.legs.size() > 2 ? 1.25f : 1.0f));
+    for (Actor& ac : actors) maxH = std::max(maxH, frameSize(ac.ch));
     for (size_t i = 0; i < actors.size(); ++i) {
         Actor& ac = actors[i];
         ac.clips = makeAuthoredClips(ac.ch);
@@ -515,9 +530,10 @@ int cmdMotion(const Args& a) {
             Actor& ac = actors[i];
             poseMatrices(ac.ch.skeleton, ac.anim->pose(), global, skin);
             skinMesh(ac.ch.mesh, skin, pos, nrm);
-            const float H = sameScale ? maxH : ac.ch.height * (ac.ch.rig.legs.size() > 2 ? 1.25f : 1.0f);
+            const float H = sameScale ? maxH : frameSize(ac.ch);
             ToonRenderer r(cw, chh, 2, style(a));
-            const Vec3 ctr = ac.anim->bodyCenter();
+            Vec3 ctr = ac.anim->bodyCenter();
+            if (!ac.anim->isRagdoll()) ctr += rotate(Quat::axisAngle({0, 1, 0}, ac.yaw), Vec3{0, 0, frameMidZ(ac.ch)});
             const Vec3 target{ctr.x, ac.pos.y + H * 0.45f, ctr.z};
             r.setCamera(target + Vec3{std::sin(yawCam), 0.2f, std::cos(yawCam)} * (H * 2.5f), target, 0.5f);
             r.clearSky({0.93f, 0.93f, 0.95f}, {0.99f, 0.99f, 0.99f});
