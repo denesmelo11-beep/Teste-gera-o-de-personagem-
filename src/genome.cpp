@@ -1000,6 +1000,12 @@ void applyHead(Genome& g, Species sp, Rng r) {
         case Species::Crystalborn: F = {0.25f, -0.30f, 0.70f, 0.40f, 1.00f, 0.0f, 0.0f, 0.60f, EyeLook::Glow, 1.05f}; break;
         case Species::Emberkin:    F = {0.55f, 0.10f, 0.20f, 0.65f, 0.60f, 0.0f, 0.45f, 0.80f, EyeLook::Glow, 1.06f}; break;
         case Species::Wraith:      F = {0.20f, 0.70f, 1.00f, 0.85f, -0.40f, 0.0f, 0.0f, 1.00f, EyeLook::Glow, 0.88f}; break;
+        case Species::Cyclops:     F = {0.50f, -0.20f, 0.0f, 0.50f, 0.80f, 0.0f, 0.40f, 0.80f, EyeLook::Sunken, 1.05f}; break;
+        case Species::Talpid:      F = {0.60f, 0.0f, 0.30f, 0.0f, -0.30f, 0.0f, 0.60f, 0.20f, EyeLook::Black}; break;
+        case Species::Oculite:     F = {0.30f, 0.0f, 0.0f, 0.30f, 0.50f, 0.0f, 0.40f, 0.40f, EyeLook::Classic}; break;
+        case Species::Rimemaw:     F = {0.60f, 0.0f, 0.0f, 0.90f, 0.40f, 0.0f, 0.50f, 0.60f, EyeLook::Beady, 1.10f}; break;
+        case Species::Gloomhound:  F = {0.60f, 0.60f, 0.30f, 0.0f, 0.0f, 0.0f, 0.50f, 0.0f, EyeLook::Classic}; break;
+        // Slime and Gravitant keep the plain head: their faces are set in an ooze or a world.
         default: break;
     }
     // Each person varies around the people's skull; men a touch squarer.

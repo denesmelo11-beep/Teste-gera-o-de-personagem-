@@ -123,7 +123,7 @@ noturno, alto-elfo, orc e ogro voltarem a dividir a mesma cabeça.
 | troll × elfo noturno | 0,84 | 0,72 |
 | orc × ogro | 0,95 | 0,86 |
 | morto-vivo × alto-elfo | 0,89 | 0,85 |
-| média do vizinho mais próximo (28 povos) | 0,89 | 0,85 |
+| média do vizinho mais próximo (35 povos) | 0,89 | 0,85 |
 
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|

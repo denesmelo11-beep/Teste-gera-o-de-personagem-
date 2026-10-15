@@ -220,7 +220,7 @@ void Builder::buildHead() {
     L.startPole = m.headOrigin + Vec3{0, -0.01f * h, hZc_(0) * h};
     L.tStart = 0;
     L.poleEnd = true;
-    L.endPole = m.headOrigin + Vec3{0, h * (1.0f - 0.10f * g.head.flatTop), headRing(1.0f).zc};
+    L.endPole = m.headOrigin + Vec3{0, h * (1.0f - 0.04f * g.head.flatTop), headRing(1.0f).zc};
     L.tEnd = 1;
     Part& hp = newPart();
     hp.smoothAlways = true;  // smooth in the smooth style; the faceted style flattens it like the body
