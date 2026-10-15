@@ -22,7 +22,8 @@ add_library(chargen
   src/render.cpp
   src/gltf.cpp
   src/engine.cpp
-  src/studies.cpp)
+  src/studies.cpp
+  src/traits.cpp)
 target_include_directories(chargen PUBLIC include)
 find_package(Threads REQUIRED)
 target_link_libraries(chargen PUBLIC Threads::Threads)

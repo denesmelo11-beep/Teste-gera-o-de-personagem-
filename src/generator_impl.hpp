@@ -98,6 +98,19 @@ private:
     void applySkinKind();  // metallic skin or armoured carapace plates over the flesh
     void buildColliders();
     void initHead();
+    // traits.cpp: composable species traits
+    void buildWings();
+    void buildSerpent();        // replaces the legs (lowerBody 1 coil, 2 wisp)
+    void buildBackTentacles();
+    void buildShell();
+    void buildShards();
+    void buildTraitHand(const ArmMarks& a, const LimbRig& rig);
+    void buildTalonFeet();
+    void buildBeak();
+    void buildMandibles();
+    void buildAntennae();
+    void buildCompoundEyes();
+    void buildCrest();
     // head.cpp
     void buildHead();
     void buildNose();

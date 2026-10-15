@@ -113,10 +113,14 @@ chargen_viewer --decay morte.png --seed 12              # estágios de decomposi
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
 chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDYFACES=1 retratos; CHARGEN_STUDIES="a b" subconjunto)
+chargen_viewer --peoples povos_tracos.png --seed 5      # os 13 povos de traços (dragonborn ... wraith), homem e mulher
+chargen_viewer --traits tracos.png --seed 3             # 24 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
 # CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome,
+# CHARGEN_WINGS=0..3, CHARGEN_FOLD=1, CHARGEN_LOWER=0..2, CHARGEN_HANDS=0..3, CHARGEN_FEET=0..1, CHARGEN_BEAK=0..3,
+# CHARGEN_CREST=0..4, CHARGEN_SKIN=0..5, CHARGEN_TENTACLES=0..6 (forçam traços de espécie em qualquer modo)
 # CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
@@ -248,6 +252,34 @@ costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cort
   enormes, barriga, presas curtas.
 - Paleta sombria: matizes fantásticos (verdes, azuis, lilases) são dessaturados e escurecidos.
 `GenomeOptions::species` escolhe um povo; `mixedSpecies` sorteia a população do mundo inteiro.
+
+### Traços de espécie (`src/traits.cpp`)
+Peças anatômicas compostas livremente no genoma (`BodyShape` e `FaceStyle`), para chegar a quase
+qualquer raça de fantasia sem um caso especial por povo. Cada uma tem ossos, pesos e limites no
+mesmo esqueleto, então as animações e a física existentes as movem:
+- **Asas** (`wings`): membrana de morcego/dragão, penas ou inseto; abertas ou dobradas nas costas;
+  ossos `wing/wingarm/wingfore/winghand.L/R` em `rig.wings`.
+- **Corpo inferior** (`lowerBody`): cauda de serpente enrolada (ossos `coil0..7` em `rig.serpent`,
+  ponta com física) ou rastro espectral (`wisp0..3`). Os ossos de perna continuam existindo, então
+  clipes e retargeting não quebram.
+- **Mãos** (`hands`): garras de três dedos, pinça de caranguejo (osso `pincer` com dobradiça,
+  `rig.pincers`), tentáculos no lugar dos dedos. **Pés** (`feet`): garras de ave.
+- **Costas**: tentáculos com física (`backTentacles`, `rig.tentacles`), casco de tartaruga com
+  plastrão (`shell`), lascas de cristal (`shards`).
+- **Cabeça**: bico de rapina, longo ou curto (`beak`), mandíbulas, antenas finas ou plumosas com
+  física (`rig.antennae`), olhos compostos, focinho réptil (`snout = 2`), orelhas-barbatana e sem
+  orelha, cristas (barbatana, penas, gola óssea, capuz de naja).
+- **Pele** (`skinKind`): escamas, cristal facetado com veios luminosos e crosta de magma com
+  fissuras incandescentes, recortadas na malha ao longo das bordas das placas.
+
+Treze povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
+insectoid, fishfolk, demon, cephalid, fae, crystalborn, emberkin e wraith. Eles ficam fora de
+`mixedSpecies` (as chaves antigas geram os mesmos personagens); peça-os por `GenomeOptions::species`
+ou ligue qualquer traço em qualquer povo. Hitboxes novas: `wing` e `tentacle`.
+A cobertura de formas usada como referência está em [docs/especies.md](docs/especies.md).
+
+![Povos de traços](docs/povos_tracos.png)
+![Traços de perto](docs/tracos.png)
 
 ### Tom
 Sério e sombrio: fundo de estúdio ardósia-azulado, sombras profundas e frias, gradação que tira a
@@ -391,6 +423,7 @@ src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
                   generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, caudas, cristas dorsais, colisores)
                   head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
+                  traits.cpp (asas, serpente, pinças, tentáculos, casco, bicos, antenas, cristas)
                   bones.cpp (esqueleto real, decomposição, buracos na carne, esqueletos)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
                   engine.cpp (chaves, métricas, hitboxes, sockets, malha compacta, decomposição, LOD, famílias, validação, fuzz)

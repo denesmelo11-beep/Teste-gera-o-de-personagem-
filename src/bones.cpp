@@ -427,7 +427,7 @@ void Builder::buildBoneSkeleton() {
         }
     };
     const bool longFoot = g.body.digitigrade || g.body.centaur;
-    for (int s = 0; s < 2; ++s)
+    for (int s = 0; s < 2 && g.body.lowerBody == 0; ++s)  // serpent and wraith bodies have no legs to bare
         legBones(r.legs[size_t(s)], m.hipJoint[s], m.knee[s], m.ankle[s], m.ball[s], s == 0 ? 1.0f : -1.0f, longFoot, g.body.hooves);
     if (g.body.centaur) {
         for (int s = 0; s < 2; ++s)

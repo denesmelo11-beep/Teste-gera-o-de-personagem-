@@ -47,10 +47,12 @@ SuperRing Builder::headRing(float s) const {
     const float full = (0.02f * f.roundness + 0.015f * f.jowl) * bump((s - 0.22f) / 0.15f);
     // Muzzle (bovine/beast peoples): the lower face pushed forward below the eyes.
     // Wolf: a long, narrow snout from a stop just under the eyes; the lower jaw shorter.
-    const bool wolf = g.body.snout == 1;
-    const float muz = wolf ? g.body.muzzle * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s))
-                           : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
-    const float narrow = wolf ? 0.30f : 0.22f;
+    // Reptile: a long, flat snout from just under the eyes, the jaw nearly as long as it.
+    const bool wolf = g.body.snout == 1, reptile = g.body.snout == 2;
+    const float muz = wolf      ? g.body.muzzle * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s))
+                      : reptile ? g.body.muzzle * 0.62f * smoothstep(0.46f, 0.36f, s) * (0.45f + 0.55f * smoothstep(0.0f, 0.22f, s))
+                                : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+    const float narrow = wolf || reptile ? 0.30f : 0.22f;
     return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.44f, 0.32f, s) : smoothstep(0.5f, 0.3f, s))),
             (hZc_(s) + chinFwd + 0.5f * muz) * h,
             std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,
@@ -213,6 +215,7 @@ void Builder::buildHead() {
 // underside), set on the built face. It is the strongest plane break of the
 // face, so length, projection, width, hump and tip angle all read clearly.
 void Builder::buildNose() {
+    if (g.face.beak) return;  // the beak takes the nose's place
     const FaceStyle& f = g.face;
     const float h = m.h;
     const Vec3 o = m.headOrigin;
@@ -413,6 +416,8 @@ void Builder::buildFaceDecals() {
                          FaceLayout::kMouthS1, std::max(6, lod.headSeg / 2), 8, mc[0], mc[1], FaceLayout::kMouthCellW,
                          FaceLayout::kMouthCellH);
     parts[eyes].id = parts[mouth].id = headPartId_;
+    if (g.face.beak) parts[mouth].tris.clear();         // the beak covers the mouth
+    if (g.face.eyeKind == 1) parts[eyes].tris.clear();  // compound eyes are modelled
 
     // Skin layer: a copy of the front of the faceted head (and the nose) with UVs
     // into the skin cell, so stubble, sockets, weathering, scars and ink follow

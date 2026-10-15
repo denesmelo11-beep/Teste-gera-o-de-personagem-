@@ -1221,6 +1221,35 @@ void Builder::buildEars() {
     const int head = ch.rig.head;
     const EarShape& E = g.body.ear;
     const float es = g.face.earSize;
+    if (g.body.ears == EarStyle::None) return;
+    if (g.body.ears == EarStyle::Fin) {  // a ribbed fan swept back from the side of the head
+        for (float sd : {1.0f, -1.0f}) {
+            const float th = sd > 0 ? 0.08f : kPi - 0.08f;
+            const Vec3 base = headSurface(th, 0.45f, -0.02f * h) + Vec3{0, 0, -0.06f * h};
+            Part& p = newPart(true);
+            p.id = headPartId_;
+            const int rays = 5;
+            const float len = 0.55f * h * es;
+            std::vector<uint32_t> tips;
+            const uint32_t c = uint32_t(p.pos.size());
+            p.pos.push_back(base), p.w.push_back(one(head)), p.uv.push_back({});
+            for (int k = 0; k < 2 * rays - 1; ++k) {
+                const float a = lerp(-0.75f, 0.85f, float(k) / float(2 * rays - 2));
+                const float r = len * (k % 2 ? 0.72f : 1.0f) * (1.0f - 0.25f * std::fabs(a));
+                const Vec3 d = normalize(Vec3{sd * 0.55f, std::sin(a), -std::cos(a)});
+                p.pos.push_back(base + d * r), p.w.push_back(one(head)), p.uv.push_back({});
+                tips.push_back(uint32_t(p.pos.size() - 1));
+            }
+            const Vec3 fin = g.palette.wing;
+            for (size_t k = 0; k + 1 < tips.size(); ++k) {
+                const Mat mm{fin * (k % 2 ? 1.0f : 0.75f), MaterialClass::Skin};
+                // Both faces (the fan is a thin membrane).
+                if (sd > 0) p.tris.push_back({c, tips[k + 1], tips[k], mm}), p.tris.push_back({c, tips[k], tips[k + 1], Mat{mm.color * 0.85f, mm.cls}});
+                else p.tris.push_back({c, tips[k], tips[k + 1], mm}), p.tris.push_back({c, tips[k + 1], tips[k], Mat{mm.color * 0.85f, mm.cls}});
+            }
+        }
+        return;
+    }
     // An ear is a flattened blade (a leaf in section) swept out from the side of the
     // head: short and round for humans, long blades for elves and trolls, broad fans
     // for goblins, drooping leaves for the bovine peoples.

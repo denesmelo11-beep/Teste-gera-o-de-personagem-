@@ -20,7 +20,9 @@ constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepar
                                            "longcurly", "verylong", "asymbob"};
 static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops", "tendrils"};
-constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur", "skeleton"};
+constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur", "skeleton",
+                                              "dragonborn", "saurian", "avian", "naga", "tortle", "insectoid", "fishfolk", "demon", "cephalid", "fae",
+                                              "crystalborn", "emberkin", "wraith"};
 static_assert(std::size(kSpeciesNames) == size_t(cg::Species::Count));
 static_assert(std::size(kBeardNames) == size_t(cg::FacialHair::Count));
 
@@ -493,6 +495,292 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             if (!opt.hair) g.hair = HairStyle::Bald;
             g.facialHair = FacialHair::None;
             break;
+        // ---- trait peoples: composed from the species traits ----
+        case Species::Dragonborn: {  // draconic folk: scaled, horned, a reptile snout, sometimes wings and a tail
+            b.boneMass *= 1.25f;
+            height(fem ? 1.80f : 1.92f, fem ? 1.95f : 2.10f);
+            b.headsTall = r.range(6.9f, 7.2f);
+            if (fem) widths(1.12f, 1.10f, 1.05f, 0.98f, 1.10f);
+            else widths(1.35f, 1.32f, 1.18f, 1.02f, 1.28f);
+            b.muscle = saturate(b.muscle + 0.3f); b.belly = 0.0f; b.bust *= 0.55f; b.butt *= 0.8f; b.neckThick *= 1.25f;
+            b.muzzle = fem ? 0.80f : 0.92f; b.snout = 2; b.skinKind = 3; b.claws = true; b.ears = EarStyle::None;
+            b.horns = 2; b.hornKind = r.chance(0.6f) ? 0 : 2; b.hornSize = fem ? 0.9f : 1.15f;
+            if (r.chance(0.45f)) { b.spines = r.rangeInt(6, 9); b.spineKind = 1; b.spineSize = r.range(0.7f, 1.0f); }
+            if (r.chance(0.40f)) { b.tail = true; b.tailType = 1; b.tailLength = r.range(0.8f, 1.1f); }
+            if (r.chance(0.25f)) { b.wings = 1; b.wingsFolded = r.chance(0.5f); b.wingSize = r.range(0.85f, 1.05f); }
+            f.pupil = PupilStyle::Slit; f.eyeShape = 3; f.browRidge = 1.0f; f.eyeDepth = 0.7f; f.noseProj = 0.5f; f.noseWidth = 1.3f;
+            f.mouthStyle = 1; f.mouthWidth = 1.5f; f.lipFullness = 0.05f; f.stubble = 0.0f; f.cheek = 0.6f;
+            const Vec3 scale = pickC({{0.55f, 0.16f, 0.12f}, {0.62f, 0.42f, 0.18f}, {0.70f, 0.58f, 0.32f}, {0.20f, 0.38f, 0.24f},
+                                      {0.18f, 0.28f, 0.48f}, {0.16f, 0.15f, 0.17f}, {0.72f, 0.74f, 0.76f}, {0.48f, 0.34f, 0.22f}});
+            skinTo(scale);
+            pal.belly = lerp(scale, Vec3{0.88f, 0.78f, 0.58f}, 0.55f);
+            pal.wing = scale * 0.70f;
+            pal.horn = lerp(scale * 0.5f, Vec3{0.85f, 0.80f, 0.68f}, 0.5f);
+            pal.beak = pal.horn;
+            pal.iris = pickC({{0.95f, 0.70f, 0.15f}, {0.90f, 0.35f, 0.10f}, {0.55f, 0.85f, 0.35f}});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Saurian: {  // lizardfolk and their small kin (kobolds): a long snout, a heavy tail, digitigrade legs
+            const bool small = r.chance(0.3f);
+            b.boneMass *= small ? 0.85f : 1.1f;
+            if (small) height(0.95f, 1.15f), b.headsTall = r.range(4.4f, 4.8f), b.legRatio = 0.44f;
+            else height(fem ? 1.68f : 1.78f, fem ? 1.85f : 1.98f), b.headsTall = r.range(6.8f, 7.1f);
+            widths(1.05f, 1.02f, 0.98f, 0.95f, 1.0f);
+            b.belly = 0.0f; b.bust *= 0.3f; b.butt *= 0.7f; b.hunch = std::max(b.hunch, 0.7f);
+            b.muzzle = 1.0f; b.snout = 2; b.skinKind = 3; b.claws = true; b.digitigrade = true; b.ears = EarStyle::None;
+            b.tail = true; b.tailType = 1; b.tailLength = r.range(1.0f, 1.3f);
+            if (r.chance(0.55f)) { b.crest = 1; b.crestSize = r.range(0.6f, 1.0f); }
+            else if (r.chance(0.5f)) { b.spines = r.rangeInt(7, 10); b.spineKind = 2; b.spineSize = 0.7f; }
+            if (small && r.chance(0.5f)) { b.horns = 2; b.hornKind = 0; b.hornSize = 0.6f; }
+            f.pupil = PupilStyle::Slit; f.eyeShape = 1; f.eyeSize = 1.1f; f.noseProj = 0.4f; f.mouthStyle = 1; f.mouthWidth = 1.6f;
+            f.lipFullness = 0.0f; f.browRidge = 0.9f; f.stubble = 0.0f;
+            const Vec3 scale = pickC({{0.30f, 0.42f, 0.22f}, {0.38f, 0.36f, 0.22f}, {0.22f, 0.38f, 0.36f}, {0.46f, 0.30f, 0.20f}, {0.28f, 0.30f, 0.26f}});
+            skinTo(scale);
+            pal.belly = lerp(scale, Vec3{0.82f, 0.76f, 0.50f}, 0.55f);
+            pal.wing = pickC({{0.70f, 0.25f, 0.15f}, {0.85f, 0.65f, 0.20f}, {0.20f, 0.45f, 0.55f}});
+            pal.horn = Vec3{0.30f, 0.28f, 0.24f};
+            pal.iris = pickC({{0.95f, 0.75f, 0.15f}, {0.85f, 0.45f, 0.10f}});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Avian: {  // bird folk: a beak, feathered wings, talons; raptors, long-billed scholars, owls and crows
+            b.boneMass *= 0.75f;
+            height(fem ? 1.55f : 1.62f, fem ? 1.80f : 1.92f);
+            b.headsTall = r.range(6.4f, 6.8f);
+            widths(0.92f, 0.95f, 0.85f, 0.85f, 0.82f);
+            b.belly = 0.0f; b.bust *= 0.3f; b.butt *= 0.6f; b.neckLength *= 1.25f; b.neckThick *= 0.9f;
+            b.ears = EarStyle::None; b.digitigrade = true; b.feet = 1; b.hands = r.chance(0.6f) ? 1 : 0; b.furPattern = 2;
+            b.wings = 2; b.wingsFolded = r.chance(0.35f); b.wingSize = r.range(0.85f, 1.05f);
+            if (r.chance(0.7f)) { b.crest = 2; b.crestSize = r.range(0.6f, 1.1f); }
+            f.beak = r.weighted({1.2f, 1.0f, 1.0f}) + 1;
+            f.eyeShape = 1; f.eyeSize = 1.2f; f.irisSize = 1.25f; f.browThick = 0.15f; f.lashWeight = 0.05f; f.stubble = 0.0f;
+            f.chinPoint = 0.4f; f.headTop = 0.3f; f.cheek = 0.0f;
+            const Vec3 feather = pickC({{0.35f, 0.24f, 0.16f}, {0.18f, 0.17f, 0.20f}, {0.55f, 0.48f, 0.38f}, {0.62f, 0.60f, 0.56f},
+                                        {0.28f, 0.32f, 0.40f}, {0.45f, 0.20f, 0.14f}});
+            skinTo(feather);
+            pal.wing = feather * 0.85f;
+            pal.belly = lerp(feather, Vec3{0.90f, 0.85f, 0.75f}, 0.5f);
+            pal.beak = pickC({{0.85f, 0.70f, 0.30f}, {0.20f, 0.19f, 0.20f}, {0.75f, 0.72f, 0.62f}});
+            pal.iris = pickC({{0.95f, 0.75f, 0.15f}, {0.95f, 0.50f, 0.10f}, {0.10f, 0.08f, 0.08f}});
+            hairColor(feather * 0.8f);
+            hair({{HairStyle::Messy, 2}, {HairStyle::ShortCrop, 1}, {HairStyle::Wolf, 1.5f}, {HairStyle::Bald, 1}});
+            g.fringe = Fringe::None;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Naga: {  // serpent folk: a human torso on a long scaled coil; hoods, fins and sea-witch hair
+            b.boneMass *= 1.05f;
+            height(fem ? 2.05f : 2.20f, fem ? 2.25f : 2.45f);
+            b.headsTall = r.range(7.6f, 8.0f);
+            b.legRatio = 0.50f;
+            widths(fem ? 1.0f : 1.15f, fem ? 1.0f : 1.12f, 0.95f, 1.05f, 1.05f);
+            b.lowerBody = 1; b.serpentLength = r.range(0.9f, 1.2f); b.skinKind = 3; b.claws = r.chance(0.5f);
+            if (r.chance(0.4f)) b.crest = 4, b.crestSize = r.range(0.8f, 1.1f);
+            else if (r.chance(0.5f)) b.ears = EarStyle::Fin;
+            if (r.chance(0.15f)) b.armPairs = 2;
+            f.pupil = PupilStyle::Slit; f.eyeShape = 3; f.eyeTilt = 0.12f; f.noseProj = 0.6f; f.noseWidth = 0.85f; f.cheek = 0.6f;
+            f.chinPoint = 0.3f; f.stubble = 0.0f; f.fang = true;
+            const Vec3 scale = pickC({{0.20f, 0.42f, 0.42f}, {0.28f, 0.40f, 0.22f}, {0.36f, 0.26f, 0.44f}, {0.20f, 0.24f, 0.36f}, {0.46f, 0.38f, 0.22f}});
+            skinTo(scale);
+            pal.belly = lerp(scale, Vec3{0.80f, 0.74f, 0.56f}, 0.32f);
+            pal.wing = lerp(scale, Vec3{0.75f, 0.30f, 0.25f}, 0.35f);
+            pal.iris = pickC({{0.95f, 0.75f, 0.15f}, {0.55f, 0.90f, 0.40f}, {0.90f, 0.30f, 0.20f}});
+            hairColor(pickC({{0.12f, 0.12f, 0.14f}, {0.18f, 0.40f, 0.42f}, {0.85f, 0.85f, 0.88f}, {0.40f, 0.20f, 0.45f}}));
+            hair({{HairStyle::VeryLong, fem ? 2.0f : 0.3f}, {HairStyle::LongWavy, fem ? 2.0f : 0.5f}, {HairStyle::Bald, fem ? 0.2f : 2.5f},
+                  {HairStyle::HighPonytail, 1}, {HairStyle::Locs, 1}});
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Tortle: {  // turtle folk: a domed shell, a beak, a stout slow frame
+            b.boneMass *= 1.3f;
+            height(fem ? 1.55f : 1.62f, fem ? 1.75f : 1.85f);
+            b.headsTall = r.range(5.8f, 6.2f);
+            b.legRatio = 0.44f;
+            widths(1.25f, 1.30f, 1.40f, 1.18f, 1.30f);
+            b.chestDepth *= 1.25f; b.neckThick *= 1.35f; b.neckLength *= 0.8f; b.handSize *= 1.15f; b.footSize *= 1.2f;
+            b.bust *= 0.3f; b.belly = 0.2f; b.hunch = std::max(b.hunch, 0.8f);
+            b.shell = true; b.skinKind = 3; b.claws = true; b.ears = EarStyle::None;
+            f.beak = 3; f.eyeShape = 1; f.eyeSize = 0.95f; f.browThick = 0.1f; f.lashWeight = 0.05f; f.wrinkles = 0.6f; f.headTop = -0.2f;
+            f.stubble = 0.0f;
+            const Vec3 hide = pickC({{0.38f, 0.44f, 0.30f}, {0.44f, 0.42f, 0.32f}, {0.32f, 0.38f, 0.36f}});
+            skinTo(hide);
+            pal.horn = pickC({{0.30f, 0.26f, 0.18f}, {0.24f, 0.26f, 0.20f}, {0.36f, 0.30f, 0.20f}});
+            pal.belly = Vec3{0.72f, 0.64f, 0.44f};
+            pal.beak = hide * 0.55f + Vec3{0.08f, 0.07f, 0.05f};
+            pal.iris = pickC({{0.30f, 0.20f, 0.12f}, {0.75f, 0.55f, 0.15f}});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Insectoid: {  // mantis and spider kin: four arms, chitin, mandibles, antennae, compound eyes
+            b.boneMass *= 0.8f;
+            height(fem ? 1.95f : 2.05f, fem ? 2.15f : 2.30f);
+            b.headsTall = r.range(7.4f, 7.8f);
+            b.legRatio = 0.53f;
+            widths(0.95f, 0.92f, 0.70f, 0.80f, 0.80f);
+            b.armPairs = 2; b.belly = 0.0f; b.bust = 0.0f; b.butt *= 0.5f; b.armLength *= 1.1f;
+            b.skinKind = 2; b.carapace = 0.92f; b.digitigrade = true; b.claws = true; b.ears = EarStyle::None;
+            b.hands = r.chance(0.6f) ? 1 : 2;
+            if (r.chance(0.35f)) b.wings = 3, b.wingSize = r.range(0.8f, 1.0f);
+            f.mandibles = true; f.antennae = 1; f.antennaLength = r.range(0.8f, 1.2f); f.eyeKind = 1; f.eyeSize = 1.1f;
+            f.noseProj = 0.25f; f.noseWidth = 0.6f; f.mouthStyle = 0; f.lipFullness = 0.0f; f.chinPoint = 0.8f; f.headTop = 0.2f;
+            f.browThick = 0.0f; f.stubble = 0.0f;
+            const Vec3 chitin = pickC({{0.22f, 0.30f, 0.16f}, {0.30f, 0.22f, 0.14f}, {0.12f, 0.11f, 0.13f}, {0.26f, 0.18f, 0.30f}, {0.40f, 0.36f, 0.20f}});
+            b.carapaceColor = chitin;
+            skinTo(lerp(chitin, Vec3{0.55f, 0.50f, 0.40f}, 0.45f));
+            pal.beak = chitin * 1.3f;
+            pal.wing = lerp(chitin, Vec3{0.75f, 0.80f, 0.70f}, 0.5f);
+            pal.horn = chitin * 0.8f;
+            pal.iris = pickC({{0.10f, 0.12f, 0.10f}, {0.35f, 0.08f, 0.06f}, {0.10f, 0.20f, 0.30f}});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Fishfolk: {  // deep ones: finned heads and ears, a shark's grin, scaled hides
+            b.boneMass *= 1.05f;
+            height(fem ? 1.68f : 1.78f, fem ? 1.88f : 2.00f);
+            b.headsTall = r.range(6.7f, 7.0f);
+            widths(fem ? 1.0f : 1.15f, fem ? 1.0f : 1.10f, 1.0f, 0.95f, 1.05f);
+            b.belly = 0.0f; b.hunch = std::max(b.hunch, 0.6f); b.handSize *= 1.15f; b.footSize *= 1.2f;
+            b.skinKind = 3; b.claws = true; b.ears = EarStyle::Fin; b.crest = 1; b.crestSize = r.range(0.7f, 1.1f);
+            if (r.chance(0.3f)) { b.tail = true; b.tailType = 0; b.tailLength = 0.7f; }
+            f.mouthStyle = 3; f.mouthWidth = 1.6f; f.lipFullness = 0.0f; f.eyeShape = 1; f.eyeSize = 1.15f; f.irisSize = 1.2f;
+            f.noseProj = 0.25f; f.noseWidth = 1.2f; f.noseLength = 0.6f; f.browThick = 0.0f; f.chinWidth = 0.5f; f.jaw = 0.6f;
+            f.underbite = 0.3f; f.stubble = 0.0f; f.lashWeight = 0.0f;
+            if (r.chance(0.5f)) glow(pickC({{0.45f, 0.95f, 0.85f}, {0.95f, 0.85f, 0.40f}}));
+            const Vec3 hide = pickC({{0.22f, 0.36f, 0.40f}, {0.28f, 0.40f, 0.30f}, {0.32f, 0.34f, 0.40f}, {0.20f, 0.26f, 0.30f}});
+            skinTo(hide);
+            pal.belly = lerp(hide, Vec3{0.85f, 0.85f, 0.78f}, 0.5f);
+            pal.wing = lerp(hide, Vec3{0.75f, 0.35f, 0.25f}, 0.4f);
+            pal.iris = pickC({{0.85f, 0.75f, 0.20f}, {0.15f, 0.15f, 0.15f}});
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Demon: {  // fiends: bat wings, horns, a spade tail, hooves; burning eyes
+            b.boneMass *= 1.1f;
+            height(fem ? 1.85f : 2.00f, fem ? 2.05f : 2.25f);
+            b.headsTall = r.range(7.2f, 7.5f);
+            b.legRatio = 0.52f;
+            if (fem) widths(1.0f, 1.0f, 0.95f, 1.05f, 1.0f);
+            else widths(1.28f, 1.25f, 1.05f, 1.0f, 1.20f), b.muscle = saturate(b.muscle + 0.3f);
+            b.horns = 2; b.hornKind = r.rangeInt(0, 2); b.hornSize = fem ? 0.9f : 1.2f;
+            b.tail = true; b.tailType = 2; b.tailLength = r.range(0.9f, 1.2f);
+            if (r.chance(0.6f)) b.digitigrade = true, b.hooves = true;
+            if (r.chance(0.7f)) b.wings = 1, b.wingsFolded = r.chance(0.3f), b.wingSize = r.range(0.85f, 1.1f);
+            b.claws = true;
+            if (!fem && r.chance(0.3f)) { b.spines = 6; b.spineKind = 0; b.spineSize = 0.7f; }
+            b.ear = {0.30f, 0.07f, 0.35f, 0.45f, 0.0f};
+            b.ears = EarStyle::Elf;
+            f.fang = true; f.eyeShape = 3; f.eyeTilt = 0.14f; f.browTilt = -0.35f; f.cheek = 0.7f; f.chinPoint = 0.3f;
+            glow(pickC({{0.55f, 1.0f, 0.30f}, {1.0f, 0.55f, 0.15f}, {1.0f, 0.25f, 0.20f}}));
+            skinTo(pickC({{0.50f, 0.14f, 0.12f}, {0.36f, 0.20f, 0.38f}, {0.30f, 0.30f, 0.34f}, {0.16f, 0.14f, 0.20f}, {0.58f, 0.32f, 0.40f}}));
+            pal.wing = pal.skin * 0.80f;
+            pal.horn = pickC({{0.12f, 0.11f, 0.11f}, {0.60f, 0.52f, 0.42f}});
+            pal.beak = pal.horn;
+            hairColor(pickC({{0.08f, 0.07f, 0.08f}, {0.60f, 0.10f, 0.10f}, {0.85f, 0.85f, 0.88f}, {0.30f, 0.15f, 0.35f}}));
+            hair({{HairStyle::LongStraight, 2}, {HairStyle::VeryLong, fem ? 1.5f : 0.3f}, {HairStyle::HighPonytail, 1}, {HairStyle::Bald, fem ? 0.0f : 1.5f},
+                  {HairStyle::SlickedBack, 1}, {HairStyle::Wolf, 1}});
+            beard({{FacialHair::None, 3}, {FacialHair::Goatee, 2}});
+            break;
+        }
+        case Species::Cephalid: {  // mind-eaters: a swollen domed skull, a mouth hidden by four face tentacles
+            b.boneMass *= 0.85f;
+            height(fem ? 1.75f : 1.82f, fem ? 1.90f : 1.98f);
+            b.headsTall = r.range(6.8f, 7.1f);
+            widths(0.90f, 0.90f, 0.85f, 0.90f, 0.80f);
+            b.muscle *= 0.5f; b.belly = 0.0f; b.bust *= 0.4f; b.armLength *= 1.08f; b.handSize *= 1.1f; b.ears = EarStyle::None;
+            b.hands = r.chance(0.5f) ? 3 : 0;
+            if (r.chance(0.3f)) b.backTentacles = 2 * r.rangeInt(1, 2), b.tentacleLength = r.range(0.8f, 1.1f);
+            f.headTop = 1.0f; f.crown = 0.8f; f.noseProj = 0.15f; f.noseWidth = 0.7f; f.noseLength = 0.6f; f.browThick = 0.0f;
+            f.browRidge = 0.5f; f.cheekHollow = 0.6f; f.chinPoint = 0.2f; f.lashWeight = 0.0f; f.stubble = 0.0f; f.lipFullness = 0.0f;
+            glow(pickC({{0.92f, 0.92f, 0.85f}, {0.70f, 0.95f, 0.85f}}));
+            const Vec3 hide = pickC({{0.55f, 0.42f, 0.55f}, {0.42f, 0.44f, 0.52f}, {0.48f, 0.52f, 0.44f}, {0.62f, 0.50f, 0.50f}});
+            skinTo(hide);
+            pal.lips = hide * 0.6f;
+            pal.belly = lerp(hide, Vec3{0.85f, 0.70f, 0.70f}, 0.4f);
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::Tendrils;
+            break;
+        }
+        case Species::Fae: {  // dusk fae: gauzy insect wings, feathered antennae, small and slight
+            b.boneMass *= 0.7f;
+            height(fem ? 1.30f : 1.36f, fem ? 1.52f : 1.60f);
+            b.headsTall = r.range(6.0f, 6.4f);
+            b.legRatio = 0.53f;
+            widths(0.88f, 0.88f, 0.85f, 0.92f, 0.82f);
+            b.muscle *= 0.6f; b.belly = 0.0f;
+            b.wings = 3; b.wingSize = r.range(0.9f, 1.15f);
+            b.ear = {0.55f, 0.08f, 0.50f, 0.45f, 0.0f};
+            b.ears = EarStyle::Elf;
+            if (r.chance(0.55f)) f.antennae = 2, f.antennaLength = r.range(0.8f, 1.1f);
+            f.eyeShape = 3; f.eyeSize = 1.12f; f.eyeTilt = 0.14f; f.chinPoint = 0.5f; f.cheek = 0.5f; f.noseProj = 0.7f;
+            glow(pickC({{0.70f, 0.95f, 0.75f}, {0.85f, 0.75f, 1.0f}, {1.0f, 0.85f, 0.45f}}));
+            skinTo(pickC({{0.78f, 0.80f, 0.82f}, {0.62f, 0.66f, 0.58f}, {0.72f, 0.64f, 0.78f}, {0.50f, 0.56f, 0.62f}}));
+            pal.wing = pickC({{0.55f, 0.50f, 0.42f}, {0.40f, 0.48f, 0.52f}, {0.50f, 0.40f, 0.52f}, {0.62f, 0.60f, 0.50f}});
+            hairColor(pickC({{0.85f, 0.85f, 0.88f}, {0.25f, 0.30f, 0.22f}, {0.45f, 0.30f, 0.55f}, {0.70f, 0.55f, 0.30f}}));
+            hair({{HairStyle::LongWavy, 2}, {HairStyle::Messy, 1.5f}, {HairStyle::Pixie, 1.5f}, {HairStyle::VeryLong, 1}, {HairStyle::Wolf, 1}});
+            beard({{FacialHair::None, 6}});
+            break;
+        }
+        case Species::Crystalborn: {  // living stone: a hide of crystal facets, shards breaking from the shoulders
+            b.boneMass *= 1.5f;
+            height(fem ? 2.00f : 2.15f, fem ? 2.25f : 2.45f);
+            b.headsTall = r.range(7.2f, 7.6f);
+            if (fem) widths(1.25f, 1.25f, 1.20f, 1.10f, 1.25f);
+            else widths(1.50f, 1.45f, 1.30f, 1.10f, 1.45f);
+            b.muscle = saturate(b.muscle + 0.3f); b.belly = 0.0f; b.bust *= 0.5f; b.neckThick *= 1.3f;
+            b.skinKind = 4; b.shards = r.rangeInt(8, 14); b.ears = EarStyle::None;
+            b.crystalColor = pickC({{0.55f, 0.80f, 0.95f}, {0.70f, 0.45f, 0.90f}, {0.40f, 0.90f, 0.60f}, {0.95f, 0.55f, 0.65f}});
+            glow(b.crystalColor);
+            f.browRidge = 1.0f; f.jaw = 0.8f; f.chinWidth = 0.7f; f.noseProj = 0.6f; f.browThick = 0.0f; f.lipFullness = 0.1f; f.stubble = 0.0f;
+            skinTo(pickC({{0.40f, 0.40f, 0.44f}, {0.34f, 0.32f, 0.36f}, {0.46f, 0.44f, 0.40f}}));
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Emberkin: {  // fire-born: a black basalt crust split by molten seams
+            b.boneMass *= 1.3f;
+            height(fem ? 1.90f : 2.05f, fem ? 2.10f : 2.30f);
+            b.headsTall = r.range(7.0f, 7.4f);
+            if (fem) widths(1.12f, 1.12f, 1.05f, 1.02f, 1.12f);
+            else widths(1.40f, 1.36f, 1.15f, 1.02f, 1.32f);
+            b.muscle = saturate(b.muscle + 0.35f); b.belly = 0.0f; b.bust *= 0.6f;
+            b.skinKind = 5; b.ears = EarStyle::None;
+            b.crystalColor = pickC({{1.0f, 0.50f, 0.12f}, {1.0f, 0.32f, 0.10f}, {0.95f, 0.75f, 0.25f}});
+            if (r.chance(0.6f)) b.horns = 2, b.hornKind = r.rangeInt(0, 2), b.hornSize = r.range(0.8f, 1.2f);
+            if (r.chance(0.3f)) b.core = 2, b.coreColor = b.crystalColor;
+            if (r.chance(0.3f)) { b.spines = r.rangeInt(5, 8); b.spineKind = 2; b.spineSize = 0.8f; }
+            glow(b.crystalColor);
+            f.browRidge = 1.1f; f.jaw = 0.7f; f.browThick = 0.0f; f.lipFullness = 0.05f; f.stubble = 0.0f; f.mouthStyle = 1;
+            skinTo(pickC({{0.16f, 0.14f, 0.13f}, {0.22f, 0.17f, 0.15f}, {0.13f, 0.12f, 0.14f}}));
+            pal.horn = Vec3{0.10f, 0.09f, 0.09f};
+            if (!opt.hair) g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Wraith: {  // the restless dead: a gaunt upper body trailing into a tattered wisp of shadow
+            b.boneMass *= 0.85f;
+            height(fem ? 1.95f : 2.05f, fem ? 2.15f : 2.25f);
+            b.headsTall = r.range(7.4f, 7.8f);
+            widths(0.95f, 0.88f, 0.75f, 0.85f, 0.75f);
+            b.lowerBody = 2; b.serpentLength = r.range(0.9f, 1.2f); b.muscle *= 0.4f; b.belly = 0.0f; b.bust *= 0.5f;
+            b.armLength *= 1.12f; b.handSize *= 1.15f; b.claws = true; b.hunch = std::max(b.hunch, 0.7f);
+            b.anat.definition = 0.9f; b.anat.ribcage = 1.0f; b.anat.clavicles = 1.0f;
+            f.cheekHollow = 1.0f; f.eyeDepth = 1.0f; f.jowl = 0.0f; f.roundness = 0.0f; f.lipFullness = 0.05f; f.ruddy = 0.0f;
+            f.stubble = 0.0f;
+            glow(pickC({{0.55f, 0.85f, 1.0f}, {0.75f, 1.0f, 0.80f}, {0.90f, 0.90f, 0.95f}}));
+            skinTo(pickC({{0.55f, 0.60f, 0.66f}, {0.48f, 0.52f, 0.50f}, {0.42f, 0.42f, 0.50f}}));
+            pal.lips = pal.skin * 0.5f;
+            pal.underwear = Vec3{0.12f, 0.12f, 0.14f};
+            hairColor(pickC({{0.78f, 0.80f, 0.82f}, {0.12f, 0.12f, 0.14f}, {0.40f, 0.42f, 0.46f}}));
+            hair({{HairStyle::VeryLong, 2}, {HairStyle::LongStraight, 2}, {HairStyle::Messy, 1}, {HairStyle::Bald, 1}});
+            beard({{FacialHair::None, 3}, {FacialHair::LongBeard, 1}});
+            break;
+        }
         default: break;
     }
     if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Topknot || g.hair == HairStyle::WarriorBraids)
@@ -504,7 +792,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
         return lerp(Vec3{l, l, l}, c, sat) * val;
     };
     if (sp == Species::Orc || sp == Species::Troll || sp == Species::NightElf || sp == Species::Draenei || sp == Species::Goblin ||
-        sp == Species::Undead) {
+        sp == Species::Undead || sp == Species::Dragonborn || sp == Species::Saurian || sp == Species::Naga || sp == Species::Fishfolk ||
+        sp == Species::Demon || sp == Species::Cephalid || sp == Species::Fae || sp == Species::Wraith) {
         pal.skin = grade(pal.skin, 0.62f, 0.86f);
         pal.lips = grade(pal.lips, 0.62f, 0.86f);
     }

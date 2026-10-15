@@ -709,6 +709,18 @@ cg::Genome withOverrides(cg::Genome g) {
     if (const char* pr = std::getenv("CHARGEN_PAIRS")) g.body.armPairs = std::atoi(pr);
     if (const char* ep = std::getenv("CHARGEN_EYEPAIRS")) g.face.eyePairs = std::atoi(ep);
     if (const char* ge = std::getenv("CHARGEN_GLOW")) g.face.glowEyes = std::atoi(ge) != 0;
+    // Species traits (debug): CHARGEN_WINGS=0..3, CHARGEN_LOWER=0..2, CHARGEN_HANDS=0..3, CHARGEN_FEET=0..1,
+    // CHARGEN_BEAK=0..3, CHARGEN_CREST=0..4, CHARGEN_SKIN=0..5, CHARGEN_TENTACLES=0..6, CHARGEN_FOLD=1
+    auto envI = [](const char* k, int& v) { if (const char* e = std::getenv(k)) v = std::atoi(e); };
+    envI("CHARGEN_WINGS", g.body.wings);
+    envI("CHARGEN_LOWER", g.body.lowerBody);
+    envI("CHARGEN_HANDS", g.body.hands);
+    envI("CHARGEN_FEET", g.body.feet);
+    envI("CHARGEN_BEAK", g.face.beak);
+    envI("CHARGEN_CREST", g.body.crest);
+    envI("CHARGEN_SKIN", g.body.skinKind);
+    envI("CHARGEN_TENTACLES", g.body.backTentacles);
+    if (std::getenv("CHARGEN_FOLD")) g.body.wingsFolded = true;
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
             if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);
@@ -784,9 +796,10 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
 // Population sheet: a row of natural characters (mixed sex, age, persona) and a row
 // of the stylised presets, front view in studio light.
 // Every people of the world, male and female side by side (each pair framed to its own height).
-int runRaces(Scene& s, const std::string& path, uint64_t seed) {
+// first..last picks the peoples: the classic ones (default) or the trait peoples (--peoples).
+int runRaces(Scene& s, const std::string& path, uint64_t seed, int first = 0, int last = int(cg::kFirstTraitSpecies)) {
     s.studio = true;
-    const int n = int(cg::Species::Count), cols = 4, pw = 420, ph = 500;
+    const int n = last - first, cols = 4, pw = 420, ph = 500;
     const int rows = (n + cols - 1) / cols;
     Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
     const char* yawEnv = std::getenv("CHARGEN_RACEYAW");
@@ -794,20 +807,22 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
     for (int i = 0; i < n; ++i) {
         for (auto& a : s.actors) unload(a);
         s.actors.clear();
-        float Hmax = 0;
+        float Hmax = 0, half = 0;  // half: widest reach from the body's axis (wings)
         for (int sx = 0; sx < 2; ++sx) {
             cg::GenomeOptions o;
-            o.species = cg::Species(i);
+            o.species = cg::Species(first + i);
             o.sex = sx == 0 ? cg::Sex::Male : cg::Sex::Female;
             o.age = cg::AgeGroup::Adult;
             s.actors.emplace_back();
             Actor& a = s.actors.back();
-            a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i * 7 + sx), o), gGen);
+            a.ch = cg::generateCharacter(withOverrides(cg::randomGenome(seed + uint64_t((first + i) * 7 + sx), o)), gGen);
             Hmax = std::max(Hmax, a.ch.height);
+            for (const cg::Vertex& v : a.ch.mesh.vertices) half = std::max(half, std::fabs(v.pos.x));
         }
+        const float spacing = std::max(0.24f * Hmax, 0.92f * half);
         for (int sx = 0; sx < 2; ++sx) {
             Actor& a = s.actors[size_t(sx)];
-            a.worldPos = {(sx == 0 ? -0.24f : 0.24f) * Hmax, 0, 0};
+            a.worldPos = {(sx == 0 ? -spacing : spacing), 0, 0};
             a.clips = cg::makeDefaultClips(a.ch);
             a.sim = new cg::SecondaryMotion(a.ch);
             a.posed = true;
@@ -816,8 +831,8 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
             a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
             for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
         }
-        const float H = Hmax * 1.06f;
-        Camera3D cam = makeCam({0, H * 0.5f, 0}, yaw, 0.03f, H * 2.55f, 26.0f);
+        const float H = Hmax * 1.06f, W = 2.0f * (spacing + half);
+        Camera3D cam = makeCam({0, H * 0.5f, 0}, yaw, 0.03f, std::max(H * 2.55f, W * 2.35f), 26.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
         ClearBackground(BLACK);
@@ -825,7 +840,7 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         char buf[96];
-        std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(i))).c_str(), s.actors[0].ch.height,
+        std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(first + i))).c_str(), s.actors[0].ch.height,
                       s.actors[1].ch.height);
         ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
@@ -908,6 +923,118 @@ int runAnatomy(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         ImageDrawText(&img, P.label, 8, ph - 18, 12, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
+// Species traits up close (--traits): wings from behind, heads, hands, feet and the
+// lower bodies, each panel one trait on a people that wears it.
+int runTraits(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    enum View { Body, Back, Head, HeadSide, Hand, Feet, Wide };
+    struct Panel {
+        cg::Species sp;
+        cg::Sex sex;
+        View view;
+        const char* label;
+        std::function<void(cg::Genome&)> tweak;
+    };
+    auto none = [](cg::Genome&) {};
+    std::vector<Panel> panels = {
+        {cg::Species::Demon, cg::Sex::Male, Back, "asas de membrana", [](cg::Genome& g) { g.body.wings = 1; g.body.wingsFolded = false; }},
+        {cg::Species::Avian, cg::Sex::Female, Back, "asas de penas", [](cg::Genome& g) { g.body.wings = 2; g.body.wingsFolded = false; }},
+        {cg::Species::Fae, cg::Sex::Female, Back, "asas de inseto", none},
+        {cg::Species::Dragonborn, cg::Sex::Male, Back, "asas dobradas", [](cg::Genome& g) { g.body.wings = 1; g.body.wingsFolded = true; }},
+        {cg::Species::Avian, cg::Sex::Male, HeadSide, "bico de rapina", [](cg::Genome& g) { g.face.beak = 1; }},
+        {cg::Species::Avian, cg::Sex::Female, HeadSide, "bico longo", [](cg::Genome& g) { g.face.beak = 2; }},
+        {cg::Species::Tortle, cg::Sex::Male, HeadSide, "bico curto (tartaruga)", none},
+        {cg::Species::Dragonborn, cg::Sex::Male, HeadSide, "focinho reptil", [](cg::Genome& g) { g.body.wings = 0; }},
+        {cg::Species::Insectoid, cg::Sex::Male, Head, "mandibulas, antenas, olhos compostos", none},
+        {cg::Species::Fishfolk, cg::Sex::Male, Head, "barbatanas: crista e orelhas", none},
+        {cg::Species::Saurian, cg::Sex::Male, HeadSide, "gola ossea", [](cg::Genome& g) { g.body.crest = 3; }},
+        {cg::Species::Naga, cg::Sex::Male, Head, "capuz de naja", [](cg::Genome& g) { g.body.crest = 4; g.body.armPairs = 1; }},
+        {cg::Species::Cephalid, cg::Sex::Male, Head, "tentaculos faciais", none},
+        {cg::Species::Fae, cg::Sex::Female, Head, "antenas plumosas", [](cg::Genome& g) { g.face.antennae = 2; }},
+        {cg::Species::Avian, cg::Sex::Male, Hand, "maos de garra (3 dedos)", [](cg::Genome& g) { g.body.hands = 1; g.body.wings = 0; }},
+        {cg::Species::Insectoid, cg::Sex::Male, Hand, "pinca de caranguejo", [](cg::Genome& g) { g.body.hands = 2; g.body.armPairs = 1; g.body.wings = 0; }},
+        {cg::Species::Cephalid, cg::Sex::Female, Hand, "maos de tentaculos", [](cg::Genome& g) { g.body.hands = 3; }},
+        {cg::Species::Avian, cg::Sex::Male, Feet, "pes de ave (garras)", [](cg::Genome& g) { g.body.wings = 0; }},
+        {cg::Species::Naga, cg::Sex::Female, Wide, "corpo de serpente", [](cg::Genome& g) { g.body.crest = 0; g.body.armPairs = 1; }},
+        {cg::Species::Wraith, cg::Sex::Male, Body, "espectro", none},
+        {cg::Species::Tortle, cg::Sex::Female, Back, "casco de tartaruga", none},
+        {cg::Species::Cephalid, cg::Sex::Male, Back, "tentaculos nas costas", [](cg::Genome& g) { g.body.backTentacles = 4; }},
+        {cg::Species::Crystalborn, cg::Sex::Male, Body, "pele de cristal + lascas", none},
+        {cg::Species::Emberkin, cg::Sex::Male, Body, "crosta de magma", none},
+    };
+    if (const char* only = std::getenv("CHARGEN_TRAITS")) {  // indices: "0 3 7"
+        std::vector<Panel> sub;
+        int idx = 0, n2 = 0;
+        for (const char* q = only; std::sscanf(q, "%d%n", &idx, &n2) == 1; q += n2)
+            if (idx >= 0 && idx < int(panels.size())) sub.push_back(panels[size_t(idx)]);
+        panels = sub;
+    }
+    const int n = int(panels.size()), cols = std::min(n, 4), rows = (n + cols - 1) / cols, pw = 400, ph = 440;
+    Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
+    for (int i = 0; i < n; ++i) {
+        const Panel& P = panels[size_t(i)];
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.species = P.sp;
+        o.sex = P.sex;
+        o.age = cg::AgeGroup::Adult;
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i) * 31, o);
+        P.tweak(g);
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(withOverrides(g), gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        const float H = a.ch.height;
+        float half = 0;
+        for (const cg::Vertex& v : a.ch.mesh.vertices) half = std::max(half, std::fabs(v.pos.x));
+        const auto& bones = a.ch.skeleton.bones;
+        const cg::Vec3 hp = bones[size_t(a.ch.rig.head)].restWorld;
+        const float hh = H - hp.y;
+        Camera3D cam;
+        switch (P.view) {
+            case Back: cam = makeCam({0, H * 0.55f, 0}, 2.75f, 0.10f, std::max(H * 2.5f, 2.0f * half * 2.4f), 26.0f); break;
+            case Head: cam = makeCam({0, hp.y + 0.45f * hh, 0.05f * hh}, 0.45f, 0.05f, hh * 9.0f, 21.0f); break;
+            case HeadSide: cam = makeCam({0, hp.y + 0.35f * hh, 0.25f * hh}, 1.05f, 0.05f, hh * 8.5f, 21.0f); break;
+            case Hand: {
+                const cg::Vec3 w = bones[size_t(a.ch.rig.arms[0].end)].restWorld;
+                cam = makeCam({w.x, w.y - 0.05f * H, w.z}, 0.75f, 0.10f, H * 0.95f, 21.0f);
+                break;
+            }
+            case Feet: {
+                const cg::Vec3 f = bones[size_t(a.ch.rig.legs[0].end)].restWorld;
+                cam = makeCam({0, f.y * 0.6f, f.z + 0.05f * H}, 0.65f, 0.25f, H * 1.05f, 21.0f);
+                break;
+            }
+            case Wide: cam = makeCam({0, H * 0.42f, -0.35f * H}, 0.85f, 0.18f, H * 3.2f, 26.0f); break;
+            default: cam = makeCam({0, H * 0.5f, 0}, 0.45f, 0.03f, H * 2.6f, 23.0f); break;
+        }
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "%s  (%s)", P.label, std::string(cg::toString(P.sp)).c_str());
+        ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
         UnloadImage(img);
         UnloadRenderTexture(prt);
@@ -1204,7 +1331,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races, decayOut, anatomy, studiesOut;
+    std::string shots, studio, population, heads, faces, cuts, races, peoples, traits, decayOut, anatomy, studiesOut;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -1216,6 +1343,8 @@ int main(int argc, char** argv) {
         else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
+        else if (a == "--peoples" && i + 1 < argc) peoples = argv[++i];
+        else if (a == "--traits" && i + 1 < argc) traits = argv[++i];
         else if (a == "--decay" && i + 1 < argc) decayOut = argv[++i];
         else if (a == "--anatomy" && i + 1 < argc) anatomy = argv[++i];
         else if (a == "--studies" && i + 1 < argc) studiesOut = argv[++i];
@@ -1280,6 +1409,18 @@ int main(int argc, char** argv) {
     }
     if (!races.empty()) {
         int rc = runRaces(s, races, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!traits.empty()) {
+        int rc = runTraits(s, traits, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!peoples.empty()) {
+        int rc = runRaces(s, peoples, seed, int(cg::kFirstTraitSpecies), int(cg::Species::Count));
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

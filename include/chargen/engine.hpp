@@ -75,7 +75,7 @@ BodyMetrics measure(const Character& c);
 
 // ---------------------------------------------------------------- hit volumes
 
-enum class HitZone : uint8_t { Head, Neck, Chest, Abdomen, Pelvis, UpperArm, Forearm, Hand, Thigh, Shin, Foot, Tail, Count };
+enum class HitZone : uint8_t { Head, Neck, Chest, Abdomen, Pelvis, UpperArm, Forearm, Hand, Thigh, Shin, Foot, Tail, Wing, Tentacle, Count };
 std::string_view toString(HitZone z);
 
 struct HitVolume {

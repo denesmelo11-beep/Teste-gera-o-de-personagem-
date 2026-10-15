@@ -603,7 +603,7 @@ void Builder::buildTorso() {
     for (size_t i = 0; i < rings.size(); ++i) {
         // The lowest rings are saddles: high over the hips, dipping at the front and
         // back midline down to the crotch, so the legs attach without twisted quads.
-        const float drop = i == 0 ? kTorsoBase : i == 1 ? 0.07f : i == 2 ? 0.025f : 0.0f;
+        const float drop = g.body.lowerBody ? 0.0f : i == 0 ? kTorsoBase : i == 1 ? 0.07f : i == 2 ? 0.025f : 0.0f;  // coils join a flat ring
         std::vector<Vec3> ring(static_cast<size_t>(N));
         for (int j = 0; j < N; ++j) {
             float th = warpTheta(kTau * j / N), sn = std::sin(th);
@@ -1188,6 +1188,10 @@ void Builder::buildArms() {
 
 void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
     if (decay_ >= 0.85f) return;  // extremities skeletonize first: the bone hand replaces it
+    if (g.body.hands != 0) {
+        buildTraitHand(a, rig);
+        return;
+    }
     const float Lh = length(a.handTip - a.wrist);
     const Vec3 d = a.dir, v = orthoFront(d), u = cross(d, v);
     const Vec3 palm = u * a.side;  // towards the body in the A-pose
@@ -1325,6 +1329,10 @@ void Builder::buildHand(const ArmMarks& a, const LimbRig& rig) {
 // the thighs ("pants" topology). A few junction rings carry the hip and glute volume
 // down into the thigh. No surfaces intersect, so the hips stay clean in any light.
 void Builder::buildLegs() {
+    if (g.body.lowerBody) {
+        buildSerpent();
+        return;
+    }
     if (g.body.centaur) {
         buildHorseBody();
         return;
@@ -1536,8 +1544,12 @@ void Builder::buildLegs() {
 
 // Bare feet: heel, arch, ball and a soft block of toes.
 void Builder::buildFeet() {
-    if (g.body.centaur) return;  // the horse legs carry their own hooves
+    if (g.body.centaur || g.body.lowerBody) return;  // the horse legs carry their own hooves; coils have no feet
     if (decay_ >= 0.85f && !g.body.hooves) return;  // bare foot bones (bones.cpp)
+    if (g.body.feet == 1) {
+        buildTalonFeet();
+        return;
+    }
     if (g.body.digitigrade) {
         buildDigitigradeFeet();
         return;
@@ -1966,7 +1978,8 @@ void Builder::buildCore() {
 void Builder::applySkinKind() {
     const int kind = g.body.skinKind;
     if (kind == 0 || bonesOnly_) return;
-    const float h = m.h, S = 0.42f * h;
+    // Cell size of the plate pattern: carapace plates, fine scales, crystal facets, crust.
+    const float h = m.h, S = (kind == 3 ? 0.075f : kind == 4 ? 0.50f : kind == 5 ? 0.46f : 0.42f) * h;
     const uint64_t seed = g.seed * 0x9E3779B97F4A7C15ull + 77;
     auto hash = [&](int x, int y, int z, uint64_t k) {
         uint64_t v = splitmix64(seed ^ (uint64_t(uint32_t(x)) * 73856093ull) ^ (uint64_t(uint32_t(y)) * 19349663ull) ^
@@ -1985,7 +1998,7 @@ void Builder::applySkinKind() {
         }
         return acc;
     };
-    const float cover = g.body.carapace * 1.25f - 0.12f;
+    const float cover = kind == 2 ? g.body.carapace * 1.25f - 0.12f : 2.0f;  // the other kinds cover everything
     const float rust = kind == 1 ? 0.92f * std::pow(smoothstep(0.04f, 1.0f, decay_), 1.25f) : 0.0f;
     const Vec3 hc = headCenter();
     const float faceY0 = m.headOrigin.y + 0.05f * h, faceY1 = m.headOrigin.y + 0.80f * h;
@@ -2011,7 +2024,7 @@ void Builder::applySkinKind() {
                 }
                 continue;
             }
-            if (headish && g.body.carapace < 0.95f && c.z > hc.z + 0.10f * h && c.y > faceY0 && c.y < faceY1) continue;
+            if (headish && (kind != 2 || g.body.carapace < 0.95f) && c.z > hc.z + 0.10f * h && c.y > faceY0 && c.y < faceY1) continue;
             // Nearest and second-nearest feature points of the 3D cell grid.
             const Vec3 u = c / S;
             const int ix = int(std::floor(u.x)), iy = int(std::floor(u.y)), iz = int(std::floor(u.z));
@@ -2028,6 +2041,21 @@ void Builder::applySkinKind() {
                         else if (d < d2) d2 = d;
                     }
             if (noise(bf * (1.0f / 3.0f)) > cover) continue;  // this plate has not grown (partial coverage)
+            const float k = hash(bx, by, bz, 5);
+            if (kind == 3) {  // scales: each keeps its painted colour (bellies, stripes), seams darker
+                tr.m.color = d2 - d1 < 0.10f ? tr.m.color * 0.68f : tr.m.color * (0.90f + 0.16f * k);
+                continue;
+            }
+            if (kind == 4) {  // crystal: tinted facets, one tone per plate (the veins are cut in below)
+                tr.m.color = lerp(tr.m.color, g.body.crystalColor, 0.18f + 0.30f * k) * (0.78f + 0.36f * k);
+                tr.m.cls = MaterialClass::Metal;
+                continue;
+            }
+            if (kind == 5) {  // magma: matte black crust plates (the molten seams are cut in below)
+                tr.m.color = tr.m.color * (0.70f + 0.45f * k);
+                tr.m.cls = MaterialClass::Leather;
+                continue;
+            }
             if (d2 - d1 < 0.07f) {  // seam: a dark crack between the plates
                 tr.m.color = lerp(g.body.carapaceColor, tr.m.color, 0.25f) * 0.45f;
                 tr.m.cls = MaterialClass::Dark;
@@ -2036,6 +2064,50 @@ void Builder::applySkinKind() {
             tr.m.color = g.body.carapaceColor * (0.88f + 0.24f * hash(bx, by, bz, 5));
             tr.m.cls = MaterialClass::Metal;
         }
+    }
+    // Crystal veins and molten seams: cut along the cell borders as clip regions, so
+    // the lines run crisp and continuous across the low-poly facets instead of
+    // colouring whole triangles. Inserted first: the underwear stays on top.
+    if (kind == 4 || kind == 5) {
+        const float width = kind == 4 ? 0.035f : 0.055f;
+        const Mat seamM = kind == 4 ? Mat{lerp(g.body.crystalColor, Vec3{1, 1, 1}, 0.35f), MaterialClass::Glow}
+                                    : Mat{lerp(g.body.crystalColor, Vec3{1.0f, 0.90f, 0.60f}, 0.15f), MaterialClass::Glow};
+        const float faceZ = hc.z + 0.10f * h;
+        auto field = [seed, S, width, faceZ, faceY0, faceY1](Vec3 q) {
+            auto hs = [seed](int x, int y, int z, uint64_t k) {
+                uint64_t v = splitmix64(seed ^ (uint64_t(uint32_t(x)) * 73856093ull) ^ (uint64_t(uint32_t(y)) * 19349663ull) ^
+                                        (uint64_t(uint32_t(z)) * 83492791ull) ^ (k * 0x632BE59BD9B4E019ull));
+                return float(v >> 40) / float(1ull << 24);
+            };
+            if (q.z > faceZ && q.y > faceY0 && q.y < faceY1) return 1.0f;  // the face stays readable
+            const Vec3 u = q / S;
+            const int ix = int(std::floor(u.x)), iy = int(std::floor(u.y)), iz = int(std::floor(u.z));
+            float d1 = 1e9f, d2 = 1e9f;
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int x = ix + dx, y = iy + dy, z = iz + dz;
+                        const float d = length(Vec3{float(x) + hs(x, y, z, 1), float(y) + hs(x, y, z, 2), float(z) + hs(x, y, z, 3)} - u);
+                        if (d < d1) d2 = d1, d1 = d;
+                        else if (d < d2) d2 = d;
+                    }
+            return (d2 - d1) - width;
+        };
+        // Refining near the seams roughly quadruples the cut triangles: only while the
+        // whole character stays well inside the budget (busy four-armed, winged builds don't).
+        size_t tris = 0, cut = 0;
+        for (const Part& p : parts) tris += p.tris.size();
+        std::vector<size_t> seamParts;
+        for (size_t pi = 0; pi < parts.size(); ++pi) {
+            const Part& p = parts[pi];
+            if (p.kind != SubmeshKind::Body || p.flat) continue;
+            size_t skinT = 0;
+            for (const auto& tr : p.tris) skinT += tr.m.cls == MaterialClass::Metal || tr.m.cls == MaterialClass::Leather;
+            if (skinT * 2 < p.tris.size()) continue;  // horns, claws, hair: not flesh
+            seamParts.push_back(pi), cut += p.tris.size();
+        }
+        const int refine = opt.lod == 0 && decay_ < 0.3f && tris + 4 * cut < 20000 ? 1 : 0;
+        for (size_t pi : seamParts) parts[pi].clips.insert(parts[pi].clips.begin(), ClipRegion{field, seamM, refine});
     }
 }
 
@@ -2343,6 +2415,13 @@ Character Builder::build() {
         buildSpines();
         buildHorns();
         buildTusks();
+        buildWings();
+        buildSerpent();
+        buildBackTentacles();
+        buildShell();
+        buildBeak();
+        buildMandibles();
+        buildAntennae();
         buildColliders();
         buildBoneSkeleton();
         breakConstruct();
@@ -2364,6 +2443,15 @@ Character Builder::build() {
     buildEars();
     buildHorns();
     buildTusks();
+    buildWings();
+    buildBackTentacles();
+    buildShell();
+    buildShards();
+    buildBeak();
+    buildMandibles();
+    buildAntennae();
+    buildCompoundEyes();
+    buildCrest();
     buildColliders();
     buildHair();
     buildFacialHair();
