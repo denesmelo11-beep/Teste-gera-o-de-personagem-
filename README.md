@@ -264,6 +264,31 @@ casco e corvo. `chargen_cli portraits --horns K --beak K --bald` força o format
 
 ![poses](docs/anim_frases.png)
 
+## Usar no jogo
+
+A biblioteca não tem dependências além da biblioteca padrão de C++20. Dentro de outro projeto
+CMake só ela é compilada (o CLI, os testes e o visualizador ficam de fora; `-DCHARGEN_BUILD_TOOLS=ON`
+liga os dois primeiros):
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(chargen
+  GIT_REPOSITORY https://github.com/denesmelo11-beep/Teste-gera-o-de-personagem-.git
+  GIT_TAG v1.0.0)
+FetchContent_MakeAvailable(chargen)          # ou: add_subdirectory(externo/chargen)
+target_link_libraries(meu_jogo PRIVATE chargen::chargen)
+```
+
+```cpp
+#include "chargen/engine.hpp"
+
+cg::CharacterKey k;
+k.seed = semente;
+k.options.species = cg::Species::Orc;
+cg::Character npc = cg::generateFromKey(k);      // malha, esqueleto, rig, rosto
+std::string chave = cg::encodeKey(k);            // salva o NPC em 32 caracteres
+```
+
 ## Compilar
 
 ```bash
