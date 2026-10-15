@@ -22,7 +22,7 @@ static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops", "tendrils"};
 constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur", "skeleton",
                                               "dragonborn", "saurian", "avian", "naga", "tortle", "insectoid", "fishfolk", "demon", "cephalid", "fae",
-                                              "crystalborn", "emberkin", "wraith", "cyclops", "talpid", "oculite", "slime", "rimemaw"};
+                                              "crystalborn", "emberkin", "wraith", "cyclops", "talpid", "oculite", "slime", "rimemaw", "gloomhound", "gravitant"};
 static_assert(std::size(kSpeciesNames) == size_t(cg::Species::Count));
 static_assert(std::size(kBeardNames) == size_t(cg::FacialHair::Count));
 
@@ -827,18 +827,20 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             beard({{FacialHair::None, 4}, {FacialHair::MuttonChops, 1}});
             break;
         }
-        case Species::Oculite: {  // the watchers: gaunt folk with eyes opening all over the skin
-            b.boneMass *= 0.9f;
-            height(fem ? 1.70f : 1.78f, fem ? 1.90f : 2.00f);
-            b.headsTall = r.range(7.0f, 7.4f);
-            widths(0.92f, 0.92f, 0.85f, 0.92f, 0.85f);
-            b.muscle *= 0.6f; b.belly = 0.0f; b.bust *= 0.6f; b.hunch = std::max(b.hunch, 0.5f);
-            b.bodyEyes = r.rangeInt(14, 24); b.ears = EarStyle::None;
+        case Species::Oculite: {  // the watchers: squat, heavy-shouldered folk with eyes opening all over the hide
+            b.boneMass *= 1.15f;
+            height(fem ? 1.55f : 1.62f, fem ? 1.75f : 1.85f);
+            b.headsTall = r.range(6.0f, 6.4f);
+            b.legRatio = 0.44f;
+            widths(1.20f, 1.25f, 1.15f, 1.05f, 1.15f);
+            b.chestDepth *= 1.2f; b.neckLength *= 0.5f; b.neckThick *= 1.4f; b.armLength *= 1.12f; b.handSize *= 1.15f;
+            b.muscle = saturate(b.muscle + 0.15f); b.hunch = std::max(b.hunch, 0.8f); b.belly += 0.25f; b.bust *= 0.4f;
+            b.bodyEyes = r.rangeInt(13, 21); b.ears = EarStyle::None; b.claws = true;
             if (r.chance(0.4f)) f.eyePairs = 2;
-            f.eyeSize = 1.15f; f.irisSize = 1.1f; f.browThick = 0.0f; f.lashWeight = 0.0f; f.stubble = 0.0f; f.cheekHollow = 0.6f;
-            f.noseProj = 0.3f; f.noseLength = 0.6f; f.lipFullness = 0.05f;
+            f.eyeSize = 1.2f; f.irisSize = 1.1f; f.browThick = 0.0f; f.lashWeight = 0.0f; f.stubble = 0.0f; f.headTop = -0.3f;
+            f.noseProj = 0.25f; f.noseLength = 0.5f; f.lipFullness = 0.05f; f.mouthWidth = 1.3f; f.jaw = 0.8f; f.chinWidth = 0.9f;
             f.sclera = pickC({{0.85f, 0.80f, 0.55f}, {0.80f, 0.74f, 0.60f}, {0.82f, 0.82f, 0.78f}});
-            skinTo(pickC({{0.62f, 0.56f, 0.58f}, {0.50f, 0.52f, 0.56f}, {0.58f, 0.54f, 0.46f}, {0.42f, 0.36f, 0.42f}}));
+            skinTo(pickC({{0.42f, 0.50f, 0.36f}, {0.50f, 0.42f, 0.36f}, {0.40f, 0.40f, 0.48f}, {0.55f, 0.50f, 0.40f}}));
             pal.iris = pickC({{0.75f, 0.45f, 0.10f}, {0.35f, 0.55f, 0.20f}, {0.55f, 0.15f, 0.12f}, {0.30f, 0.30f, 0.55f}});
             pal.lips = pal.skin * 0.6f;
             if (!opt.hair) g.hair = HairStyle::Bald;
@@ -887,6 +889,48 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             g.facialHair = FacialHair::None;
             break;
         }
+        case Species::Gloomhound: {  // blind cave hunters on all fours: a long eyeless head, a split maw, a ridge of spines
+            b.boneMass *= 1.2f;
+            height(fem ? 1.85f : 1.95f, fem ? 2.05f : 2.20f);  // standing; on all fours about half that at the shoulder
+            b.headsTall = r.range(6.2f, 6.6f);
+            b.legRatio = 0.42f;
+            widths(0.95f, 1.05f, 0.80f, 0.95f, 1.15f);
+            b.chestDepth *= 1.45f; b.neckLength *= 1.3f; b.neckThick *= 1.4f; b.armLength *= 1.22f; b.handSize *= 1.1f; b.hands = 1;
+            b.muscle = saturate(b.muscle + 0.35f); b.belly = 0.0f; b.bust = 0.0f; b.butt *= 0.6f; b.hunch = 0.0f;
+            b.stance = 1; b.digitigrade = true; b.claws = true; b.furPattern = 2; b.ears = EarStyle::None;
+            b.tail = true; b.tailType = r.chance(0.5f) ? 0 : 4; b.tailLength = r.range(0.9f, 1.2f);
+            b.spines = r.rangeInt(6, 10); b.spineKind = 0; b.spineSize = r.range(0.9f, 1.3f);
+            b.muzzle = r.range(0.85f, 1.0f); b.snout = 1;
+            f.eyeKind = 3; f.maw = r.chance(0.6f); f.mouthWidth = 1.5f; f.darkNose = false; f.noseProj = 0.9f; f.noseWidth = 1.3f;
+            f.browRidge = 0.6f; f.lipFullness = 0.0f; f.stubble = 0.0f; f.lashWeight = 0.0f; f.headTop = -0.3f;
+            const Vec3 hide = pickC({{0.48f, 0.32f, 0.22f}, {0.38f, 0.30f, 0.28f}, {0.30f, 0.28f, 0.30f}, {0.55f, 0.42f, 0.30f}});
+            skinTo(hide);
+            pal.lips = hide * 0.35f;
+            pal.horn = Vec3{0.80f, 0.72f, 0.55f};  // spines and claws
+            g.underwear = false;
+            g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
+        case Species::Gravitant: {  // living worlds: a great sphere of crust over a molten heart, the face set in it, stubby limbs
+            b.boneMass *= 1.6f;
+            height(fem ? 2.30f : 2.45f, fem ? 2.60f : 2.80f);
+            b.headsTall = r.range(5.6f, 6.0f);  // a big face for the sphere
+            b.legRatio = 0.32f;
+            widths(1.50f, 1.50f, 1.40f, 1.20f, 1.55f);
+            b.armLength *= 0.85f; b.handSize *= 1.5f; b.footSize *= 1.3f; b.neckLength *= 0.3f; b.neckThick *= 1.6f;
+            b.muscle = saturate(b.muscle + 0.3f); b.belly = 0.0f; b.bust = 0.0f;
+            b.orb = true; b.skinKind = 5; b.ears = EarStyle::None;
+            b.crystalColor = pickC({{1.0f, 0.55f, 0.15f}, {1.0f, 0.75f, 0.25f}, {0.95f, 0.35f, 0.12f}});
+            glow(b.crystalColor);
+            f.browRidge = 1.2f; f.jaw = 1.0f; f.chinWidth = 1.0f; f.mouthWidth = 1.5f; f.browThick = 0.0f; f.lipFullness = 0.1f;
+            f.stubble = 0.0f; f.noseProj = 0.6f; f.noseWidth = 1.4f;
+            skinTo(pickC({{0.30f, 0.26f, 0.24f}, {0.36f, 0.30f, 0.26f}, {0.26f, 0.26f, 0.30f}}));
+            g.underwear = false;
+            g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            break;
+        }
         default: break;
     }
     if (f.eyeKind != 0) f.eyePairs = 1;  // modelled eyes replace the painted pairs
@@ -901,7 +945,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     if (sp == Species::Orc || sp == Species::Troll || sp == Species::NightElf || sp == Species::Draenei || sp == Species::Goblin ||
         sp == Species::Undead || sp == Species::Dragonborn || sp == Species::Saurian || sp == Species::Naga || sp == Species::Fishfolk ||
         sp == Species::Demon || sp == Species::Cephalid || sp == Species::Fae || sp == Species::Wraith || sp == Species::Oculite ||
-        sp == Species::Slime || sp == Species::Rimemaw) {
+        sp == Species::Slime || sp == Species::Rimemaw || sp == Species::Gloomhound) {
         pal.skin = grade(pal.skin, 0.62f, 0.86f);
         pal.lips = grade(pal.lips, 0.62f, 0.86f);
     }

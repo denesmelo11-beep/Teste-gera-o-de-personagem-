@@ -339,7 +339,7 @@ BodyMetrics measure(const Character& c) {
     auto P = [&](int b) { return b >= 0 ? sk.bones[size_t(b)].restWorld : Vec3{}; };
     bm.height = c.height;
     bm.arms = int(r.arms.size());
-    bm.quadruped = c.genome.body.centaur;
+    bm.quadruped = c.genome.body.centaur || c.genome.body.stance == 1;
     bm.boundsMin = {1e9f, 1e9f, 1e9f};
     bm.boundsMax = {-1e9f, -1e9f, -1e9f};
     for (const Vertex& v : c.mesh.vertices) {
@@ -684,6 +684,8 @@ std::string describe(const Genome& g) {
     s += hb;
     std::vector<std::string> fx;
     if (b.centaur) fx.push_back("horse body");
+    if (b.stance == 1 && !b.centaur && !b.lowerBody) fx.push_back("on all fours");
+    if (b.orb && !b.centaur && !b.lowerBody) fx.push_back("a living world for a body");
     if (b.skeletal) fx.push_back("bare bones");
     if (b.armPairs == 2) fx.push_back("four arms");
     if (b.tusks) {
@@ -814,6 +816,8 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.15f)) b.hands = r.rangeInt(1, 4);
     if (r.chance(0.06f)) b.bodyEyes = r.rangeInt(4, 20);
     if (r.chance(0.05f)) f.maw = true;
+    if (r.chance(0.06f)) b.stance = 1, b.bust = 0.0f;
+    if (r.chance(0.04f)) b.orb = true;
     if (r.chance(0.10f)) b.feet = 1;
     if (r.chance(0.10f)) b.backTentacles = r.rangeInt(1, 6), b.tentacleLength = r.range(0.6f, 1.4f);
     if (r.chance(0.08f)) b.shell = true;

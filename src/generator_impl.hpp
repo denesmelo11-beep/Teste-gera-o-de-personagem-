@@ -114,6 +114,8 @@ private:
     void buildTraitEyes();  // cyclopean eye, eyeless sockets
     void buildMaw();
     void buildBodyEyes();
+    void buildOrbBody();
+    void bakeBeastStance();  // on all fours: poses the finished body and bakes it as the rest pose
     // head.cpp
     void buildHead();
     void buildNose();

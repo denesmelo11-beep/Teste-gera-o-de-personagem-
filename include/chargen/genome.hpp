@@ -42,7 +42,7 @@ enum class PupilStyle : uint8_t { Round, Slit, Count };
 enum class Species : uint8_t {
     Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Skeleton,
     Dragonborn, Saurian, Avian, Naga, Tortle, Insectoid, Fishfolk, Demon, Cephalid, Fae, Crystalborn, Emberkin, Wraith,
-    Cyclops, Talpid, Oculite, Slime, Rimemaw,
+    Cyclops, Talpid, Oculite, Slime, Rimemaw, Gloomhound, Gravitant,
     Count
 };
 // First trait people (the classic peoples come before it).
@@ -183,6 +183,8 @@ struct BodyShape {
     int shards = 0;             // crystal shards growing from shoulders and back (count)
     Vec3 crystalColor{0.55f, 0.80f, 0.95f};
     int bodyEyes = 0;           // extra eyes open over the torso, arms and legs (count)
+    bool orb = false;           // a living world: the trunk swells into a great sphere the face looks out of, small limbs
+    int stance = 0;             // 0 upright, 1 beast: on all fours, the arms become forelegs and the head is held forward
     Anatomy anat;
 };
 

@@ -938,7 +938,7 @@ int runAnatomy(Scene& s, const std::string& path, uint64_t seed) {
 // lower bodies, each panel one trait on a people that wears it.
 int runTraits(Scene& s, const std::string& path, uint64_t seed) {
     s.studio = true;
-    enum View { Body, Back, Head, HeadSide, Hand, Feet, Wide };
+    enum View { Body, Back, Head, HeadSide, Hand, Feet, Wide, Side };
     struct Panel {
         cg::Species sp;
         cg::Sex sex;
@@ -978,6 +978,8 @@ int runTraits(Scene& s, const std::string& path, uint64_t seed) {
         {cg::Species::Talpid, cg::Sex::Female, Hand, "maos de pa (escavar)", none},
         {cg::Species::Oculite, cg::Sex::Male, Body, "olhos pelo corpo", none},
         {cg::Species::Slime, cg::Sex::Female, Body, "corpo de gosma", none},
+        {cg::Species::Gloomhound, cg::Sex::Male, Side, "corpo de besta (quatro patas)", none},
+        {cg::Species::Gravitant, cg::Sex::Male, Body, "corpo-planeta", none},
     };
     if (const char* only = std::getenv("CHARGEN_TRAITS")) {  // indices: "0 3 7"
         std::vector<Panel> sub;
@@ -1030,6 +1032,12 @@ int runTraits(Scene& s, const std::string& path, uint64_t seed) {
                 break;
             }
             case Wide: cam = makeCam({0, H * 0.42f, -0.35f * H}, 0.85f, 0.18f, H * 3.2f, 26.0f); break;
+            case Side: {  // a long body (on all fours): framed on its bounds, from the side
+                float z0 = 1e9f, z1 = -1e9f;
+                for (const cg::Vertex& v : a.ch.mesh.vertices) z0 = std::min(z0, v.pos.z), z1 = std::max(z1, v.pos.z);
+                cam = makeCam({0, H * 0.5f, 0.5f * (z0 + z1)}, 1.20f, 0.12f, std::max(H, z1 - z0) * 2.3f, 26.0f);
+                break;
+            }
             default: cam = makeCam({0, H * 0.5f, 0}, 0.45f, 0.03f, H * 2.6f, 23.0f); break;
         }
         RenderTexture2D prt = LoadRenderTexture(pw, ph);

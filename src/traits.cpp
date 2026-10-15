@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 
+#include "chargen/animation.hpp"
 #include "generator_impl.hpp"
 
 namespace cg::detail {
@@ -1372,26 +1373,56 @@ void Builder::buildBodyEyes() {
         Vec3 c, n;
         float R;
         SkinW w;
-        Vec3 skinC;
+        Vec3 skinC, look;
     };
+    // Laid out like a body plan rather than scattered: one great eye in the middle of the
+    // chest, then mirrored pairs (shoulders, flanks, arms, thighs), bigger on the trunk.
     std::vector<Eye> eyes;
-    for (int tries = 0; tries < g.body.bodyEyes * 12 && int(eyes.size()) < g.body.bodyEyes; ++tries) {
-        float pick = r.uniform() * total;
-        size_t k = 0;
-        while (k + 1 < cands.size() && pick > cands[k].area) pick -= cands[k].area, ++k;
+    auto at = [&](size_t k) {
         const Part& p = parts[cands[k].part];
         const auto& t = p.tris[cands[k].tri];
         const Vec3 c = (p.pos[t.a] + p.pos[t.b] + p.pos[t.c]) / 3.0f;
         const Vec3 nn = normalize(cross(p.pos[t.b] - p.pos[t.a], p.pos[t.c] - p.pos[t.a]), {0, 0, 1});
-        const float R = r.range(0.14f, 0.28f) * h;
-        bool clear = true;
-        for (const Eye& e : eyes) clear = clear && length(e.c - c) > 1.6f * (e.R + R);
-        if (clear) eyes.push_back({c, nn, R, p.w[t.a], t.m.color});
+        return Eye{c, nn, 0, p.w[t.a], t.m.color, nn};
+    };
+    auto nearest = [&](Vec3 q) {
+        size_t best = 0;
+        float bd = 1e9f;
+        for (size_t k = 0; k < cands.size(); ++k) {
+            const float d = length(at(k).c - q);
+            if (d < bd) bd = d, best = k;
+        }
+        return best;
+    };
+    auto add = [&](Eye e) {
+        for (const Eye& o : eyes)
+            if (length(o.c - e.c) < 1.25f * (o.R + e.R)) return false;
+        eyes.push_back(e);
+        return true;
+    };
+    if (g.body.bodyEyes >= 5) {
+        Eye e = at(nearest(torsoPoint(0.66f, 0.5f * kPi) + Vec3{0, 0, 0.2f * h}));
+        e.R = 0.34f * h;
+        add(e);
+    }
+    for (int tries = 0; tries < g.body.bodyEyes * 16 && int(eyes.size()) + 1 < g.body.bodyEyes; ++tries) {
+        float pick = r.uniform() * total;
+        size_t k = 0;
+        while (k + 1 < cands.size() && pick > cands[k].area) pick -= cands[k].area, ++k;
+        Eye e = at(k);
+        if (e.c.x < 0.04f * h) continue;  // left side; the right mirrors it
+        e.R = (cands[k].part == torsoPart_ && e.c.y > m.hipJointY ? r.range(0.17f, 0.24f) : r.range(0.10f, 0.16f)) * h;
+        e.look = normalize(e.n + Vec3{r.range(-0.2f, 0.2f), r.range(-0.12f, 0.12f), r.range(0.0f, 0.25f)});
+        Eye m2 = at(nearest({-e.c.x, e.c.y, e.c.z}));
+        m2.R = e.R;
+        m2.look = normalize(Vec3{-e.look.x, e.look.y, e.look.z});
+        if (!add(e)) continue;
+        if (!add(m2)) eyes.pop_back();
     }
     Part& p = newPart(true);
     for (const Eye& e : eyes) {
         auto wf = [w = e.w](float, float, Vec3) { return w; };
-        const Vec3 look = normalize(e.n + Vec3{r.range(-0.25f, 0.25f), r.range(-0.15f, 0.15f), r.range(-0.1f, 0.25f)});
+        const Vec3 look = e.look;
         Ellipsoid b;
         b.center = e.c - e.n * (0.45f * e.R);  // sunk: only the front of the ball shows
         b.axis = look;
@@ -1411,8 +1442,165 @@ void Builder::buildBodyEyes() {
             const float a = kTau * float(k) / 12.0f;
             rim.push_back(e.c + e.n * (0.12f * e.R) + u * (std::cos(a) * 0.86f * e.R) + v * (std::sin(a) * 0.62f * e.R));
         }
-        const Mat lidM{e.skinC * 0.82f, MaterialClass::Skin};
+        const Mat lidM{e.skinC * 0.62f, MaterialClass::Skin};  // a dark, swollen lid ring
         emitTube(p, rim, [=](float) { return 0.22f * e.R; }, 5, wf, [=](float, float) { return lidM; });
+    }
+}
+
+// ---------------------------------------------------------------- beast stance
+
+// On all fours: the finished upright body is posed (the spine pitched forward across
+// hips, waist and chest, the legs and arms held vertical, the neck leaning and the head
+// level, the hands turned into forefeet) and that pose is baked in as the new rest pose.
+// The pitch is solved so the forefeet and the hind feet stand on the same ground.
+void Builder::bakeBeastStance() {
+    if (g.body.stance != 1 || g.body.centaur || g.body.lowerBody) return;
+    Skeleton& sk = ch.skeleton;
+    RigInfo& r = ch.rig;
+    Mesh& mesh = ch.mesh;
+    const size_t nb = sk.bones.size();
+    auto rx = [](float a) { return Quat::axisAngle({1, 0, 0}, a); };
+    auto makePose = [&](float th) {
+        Pose p = restPose(sk);
+        // Most of the pitch at the hip joints (the pelvis tips with the trunk, as when
+        // bending over), the rest spread up the spine so the back stays one long curve.
+        const float kh = 0.55f, ks = (1.0f - kh) * 0.65f;
+        p.rot[size_t(r.hips)] = rx(kh * th);
+        p.rot[size_t(r.spine)] = rx(ks * th);
+        p.rot[size_t(r.chest)] = rx((1.0f - kh - ks) * th);
+        const float ka = 0.30f, kl = 0.15f;  // forearm / thigh slant (fraction of the pitch)
+        for (const LimbRig& l : r.legs) p.rot[size_t(l.upper)] = rx(-(kh - kl) * th);
+        for (const LimbRig& a : r.arms) {
+            // Like a forelimb: the upper arm slants down and back from the shoulder, the
+            // forearm stands vertical, the hand bends forward into a forefoot.
+            p.rot[size_t(a.root)] = rx(-0.4f * th);
+            p.rot[size_t(a.upper)] = rx(-(0.6f - ka) * th);
+            p.rot[size_t(a.lower)] = rx(-ka * th);
+            p.rot[size_t(a.end)] = rx(-1.1f);
+        }
+        for (const LimbRig& w : r.wings) p.rot[size_t(w.root)] = rx(-th);
+        p.rot[size_t(r.neck)] = rx(-0.55f * th);
+        p.rot[size_t(r.head)] = rx(-0.45f * th);
+        return p;
+    };
+    // Which vertices stand on the forelimbs and which on the hind feet.
+    std::vector<char> fore(nb, 0), hind(nb, 0);
+    for (const LimbRig& a : r.arms)
+        for (int b : {a.lower, a.end}) fore[size_t(b)] = 1;
+    for (size_t i = 0; i < nb; ++i)  // fingers, claws and pincers hang from the hand
+        for (int p = sk.bones[i].parent; p >= 0; p = sk.bones[size_t(p)].parent)
+            if (fore[size_t(p)]) fore[i] = 1;
+    for (const LimbRig& l : r.legs)
+        for (int b : {l.end, l.tip}) hind[size_t(b)] = 1;
+    std::vector<Mat4> global, skin;
+    std::vector<Vec3> pos, nrm;
+    auto lowest = [&](float th, float& foreY, float& hindY) {
+        poseMatrices(sk, makePose(th), global, skin);
+        skinMesh(mesh, skin, pos, nrm);
+        foreY = hindY = 1e9f;
+        for (size_t i = 0; i < pos.size(); ++i) {
+            const Vertex& v = mesh.vertices[i];
+            int best = 0;
+            for (int k = 1; k < 4; ++k)
+                if (v.weights[k] > v.weights[best]) best = k;
+            const size_t j = v.joints[best];
+            if (fore[j]) foreY = std::min(foreY, pos[i].y);
+            if (hind[j]) hindY = std::min(hindY, pos[i].y);
+        }
+    };
+    // Bisection on the pitch: a steeper pitch lowers the shoulders and the forefeet.
+    float lo = 0.6f, hi = 2.2f, f = 0, hy = 0;
+    lowest(lo, f, hy);
+    if (f > hy) {
+        for (int it = 0; it < 14; ++it) {
+            const float mid = 0.5f * (lo + hi);
+            lowest(mid, f, hy);
+            (f > hy ? lo : hi) = mid;
+        }
+    }
+    const float th = 0.5f * (lo + hi);
+    const Pose pose = makePose(th);
+    poseMatrices(sk, pose, global, skin);
+    skinMesh(mesh, skin, pos, nrm);
+    float minY = 1e9f, maxY = -1e9f;
+    for (const Vec3& q : pos) minY = std::min(minY, q.y), maxY = std::max(maxY, q.y);
+    const Vec3 lift{0, -minY, 0};
+    for (size_t i = 0; i < pos.size(); ++i) mesh.vertices[i].pos = pos[i] + lift, mesh.vertices[i].normal = nrm[i];
+    // The pose becomes the rest pose: joints move, rest frames stay world-aligned, so
+    // everything stored in a bone's rest frame turns with that bone's rotation.
+    std::vector<Quat> rot(nb);
+    for (size_t i = 0; i < nb; ++i) {
+        const int p = sk.bones[i].parent;
+        rot[i] = normalize(p >= 0 ? rot[size_t(p)] * pose.rot[i] : pose.rot[i]);
+        sk.bones[i].restWorld = global[i].point({0, 0, 0}) + lift;
+    }
+    for (size_t i = 0; i < nb; ++i) {
+        const int p = sk.bones[i].parent;
+        sk.bones[i].restLocal = p >= 0 ? sk.bones[i].restWorld - sk.bones[size_t(p)].restWorld : sk.bones[i].restWorld;
+    }
+    for (JointLimit& l : r.limits) l.axis = rotate(rot[size_t(l.bone)], l.axis);
+    for (LimbRig& l : r.arms) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
+    for (LimbRig& l : r.legs) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
+    for (LimbRig& l : r.wings) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
+    for (SpringChain& c : ch.physics.chains)
+        if (!c.bones.empty()) c.tail = rotate(rot[size_t(c.bones.back())], c.tail);
+    for (PhysCollider& c : ch.physics.colliders) c.a = rotate(rot[size_t(c.bone)], c.a), c.b = rotate(rot[size_t(c.bone)], c.b);
+    ch.height = maxY - minY;
+}
+
+// ---------------------------------------------------------------- living world (orb body)
+
+// The trunk swallowed by a great sphere from the shins to above the crown: the face looks
+// out of its upper front, stubby arms and legs break from its sides and underside, and a
+// few stones circle it. Skinned up the spine so it leans and turns with the body.
+void Builder::buildOrbBody() {
+    if (!g.body.orb || bonesOnly_ || g.body.centaur || g.body.lowerBody) return;
+    const float h = m.h;
+    const RigInfo& r = ch.rig;
+    // From the hips to well over the crown; the head is carried forward (computeMarks) so
+    // the face breaks the front just above the equator while the chest stays inside.
+    const Vec3 face = headPoint(0.5f * kPi, 0.45f);
+    const float bottom = m.kneeY + 0.05f * h;
+    const float R = (face.y - bottom) / 1.3f, cy = bottom + R, top = cy + R;  // the face a little above the equator
+    const float dy = clamp(face.y - cy, -0.9f * R, 0.9f * R);
+    const float cz = face.z - 0.22f * h - std::sqrt(R * R - dy * dy);  // the face stands proud of the surface
+    const Vec3 c{0, cy, cz};
+    const int hips = r.hips, spine = r.spine, chest = r.chest, neck = r.neck;
+    const float y0 = bottom, y1 = top;
+    auto wf = [=](float, float, Vec3 p) {
+        const float t = saturate((p.y - y0) / (y1 - y0));
+        return chainWeights({{0.10f, hips}, {0.40f, spine}, {0.70f, chest}, {0.95f, neck}}, t);
+    };
+    ch.height = std::max(ch.height, top);
+    Part& p = newPart();
+    p.id = bodyGroup_;
+    Ellipsoid e;
+    e.center = c;
+    e.axis = {0, 1, 0};
+    e.up = {0, 0, 1};
+    e.rAxis = R;
+    e.rU = e.rV = R * 1.02f;
+    e.lat = lod.torsoSeg >= 16 ? 14 : 10;
+    e.lon = lod.torsoSeg >= 16 ? 22 : 16;
+    emitEllipsoid(p, e, wf, [=, this](float t, float) { return Mat{skin().color * (0.85f + 0.2f * t), MaterialClass::Skin}; });
+    // Moons: stones orbiting the equator.
+    Part& mp = newPart(true);
+    mp.id = bodyGroup_;
+    const uint64_t sd = g.seed;
+    for (int k = 0; k < 5; ++k) {
+        const float a = kTau * (float(k) + 0.3f * hash01(sd, 70 + uint64_t(k))) / 5.0f;
+        const float rr = R * (1.35f + 0.25f * hash01(sd, 80 + uint64_t(k)));
+        Ellipsoid s;
+        s.center = c + Vec3{rr * std::cos(a), R * 0.25f * std::sin(2.0f * a + 1.0f), rr * std::sin(a)};
+        s.axis = normalize(Vec3{hash01(sd, 90 + uint64_t(k)) - 0.5f, 1, 0.3f});
+        s.up = {0, 0, 1};
+        s.rAxis = (0.18f + 0.18f * hash01(sd, 100 + uint64_t(k))) * h;
+        s.rU = s.rAxis * 1.2f;
+        s.rV = s.rAxis * 0.9f;
+        s.lat = 3;
+        s.lon = 5;
+        emitEllipsoid(mp, s, [=](float, float, Vec3) { return one(chest); },
+                      [=](float, float) { return Mat{Vec3{0.30f, 0.28f, 0.27f}, MaterialClass::Leather}; });
     }
 }
 

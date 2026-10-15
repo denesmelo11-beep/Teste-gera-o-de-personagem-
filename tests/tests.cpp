@@ -144,7 +144,7 @@ int main() {
             CHECK(speciesFromString(toString(Species(sp))) == Species(sp), "nome do povo nao ida-e-volta");
         }
     // Each trait on a plain human, alone: wings (and folded), coils, hands, feet, beaks, crests, skins.
-    for (int k = 0; k < 30; ++k) {
+    for (int k = 0; k < 32; ++k) {
         Genome g = randomGenome(900 + uint64_t(k));
         BodyShape& b = g.body;
         switch (k) {
@@ -167,6 +167,8 @@ int main() {
             case 27: g.face.eyeKind = 3, g.face.eyePairs = 1; break;
             case 28: g.face.maw = true; break;
             case 29: b.bodyEyes = 20; break;
+            case 30: b.stance = 1, b.digitigrade = true; break;
+            case 31: b.orb = true; break;
             default: g.face.mandibles = true, g.face.antennae = 2, g.face.eyeKind = 1, b.ears = EarStyle::Fin; break;
         }
         const Character c = generateCharacter(g);
@@ -176,7 +178,13 @@ int main() {
         if (k == 8) CHECK(c.rig.pincers.size() == 2 && c.rig.pincers[0] >= 0, "pinca sem osso");
         if (k == 19) CHECK(c.rig.tentacles.size() == 6, "tentaculos sem rig");
         if (k == 24) CHECK(c.rig.serpent.size() == 3, "corpo de gosma sem rig");
-        if (k >= 24) {  // the new traits add geometry to a plain human
+        if (k == 30) {  // on all fours: forefeet and hind feet on the same ground, the trunk level-ish
+            const auto& bn = c.skeleton.bones;
+            const float hand = bn[size_t(c.rig.arms[0].end)].restWorld.y, foot = bn[size_t(c.rig.legs[0].end)].restWorld.y;
+            const float chestZ = bn[size_t(c.rig.chest)].restWorld.z, hipZ = bn[size_t(c.rig.hips)].restWorld.z;
+            CHECK(hand < 0.35f * c.height && chestZ > hipZ + 0.1f, "besta nao ficou de quatro (mao %f pe %f)", hand, foot);
+        }
+        if (k >= 24 && k < 30) {  // the new traits add geometry to a plain human
             Genome plain = g;
             plain.body.lowerBody = 0, plain.body.hands = 0, plain.face.eyeKind = 0, plain.face.maw = false, plain.body.bodyEyes = 0;
             CHECK(generateCharacter(plain).mesh.triangleCount() != c.mesh.triangleCount(), "traco %d sem efeito", k);

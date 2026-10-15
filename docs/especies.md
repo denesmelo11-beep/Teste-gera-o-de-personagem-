@@ -14,7 +14,7 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 | Four Arms | quatro braços, gigante | `armPairs = 2`, cânone de ogro | ✓ |
 | Stinkfly | asas de inseto, olhos de inseto | `wings = 3`, `eyeKind = 1`, `antennae` (Fae, Insectoid) | ✓ |
 | Ripjaws | cabeça de peixe abissal, barbatanas, cauda | `EarStyle::Fin`, `crest = 1`, presas (Fishfolk), `lowerBody = 1` para a cauda | ◐ |
-| Wildmutt / Benwolf | fera quadrúpede, focinho canino | Worgen (focinho, digitígrado, pelagem) | ◐ |
+| Wildmutt / Benwolf | fera quadrúpede, focinho canino | `stance = 1` em qualquer povo (Worgen de quatro = lobo atroz) | ✓ |
 | Ghostfreak / Ectoturner | espectro sem pernas | `lowerBody = 2` rastro (Wraith) | ✓ |
 | XLR8 | réptil veloz, cauda, viseira | Saurian: focinho réptil, cauda pesada, digitígrado | ◐ |
 | Upgrade | corpo maleável metálico | `skinKind = 1` metal (constructos) | ◐ |
@@ -42,7 +42,8 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 | Pesky Dust | fada pequena | Fae: pequena, asas de inseto, antenas plumosas | ◐ |
 | Arachnichimp / Ball Weevil | aranha, aracnídeo | ✗ corpo inferior aracnídeo (drider) | ✗ |
 | Ciclopes | um olho central | `eyeKind = 2` (Cyclops) | ✓ |
-| Wildmutt (vulpimancer) | fera cega, guelras no pescoço | `eyeKind = 3` sem olhos + focinho; corpo quadrúpede ainda não existe | ◐ |
+| Wildmutt (vulpimancer) | fera cega de quatro patas | `stance = 1` corpo de besta + `eyeKind = 3` + bocarra + espinhos (Gloomhound) | ✓ |
+| Gravattack (galileano) | corpo-planeta, rosto na esfera, membros curtos | `orb` + crosta de magma + luas orbitando (Gravitant) | ✓ |
 | Arctiguana (manzardill polar) | bocarra, criatura do gelo | `maw` + escamas + paleta gélida (Rimemaw) | ◐ |
 | Armodrillo / Juryrigg (talpaedano) | escavador, mãos de pá | `hands = 4` pás + focinho, olhos enterrados (Talpid) | ✓ |
 | Diamondhead (petrosapien) | corpo de cristal | Crystalborn | ✓ |
@@ -51,6 +52,7 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 
 - **Asas**: membrana, penas, inseto; abertas ou dobradas → dragões, demônios, aves, fadas, mariposas.
 - **Corpo inferior**: serpente (naga, sereia de abismo, lâmia), rastro (espectros, gênios), gosma (limos, polimorfos).
+- **Postura e massa**: de quatro patas (feras, cães, lobos, bestas de carga), corpo-planeta (esferas vivas, golens de mundo).
 - **Mãos**: garra de três dedos, pinça, tentáculos, pás de escavar → aves, crustáceos, horrores aquáticos.
 - **Pés**: garras de ave.
 - **Costas**: tentáculos, casco, lascas de cristal.
@@ -60,5 +62,6 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 
 Combinados com o que o motor já tinha (quatro braços, caudas, cristas dorsais, chifres, cascos,
 digitígrado, centauro, mortos-vivos, esqueletos), isso cobre a maior parte das raças de D&D e WoW.
-Lacunas mais úteis para a próxima rodada: corpo quadrúpede de fera (vulpimancer, cães e lobos
-de verdade), corpo inferior aracnídeo (drider) e pele vegetal.
+Lacunas mais úteis para a próxima rodada: corpo inferior aracnídeo (drider), pele vegetal e um
+modo de andar próprio para quem anda de quatro (hoje usa os clipes bípedes, que já alternam patas
+em diagonal).

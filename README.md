@@ -113,8 +113,8 @@ chargen_viewer --decay morte.png --seed 12              # estágios de decomposi
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
 chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDYFACES=1 retratos; CHARGEN_STUDIES="a b" subconjunto)
-chargen_viewer --peoples povos_tracos.png --seed 5      # os 18 povos de traços, homem e mulher (CHARGEN_FROM=cyclops: a partir de um povo)
-chargen_viewer --traits tracos.png --seed 3             # 30 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
+chargen_viewer --peoples povos_tracos.png --seed 5      # os 20 povos de traços, homem e mulher (CHARGEN_FROM=cyclops: a partir de um povo)
+chargen_viewer --traits tracos.png --seed 3             # 32 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
@@ -262,6 +262,12 @@ mesmo esqueleto, então as animações e a física existentes as movem:
 - **Corpo inferior** (`lowerBody`): cauda de serpente enrolada (ossos `coil0..7` em `rig.serpent`,
   ponta com física), rastro espectral (`wisp0..3`) ou monte de gosma com poça (`ooze0..2`). Os ossos de perna continuam existindo, então
   clipes e retargeting não quebram.
+- **Corpo de besta** (`stance = 1`): de quatro patas. O corpo pronto é posado (coluna inclinada
+  nos quadris, cintura e peito, braços viram patas dianteiras com o úmero inclinado, cabeça erguida
+  à frente) e essa pose vira a pose de repouso; a inclinação é resolvida para as quatro patas
+  tocarem o mesmo chão. Funciona em qualquer povo (um worgen de quatro vira lobo atroz).
+- **Corpo-planeta** (`orb`): o tronco engolido por uma esfera dos joelhos até acima da cabeça, o
+  rosto saindo da frente, braços e pernas curtos, pedras orbitando.
 - **Mãos** (`hands`): garras de três dedos, pinça de caranguejo (osso `pincer` com dobradiça,
   `rig.pincers`), tentáculos no lugar dos dedos, pás de escavar. **Pés** (`feet`): garras de ave.
 - **Costas**: tentáculos com física (`backTentacles`, `rig.tentacles`), casco de tartaruga com
@@ -274,10 +280,11 @@ mesmo esqueleto, então as animações e a física existentes as movem:
   fissuras incandescentes, recortadas na malha ao longo das bordas das placas; olhos abertos pelo
   tronco e membros (`bodyEyes`), presos aos ossos da pele onde nascem.
 
-Dezoito povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
+Vinte povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
 insectoid, fishfolk, demon, cephalid, fae, crystalborn, emberkin, wraith, cyclops (gigantes de um
-olho), talpid (toupeiras escavadoras), oculite (vigias cobertos de olhos), slime (gosma viva) e
-rimemaw (caçadores do gelo de bocarra). Eles ficam fora de
+olho), talpid (toupeiras escavadoras), oculite (vigias cobertos de olhos), slime (gosma viva),
+rimemaw (caçadores do gelo de bocarra), gloomhound (caçadores cegos de quatro patas) e gravitant
+(mundos vivos). Eles ficam fora de
 `mixedSpecies` (as chaves antigas geram os mesmos personagens); peça-os por `GenomeOptions::species`
 ou ligue qualquer traço em qualquer povo. Hitboxes novas: `wing` e `tentacle`.
 A cobertura de formas usada como referência está em [docs/especies.md](docs/especies.md).

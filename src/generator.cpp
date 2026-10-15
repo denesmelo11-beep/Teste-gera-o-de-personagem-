@@ -243,7 +243,7 @@ void Builder::computeMarks() {
                 a.shoulder = {a.side * std::max(S - 0.55f * del, 0.5f * S), m.shoulderY - 0.05f * h - 0.9f * del - 0.10f * mu * h,
                               -0.02f * h + 0.05f * b.hunch * h + 0.20f * stoop * h};
                 a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h + 0.03f * b.hunch * h + 0.20f * stoop * h};
-                angle = 46.0f;
+                angle = b.stance == 1 ? 9.0f : 46.0f;  // forelegs stand under the shoulders
                 fwd = 0.0f;
             } else {
                 // A second shoulder girdle on the lower ribcage: a little smaller, angled
@@ -272,6 +272,7 @@ void Builder::computeMarks() {
 
     m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h + 0.06f * b.hunch * h + 0.24f * stoop * h};
     m.headOrigin = {0, m.chinY, 0.05f * h + 0.12f * b.hunch * h + 0.45f * stoop * h};
+    if (b.orb && !b.centaur && !b.lowerBody) m.headOrigin.z += 0.55f * h;  // the face set in the front of the sphere
     m.headPivot = m.headOrigin + Vec3{0, 0.14f * h, -0.10f * h};
 }
 
@@ -2427,6 +2428,7 @@ Character Builder::build() {
         breakConstruct();
         applyConstructCut();
         finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
+        bakeBeastStance();
         ch.faceAtlas = paintFaceAtlas(g);
         return std::move(ch);
     }
@@ -2454,6 +2456,7 @@ Character Builder::build() {
     buildTraitEyes();
     buildMaw();
     buildCrest();
+    buildOrbBody();
     buildColliders();
     buildHair();
     buildFacialHair();
@@ -2474,6 +2477,7 @@ Character Builder::build() {
     buildBodyEyes();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
+    bakeBeastStance();
     ch.faceAtlas = paintFaceAtlas(g);
     return std::move(ch);
 }
