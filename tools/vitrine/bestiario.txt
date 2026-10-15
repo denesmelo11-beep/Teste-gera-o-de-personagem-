@@ -1,0 +1,19 @@
+# Bestiario: o que espreita a noite. Feras quadrupedes, colossos, horrores e mortos.
+res 960 540
+scale 2
+backdrop noite.png
+fill 0.26 0.30 0.44  0.20 0.18 0.22
+light 0.55 0.65 0.35
+shadow 10 8 16 110
+camera 0 2.0 0  0.0 0.04 14.5 28
+warmup 1.0
+actor gloomhound          -5.0  0.9  0.9  seed=5 cues="0.9:roar"
+actor study:chitin_horror -3.6 -0.4  0.6  seed=3 cues="1.1:roar"
+actor study:four_armed_giant -1.9 -1.4 0.35 seed=2 cues="0.8:roar"
+actor gravitant            0.2 -2.0  0.0  seed=3 cues="0.8:roar"
+actor skeleton            -0.4  1.0  0.4  seed=2 age=adult cues="1.5:attack"
+actor wraith               1.3  0.3 -0.3  seed=6 age=adult cues="0.8:cast"
+actor study:centaur_warlord 2.9 -1.0 -0.6 seed=1 cues="0.8:roar"
+actor slime                4.0  0.6 -0.5  seed=6 age=adult cues="0.9:roar"
+actor gloomhound           5.2  1.0 -1.0  seed=6 cues="1.55:swipe"
+shot 2.0 saida/bestiario.png

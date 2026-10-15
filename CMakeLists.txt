@@ -1,11 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
-project(chargen VERSION 0.1.0 LANGUAGES CXX)
+project(chargen VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE Release)
+# Used from a game (add_subdirectory / FetchContent) only the library is built by default;
+# the CLI, tests and viewer are for working on chargen itself.
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  set(CHARGEN_TOP_LEVEL ON)
+else()
+  set(CHARGEN_TOP_LEVEL OFF)
+endif()
+option(CHARGEN_BUILD_TOOLS "Build chargen_cli and the tests" ${CHARGEN_TOP_LEVEL})
+
+if(CHARGEN_TOP_LEVEL)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_CXX_EXTENSIONS OFF)
+  if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release)
+  endif()
 endif()
 
 add_library(chargen
@@ -25,7 +36,9 @@ add_library(chargen
   src/engine.cpp
   src/studies.cpp
   src/traits.cpp)
-target_include_directories(chargen PUBLIC include)
+add_library(chargen::chargen ALIAS chargen)
+target_compile_features(chargen PUBLIC cxx_std_20)
+target_include_directories(chargen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 find_package(Threads REQUIRED)
 target_link_libraries(chargen PUBLIC Threads::Threads)
 if(MSVC)
@@ -34,13 +47,15 @@ else()
   target_compile_options(chargen PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
 endif()
 
-add_executable(chargen_cli apps/chargen_cli.cpp)
-target_link_libraries(chargen_cli PRIVATE chargen)
+if(CHARGEN_BUILD_TOOLS)
+  add_executable(chargen_cli apps/chargen_cli.cpp)
+  target_link_libraries(chargen_cli PRIVATE chargen)
 
-enable_testing()
-add_executable(chargen_tests tests/tests.cpp)
-target_link_libraries(chargen_tests PRIVATE chargen)
-add_test(NAME chargen_tests COMMAND chargen_tests)
+  enable_testing()
+  add_executable(chargen_tests tests/tests.cpp)
+  target_link_libraries(chargen_tests PRIVATE chargen)
+  add_test(NAME chargen_tests COMMAND chargen_tests)
+endif()
 
 # ---- optional raylib viewer ----
 option(CHARGEN_VIEWER "Build the raylib/OpenGL viewer" OFF)

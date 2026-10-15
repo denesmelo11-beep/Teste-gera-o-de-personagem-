@@ -26,7 +26,8 @@ enum class HairStyle : uint8_t {
     Bald, Buzz, ShortCrop, SidePart, SlickedBack, Messy, Undercut, Pixie,
     Bob, Shoulder, LongStraight, LongWavy, Ponytail, HighPonytail, Braid, Bun, HalfUp, ManBun,
     CrewCut, Tonsure, WarriorBraids, Curly, Afro, Mullet, Topknot, Locs, Wolf,
-    Hime, CrownBraid, TwinBraids, SideBraid, LowPonytail, BowlCut, MessyBun, LongCurly, VeryLong, AsymBob, Count
+    Hime, CrownBraid, TwinBraids, SideBraid, LowPonytail, BowlCut, MessyBun, LongCurly, VeryLong, AsymBob,
+    Mohawk, Spiky, Pompadour, Cornrows, BraidedCrest, SideShave, Pigtails, SpaceBuns, WildMane, WarriorTail, SweptLong, BeadedBraids, Count
 };
 bool isShortHair(HairStyle h);  // cut close to the head (cap + locks only)
 bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
@@ -164,6 +165,10 @@ struct BodyShape {
     bool tailFur = false;       // bushy furred tail (hair material)
     bool claws = false;         // dark claws on fingers and toes
     int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs, 3 also stripes (beasts)
+    int furMarks = 0;           // markings in the coat (furred bodies): 0 none, 1 spots, 2 dark dorsal streak, 3 banded limbs
+    int bodyArt = 0;            // 0 none, 1 tribal arm bands, 2 war paint (claw strokes over the chest), 3 rune sleeve on one arm,
+                                // 4 battle scars, 5 bone paint (ribs over the chest), 6 glowing runes
+    Vec3 bodyArtColor{0.55f, 0.12f, 0.10f};
     int bones = 0;              // exposed bones (undead): 1 ribs, 2 forearm, 4 shin, 8 jaw
     int boneSide = 1;           // +1 left, -1 right
     // ---- composable species traits (any people can wear any of them) ----
@@ -248,7 +253,9 @@ struct FaceStyle {
     float ruddy = 0.0f;        // weathered red on nose and cheeks 0..1
     float grime = 0.0f;        // dirt smudges (survivors, labourers) 0..1
     int scarType = 0;          // 0 none, 1 brow-to-cheek, 2 across the nose, 3 lip, 4 cheek gash, 5 blinded eye
-    int tattoo = 0;            // 0 none, 1 runic lines, 2 tribal cheek marks, 3 forehead sigil
+    int tattoo = 0;            // 0 none, 1 runic lines, 2 tribal cheek marks, 3 forehead sigil, 4 chin lines, 5 eye band, 6 tear lines
+    int piercings = 0;         // bitmask: 1 ear hoops (several along an elf's ear), 2 brow studs, 4 lip ring
+    bool whiskers = false;     // long whiskers from the sides of a muzzle
     bool glowEyes = false;     // luminous eyes without pupils (elves, draenei, undead)
     bool darkNose = false;     // a dark, wet animal nose (worgen)
     float milky = 0.0f;        // clouded, dead eyes 0..1

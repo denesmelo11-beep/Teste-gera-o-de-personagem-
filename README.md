@@ -10,6 +10,29 @@ O núcleo não tem dependências externas (só a biblioteca padrão de C++20; o 
 exportador glTF e um renderizador de preview em software foram escritos aqui). O visualizador usa
 Raylib 5.5 (opcional).
 
+## Vitrine
+
+![grupo](docs/vitrine/grupo.png)
+
+| Em movimento: cada um repete a sua ação (rugido, magia, golpe, esquiva, patada) |
+|---|
+| ![grupo em ação](docs/vitrine/grupo_acao.gif) |
+
+| Duelo: golpes, esquiva, magia, reações físicas e a queda em ragdoll | Roleta: cada vaga sorteia uma pessoa nova de qualquer povo |
+|---|---|
+| ![duelo](docs/vitrine/duelo.gif) | ![roleta](docs/vitrine/roleta.gif) |
+
+| Bestiário: feras quadrúpedes, colosso de pedra, gigante de quatro braços, horror de quitina, centauro, espectro, limo e esqueleto |
+|---|
+| ![bestiário](docs/vitrine/bestiario.png) |
+| ![bestiário em ação](docs/vitrine/bestiario_acao.gif) |
+
+| Expressões: o mesmo rosto 2D (olhos e boca) passando por alegria, susto, raiva, tristeza, confiança, dor e fala |
+|---|
+| ![expressões](docs/vitrine/expressoes.gif) |
+
+Tudo isso sai de `tools/vitrine/montar.sh` (cenas em texto, ver [Cenas](#cenas-de-vitrine---scene)).
+
 | Folha de modelo (`chargen_viewer --studio`) | Anatomia em planos |
 |---|---|
 | ![folha](docs/folha_modelo.png) | ![anatomia](docs/anatomia.png) |
@@ -139,13 +162,17 @@ noturno, alto-elfo, orc e ogro voltarem a dividir a mesma cabeça.
 |---|
 | ![rostos](docs/rostos.png) |
 
-| Os 37 cortes (`--cuts`) | Expressões |
+| Os 49 cortes (`--cuts`) | Expressões |
 |---|---|
 | ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
 
 | Barbas (`--heads`): nenhuma, barba rala, bigode, cavanhaque, curta, cheia, longa, trançada |
 |---|
 | ![barbas](docs/cabelos_barbas.png) |
+
+| Marcas (`CHARGEN_ART`, `CHARGEN_TATTOO`, `CHARGEN_PIERCE`, `CHARGEN_FURMARKS`): faixas tribais, pintura de guerra, manga de runas, cicatrizes, costelas pintadas, runas brilhantes; máscara pintada nos olhos, lágrimas, argolas e piercings; pelagem malhada, faixa no dorso, membros listrados |
+|---|
+| ![marcas](docs/marcas.png) |
 
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
@@ -237,6 +264,31 @@ casco e corvo. `chargen_cli portraits --horns K --beak K --bald` força o format
 
 ![poses](docs/anim_frases.png)
 
+## Usar no jogo
+
+A biblioteca não tem dependências além da biblioteca padrão de C++20. Dentro de outro projeto
+CMake só ela é compilada (o CLI, os testes e o visualizador ficam de fora; `-DCHARGEN_BUILD_TOOLS=ON`
+liga os dois primeiros):
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(chargen
+  GIT_REPOSITORY https://github.com/denesmelo11-beep/Teste-gera-o-de-personagem-.git
+  GIT_TAG v1.0.0)
+FetchContent_MakeAvailable(chargen)          # ou: add_subdirectory(externo/chargen)
+target_link_libraries(meu_jogo PRIVATE chargen::chargen)
+```
+
+```cpp
+#include "chargen/engine.hpp"
+
+cg::CharacterKey k;
+k.seed = semente;
+k.options.species = cg::Species::Orc;
+cg::Character npc = cg::generateFromKey(k);      // malha, esqueleto, rig, rosto
+std::string chave = cg::encodeKey(k);            // salva o NPC em 32 caracteres
+```
+
 ## Compilar
 
 ```bash
@@ -277,6 +329,31 @@ chargen_viewer --traits tracos.png --seed 3             # 32 painéis, um traço
 # CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
+
+### Cenas de vitrine (`--scene`)
+
+`chargen_viewer --scene cena.txt` encena personagens num arquivo de texto, sem recompilar: fundo
+pintado, luz, câmera (com órbita), quem está onde e o que cada um faz e quando. O movimento passa
+pelo `cg::Animator` (músculos, IK dos pés, cabelo e cauda, golpes físicos e ragdoll).
+
+```text
+res 960 540                 # resolução interna       scale 2   (ampliação sem filtro)
+backdrop papel.png          # ou: sky r g b r g b     fill r g b r g b   light x y z   shadow r g b a
+camera 0 1.4 0  0.0 0.03 12 28                       # alvo, yaw, pitch, distância, fov   (orbit rad/s)
+labels 110 96 80            # nome do povo sob os pés
+shot 2.0 saida/grupo.png    # foto no tempo 2,0 s     frames 4 25 saida/quadros 4   (GIF que fecha o ciclo)
+actor orc -1.75 0.1 0.35 sex=m seed=2 age=adult repeat=4 cues="0.9:roar 2.5:attack"
+actor orc|troll|naga 0 0 0 reroll=1.6 phase=0.3     # sorteia outra pessoa da lista a cada 1,6 s
+actor study:centaur_warlord 2.9 -1 -0.6 cues="1.2:hit:front 3:die:back:1.8"
+actor human 0 0 0 headat=1.6 cues="0:emo:Joy 0.8:emo:Rage"   # retratos alinhados pela cabeça
+```
+
+Chaves de `actor`: `sex`, `seed`, `age`, `persona`, `archetype`, `arms=4`, os traços (`wings`, `lower`,
+`hands`, `feet`, `beak`, `crest`, `skin`, `tentacles`, `art`, `tattoo`, `furmarks`, `tail`, `horns`,
+`hair`, `fold`, `muscle`), `base` (clipe para onde volta), `repeat`, `reroll`, `phase`, `headat` e
+`cues` com qualquer clipe, `base:clipe`, `hit:lado[:força]`, `die:lado[:força]`, `emo:Rage|off` e
+`revive`. `tools/vitrine/montar.sh` gera os fundos (`fundos.py`), roda as cenas e monta os GIFs
+(ffmpeg + gifsicle): `xvfb-run -a tools/vitrine/montar.sh build/chargen_viewer pasta_de_saida`.
 
 Teclas: `N` novos personagens · `1-9` idle/walk/run/attack/dodge/hit/cast/roar/death · `R` correr em círculo ·
 `E` expressões · `W` vento · `L` baixa resolução · `Espaço` pausa · arrastar = câmera.
@@ -542,7 +619,11 @@ pares (os de baixo em contraponto).
 ### Cabelo e física
 - Catálogo pensado para um mundo medieval sombrio: rente, raspado, repartido, para trás, bagunçado,
   tonsura de monge, corte tigela, tranças de guerreiro, trança-coroa, tranças, coques, rabos de
-  cavalo, dreads, cachos longos, muito longo e outros (37 no total, com pesos por sexo, idade e persona).
+  cavalo, dreads, cachos longos, muito longo e outros (49 no total, com pesos por sexo, idade, persona e povo).
+- Cortes de guerreiro e de povo: crista penteada para trás sobre laterais raspadas (moicano de orc e
+  troll, terminando num rabicho), crista trançada nórdica, rabo alto com laterais raspadas, topete,
+  trancinhas rente ao couro (cornrows), meia cabeça raspada, juba selvagem, franja longa sobre um
+  olho, tranças finas com contas de metal, maria-chiquinha, coques duplos e mechas em tufos.
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
 - Cortes curtos, topo dos longos e presos: **mechas facetadas** (cunhas com crista e ponta) deitadas
   sobre uma calota fina, sobrepostas como telhas e penteadas por um campo de direção próprio de
