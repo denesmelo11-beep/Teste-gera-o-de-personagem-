@@ -10,6 +10,29 @@ O núcleo não tem dependências externas (só a biblioteca padrão de C++20; o 
 exportador glTF e um renderizador de preview em software foram escritos aqui). O visualizador usa
 Raylib 5.5 (opcional).
 
+## Vitrine
+
+![grupo](docs/vitrine/grupo.png)
+
+| Em movimento: cada um repete a sua ação (rugido, magia, golpe, esquiva, patada) |
+|---|
+| ![grupo em ação](docs/vitrine/grupo_acao.gif) |
+
+| Duelo: golpes, esquiva, magia, reações físicas e a queda em ragdoll | Roleta: cada vaga sorteia uma pessoa nova de qualquer povo |
+|---|---|
+| ![duelo](docs/vitrine/duelo.gif) | ![roleta](docs/vitrine/roleta.gif) |
+
+| Bestiário: feras quadrúpedes, colosso de pedra, gigante de quatro braços, horror de quitina, centauro, espectro, limo e esqueleto |
+|---|
+| ![bestiário](docs/vitrine/bestiario.png) |
+| ![bestiário em ação](docs/vitrine/bestiario_acao.gif) |
+
+| Expressões: o mesmo rosto 2D (olhos e boca) passando por alegria, susto, raiva, tristeza, confiança, dor e fala |
+|---|
+| ![expressões](docs/vitrine/expressoes.gif) |
+
+Tudo isso sai de `tools/vitrine/montar.sh` (cenas em texto, ver [Cenas](#cenas-de-vitrine---scene)).
+
 | Folha de modelo (`chargen_viewer --studio`) | Anatomia em planos |
 |---|---|
 | ![folha](docs/folha_modelo.png) | ![anatomia](docs/anatomia.png) |
@@ -281,6 +304,31 @@ chargen_viewer --traits tracos.png --seed 3             # 32 painéis, um traço
 # CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
+
+### Cenas de vitrine (`--scene`)
+
+`chargen_viewer --scene cena.txt` encena personagens num arquivo de texto, sem recompilar: fundo
+pintado, luz, câmera (com órbita), quem está onde e o que cada um faz e quando. O movimento passa
+pelo `cg::Animator` (músculos, IK dos pés, cabelo e cauda, golpes físicos e ragdoll).
+
+```text
+res 960 540                 # resolução interna       scale 2   (ampliação sem filtro)
+backdrop papel.png          # ou: sky r g b r g b     fill r g b r g b   light x y z   shadow r g b a
+camera 0 1.4 0  0.0 0.03 12 28                       # alvo, yaw, pitch, distância, fov   (orbit rad/s)
+labels 110 96 80            # nome do povo sob os pés
+shot 2.0 saida/grupo.png    # foto no tempo 2,0 s     frames 4 25 saida/quadros 4   (GIF que fecha o ciclo)
+actor orc -1.75 0.1 0.35 sex=m seed=2 age=adult repeat=4 cues="0.9:roar 2.5:attack"
+actor orc|troll|naga 0 0 0 reroll=1.6 phase=0.3     # sorteia outra pessoa da lista a cada 1,6 s
+actor study:centaur_warlord 2.9 -1 -0.6 cues="1.2:hit:front 3:die:back:1.8"
+actor human 0 0 0 headat=1.6 cues="0:emo:Joy 0.8:emo:Rage"   # retratos alinhados pela cabeça
+```
+
+Chaves de `actor`: `sex`, `seed`, `age`, `persona`, `archetype`, `arms=4`, os traços (`wings`, `lower`,
+`hands`, `feet`, `beak`, `crest`, `skin`, `tentacles`, `art`, `tattoo`, `furmarks`, `tail`, `horns`,
+`hair`, `fold`, `muscle`), `base` (clipe para onde volta), `repeat`, `reroll`, `phase`, `headat` e
+`cues` com qualquer clipe, `base:clipe`, `hit:lado[:força]`, `die:lado[:força]`, `emo:Rage|off` e
+`revive`. `tools/vitrine/montar.sh` gera os fundos (`fundos.py`), roda as cenas e monta os GIFs
+(ffmpeg + gifsicle): `xvfb-run -a tools/vitrine/montar.sh build/chargen_viewer pasta_de_saida`.
 
 Teclas: `N` novos personagens · `1-9` idle/walk/run/attack/dodge/hit/cast/roar/death · `R` correr em círculo ·
 `E` expressões · `W` vento · `L` baixa resolução · `Espaço` pausa · arrastar = câmera.

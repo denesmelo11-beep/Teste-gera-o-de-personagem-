@@ -1,0 +1,17 @@
+# Roleta: cada vaga sorteia uma pessoa nova de um povo qualquer a cada 1,6 s.
+res 960 540
+scale 1
+backdrop papel.png
+fill 0.62 0.60 0.58  0.50 0.44 0.36
+light -0.5 0.75 0.45
+shadow 90 70 50 60
+labels 110 96 80
+camera 0 1.35 0  0.0 0.04 12.5 28
+warmup 0.5
+frames 9.6 20 saida/roleta_quadros
+actor emberkin|draenei|tortle|centaur|gravitant|oculite|tauren|cyclops|goblin|wraith|fishfolk|skeleton|gnome|troll|cephalid|nightelf|human|gloomhound|naga|crystalborn|avian|ogre|slime|dragonborn|worgen|orc|undead|rimemaw|insectoid|highelf|fae|talpid|dwarf|demon|saurian -4.00 -0.3 0.5 seed=100 age=adult reroll=1.6 phase=0.00 repeat=1.6 cues="0.45:roar"
+actor slime|demon|skeleton|rimemaw|tauren|troll|oculite|wraith|goblin|gloomhound|ogre|crystalborn|nightelf|fae|dragonborn|gravitant|talpid|tortle|cephalid|avian|worgen|centaur|emberkin|draenei|highelf|undead|insectoid|saurian|human|gnome|cyclops|naga|dwarf|orc|fishfolk -2.40 0.3 0.3 seed=113 age=adult reroll=1.6 phase=0.27 repeat=1.6 cues="0.45:attack"
+actor gnome|fae|worgen|ogre|wraith|rimemaw|crystalborn|human|cephalid|orc|gravitant|gloomhound|saurian|goblin|naga|avian|skeleton|demon|fishfolk|tauren|undead|dwarf|insectoid|nightelf|slime|cyclops|dragonborn|oculite|tortle|draenei|centaur|talpid|emberkin|highelf|troll -0.80 -0.3 0.1 seed=126 age=adult reroll=1.6 phase=0.54 repeat=1.6 cues="0.45:cast"
+actor cyclops|naga|crystalborn|skeleton|centaur|tortle|draenei|wraith|orc|highelf|goblin|saurian|undead|troll|rimemaw|insectoid|fae|human|worgen|oculite|ogre|nightelf|talpid|gloomhound|avian|fishfolk|slime|cephalid|tauren|dragonborn|dwarf|emberkin|gravitant|gnome|demon 0.80 0.3 -0.1 seed=139 age=adult reroll=1.6 phase=0.81 repeat=1.6 cues="0.45:roar"
+actor skeleton|undead|tortle|fae|human|cyclops|nightelf|centaur|saurian|dwarf|rimemaw|cephalid|ogre|tauren|worgen|dragonborn|oculite|slime|naga|draenei|fishfolk|troll|gravitant|demon|orc|talpid|emberkin|wraith|goblin|highelf|insectoid|crystalborn|gnome|avian|gloomhound 2.40 -0.3 -0.3 seed=152 age=adult reroll=1.6 phase=1.08 repeat=1.6 cues="0.45:dodge"
+actor slime|skeleton|gloomhound|insectoid|tauren|gnome|wraith|troll|gravitant|oculite|cyclops|ogre|emberkin|tortle|cephalid|dwarf|goblin|orc|draenei|human|fae|centaur|nightelf|avian|dragonborn|saurian|demon|worgen|naga|talpid|undead|crystalborn|fishfolk|rimemaw|highelf 4.00 0.3 -0.5 seed=165 age=adult reroll=1.6 phase=1.35 repeat=1.6 cues="0.45:attack"
