@@ -85,7 +85,8 @@ dele. `Genome::head` traz os eixos do crânio, todos em zero para o humano:
 Os eixos são contidos de propósito: um crânio coeso vale mais que um crânio diferente a qualquer
 custo. O aviano tem crânio redondo e o bico engrossa na raiz, nascendo da cara. Nos povos de
 focinho, a ponte do nariz desce da testa até o focinho e a mandíbula continua ligada ao pescoço,
-então não há degrau nem buraco sob os olhos; a órbita e as maçãs não cavam sulco no focinho.
+então não há degrau nem buraco sob os olhos; a órbita e as maçãs não cavam sulco no focinho. Os
+olhos sobem junto com o focinho (`eyeLift`): ficam no crânio, acima de onde o focinho começa.
 
 E um **vocabulário de olhos** (`EyeLook`) pensado para 2 ou 3 pixels: o que lê de longe é contraste
 de valor (órbita escura com um ponto claro), não desenho.

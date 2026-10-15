@@ -202,15 +202,16 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     const EyeParams P = eyeParams(expr);
     const EyeShape S = eyeShapeFor(g);
     float W = S.W, Hh = S.Hh;
-    float ey = 0.462f, exOff = 0.188f * f.eyeSpacing;
+    const float lift = eyeLift(g);
+    float ey = 0.462f + lift, exOff = 0.188f * f.eyeSpacing;
     // A second pair (four-eyed peoples) sits below and a little wider, smaller and
     // without brows; the main pair moves up to make room.
     struct Row {
         float ey, ex, scale;
         bool main;
     };
-    std::vector<Row> rows{{0.462f, 0.188f * f.eyeSpacing, 1.0f, true}};
-    if (f.eyePairs >= 2) rows = {{0.506f, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f, 0.200f * f.eyeSpacing, 0.78f, false}};
+    std::vector<Row> rows{{0.462f + lift, 0.188f * f.eyeSpacing, 1.0f, true}};
+    if (f.eyePairs >= 2) rows = {{0.506f + lift, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f + lift, 0.200f * f.eyeSpacing, 0.78f, false}};
     const Vec3 lash = lerp(pal.brow * 0.4f, Vec3{0.08f, 0.05f, 0.05f}, 0.6f);
     const Vec3 skinDark = pal.skin * Vec3{0.70f, 0.56f, 0.54f};
     const float lidDrop = saturate(f.restLid + 0.18f * f.ageLines + (f.eyeShape == 5 ? 0.22f : 0.0f) + P.lidDrop);
@@ -652,18 +653,18 @@ void paintSkin(CellPainter& cp, const Genome& g) {
         st.bounds(lo, hi);
         cp.fill(st, Vec4(mul * 0.5f, a), lo, hi);
     };
-    const float ex = (f.eyePairs >= 2 ? 0.180f : 0.188f) * f.eyeSpacing, ey = f.eyePairs >= 2 ? 0.506f : 0.462f;
+    const float ex = (f.eyePairs >= 2 ? 0.180f : 0.188f) * f.eyeSpacing, ey = (f.eyePairs >= 2 ? 0.506f : 0.462f) + eyeLift(g);
     const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;  // the side scars and marks favour
 
     // Eye sockets: shade under the brow ridge and around the eye, deeper for deep-set eyes.
     if (f.eyePairs >= 2)  // the lower, smaller pair (the main one is shaded below, moved up)
-        for (float sd : {1.0f, -1.0f}) soft({sd * 0.200f * f.eyeSpacing, 0.398f}, {0.095f, 0.050f}, {0.78f, 0.68f, 0.72f}, 0.40f + 0.50f * f.eyeDepth, 0.8f);
+        for (float sd : {1.0f, -1.0f}) soft({sd * 0.200f * f.eyeSpacing, 0.398f + eyeLift(g)}, {0.095f, 0.050f}, {0.78f, 0.68f, 0.72f}, 0.40f + 0.50f * f.eyeDepth, 0.8f);
     for (float sd : {1.0f, -1.0f}) {
         soft({sd * ex, ey + 0.020f}, {0.150f, f.eyePairs >= 2 ? 0.070f : 0.090f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.55f * f.eyeDepth, 0.8f);
         // Socket wells: a darker, tighter shadow round the eye that survives at game distance
         // (a dark well with a light point inside reads as an eye in two or three pixels).
         if (g.head.socket > 0.01f)
-            soft({sd * ex, ey + 0.006f}, {0.125f, f.eyePairs >= 2 ? 0.058f : 0.072f}, {0.42f, 0.36f, 0.40f}, 0.75f * g.head.socket * (1.0f - 0.75f * saturate(g.body.muzzle)), 0.6f);
+            soft({sd * ex, ey + 0.006f}, {0.125f, f.eyePairs >= 2 ? 0.058f : 0.072f}, {0.42f, 0.36f, 0.40f}, 0.75f * g.head.socket, 0.6f);
         soft({sd * 0.075f, ey + 0.012f}, {0.050f, 0.060f}, {0.78f, 0.68f, 0.70f}, 0.25f + 0.35f * f.eyeDepth);  // inner corner
         // Tired, puffy under-eyes.
         soft({sd * (ex + 0.005f), ey - 0.062f}, {0.085f, 0.024f}, {0.80f, 0.70f, 0.78f}, 0.55f * f.eyeBags);
@@ -857,7 +858,7 @@ Image paintFaceAtlas(const Genome& g) {
     auto eyeJob = [&](int i) {
         auto c = FaceLayout::eyeCell(EyeExpr(i));
         CellPainter cp(px, W, c[0], c[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH, FaceLayout::kEyeX0,
-                       FaceLayout::kEyeX1, FaceLayout::kEyeS0, FaceLayout::kEyeS1);
+                       FaceLayout::kEyeX1, FaceLayout::kEyeS0 + eyeLift(g), FaceLayout::kEyeS1 + eyeLift(g));
         paintEyes(cp, g, EyeExpr(i));
     };
     auto mouthJob = [&](int i) {

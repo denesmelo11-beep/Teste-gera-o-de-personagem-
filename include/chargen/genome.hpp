@@ -342,6 +342,10 @@ struct Genome {
     HeadForm head;             // last: snapshots saved before it existed load with a human skull
 };
 
+// How far the eyes sit above the human eye line (head units): on a snouted head they
+// ride up on the skull, above where the muzzle starts, instead of on the snout.
+inline float eyeLift(const Genome& g) { return g.body.muzzle * (g.body.snout == 0 ? 0.085f : 0.07f); }
+
 struct GenomeOptions {
     std::optional<Archetype> archetype;  // Natural when empty
     std::optional<Sex> sex;

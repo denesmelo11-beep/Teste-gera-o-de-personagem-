@@ -29,7 +29,7 @@ float Builder::muzzleDepth(float s) const {
     if (M <= 0.0f) return 0.0f;
     if (g.body.snout == 1) return M * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s));
     if (g.body.snout == 2) return M * 0.62f * smoothstep(0.46f, 0.36f, s) * (0.45f + 0.55f * smoothstep(0.0f, 0.22f, s));
-    return M * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+    return M * 0.46f * smoothstep(0.50f, 0.38f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
 }
 
 SuperRing Builder::headRing(float s) const {
@@ -96,7 +96,8 @@ float Builder::faceRelief(float xn, float s) const {
     // sockets: the main pair higher under a higher brow, a smaller pair below it set a
     // little wider, a bony ridge between them and the cheekbones pushed down.
     const bool four = f.eyePairs >= 2;
-    const float browS = four ? 0.600f : 0.56f, eyeS = four ? 0.506f : 0.468f, cheekS = four ? 0.330f : 0.375f;
+    const float lift = eyeLift(g);
+    const float browS = (four ? 0.600f : 0.56f) + lift, eyeS = (four ? 0.506f : 0.468f) + lift, cheekS = four ? 0.330f : 0.375f;
     r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - browS) / 0.045f) * bump(xn / 0.36f);
     // On a snout the socket groove would cut a trench across the muzzle: keep it shallow.
     const float snoutK = 1.0f - 0.8f * saturate(muzzleDepth(s) / 0.12f);
@@ -354,7 +355,7 @@ void Builder::buildEyelids() {
     struct Row {
         float ey, ex, scale;
     };
-    const Row rows[] = {{0.506f, 0.180f * f.eyeSpacing, 0.86f}, {0.392f, 0.200f * f.eyeSpacing, 0.78f}};
+    const Row rows[] = {{0.506f + eyeLift(g), 0.180f * f.eyeSpacing, 0.86f}, {0.392f + eyeLift(g), 0.200f * f.eyeSpacing, 0.78f}};
     Part& p = newPart();
     const int head = ch.rig.head;
     const Mat lid{g.palette.skin * 0.92f, MaterialClass::Skin};
@@ -444,7 +445,7 @@ void Builder::buildFaceDecals() {
         auto ok = [&](uint32_t a, uint32_t b, uint32_t c) {
             const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
             const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
-            // Eyes on a snout sit on the steep sides of the face: keep them, or they vanish.
+            // The eyes keep steeper quads: on a snouted skull they sit where the face turns.
             return std::fabs(n.z) > (kind == SubmeshKind::FaceEyes ? 0.15f : 0.45f) && onHead[a] && onHead[b] && onHead[c];
         };
         for (int j = 0; j < ny; ++j)
@@ -458,7 +459,7 @@ void Builder::buildFaceDecals() {
     auto ec = FaceLayout::eyeCell(EyeExpr::Neutral);
     auto mc = FaceLayout::mouthCell(MouthExpr::Neutral);
     // Dense enough to follow the nose bridge and the sockets.
-    size_t eyes = patch(SubmeshKind::FaceEyes, FaceLayout::kEyeX0, FaceLayout::kEyeX1, FaceLayout::kEyeS0, FaceLayout::kEyeS1,
+    size_t eyes = patch(SubmeshKind::FaceEyes, FaceLayout::kEyeX0, FaceLayout::kEyeX1, FaceLayout::kEyeS0 + eyeLift(g), FaceLayout::kEyeS1 + eyeLift(g),
                         lod.headSeg, std::max(4, lod.headSeg / 3), ec[0], ec[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH);
     size_t mouth = patch(SubmeshKind::FaceMouth, FaceLayout::kMouthX0, FaceLayout::kMouthX1, FaceLayout::kMouthS0,
                          FaceLayout::kMouthS1, std::max(6, lod.headSeg / 2), 8, mc[0], mc[1], FaceLayout::kMouthCellW,
