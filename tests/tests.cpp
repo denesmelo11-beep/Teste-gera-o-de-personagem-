@@ -59,6 +59,12 @@ static void checkMotion(const Character& c, const char* name) {
         const float y = g[size_t(l.end)].point({0, 0, 0}).y, rest = c.skeleton.bones[size_t(l.end)].restWorld.y;
         CHECK(std::fabs(y - rest) < 0.03f * c.height, "%s: pe fora do chao em idle (%f vs %f)", name, y, rest);
     }
+    // A naga's coil lies on the ground.
+    if (!c.rig.serpent.empty() && c.skeleton.bones[size_t(c.rig.serpent[0])].name.rfind("coil", 0) == 0)
+        for (int b : c.rig.serpent) {
+            const float y = g[size_t(b)].point({0, 0, 0}).y, rest = c.skeleton.bones[size_t(b)].restWorld.y;
+            CHECK(std::fabs(y - rest) < 0.06f * c.height, "%s: serpente fora do chao (%f vs %f)", name, y, rest);
+        }
     an.play(clip("walk"), 0.2f);
     run(1.5f, clipGroundSpeed(c, clip("walk")));
     for (const char* act : {"attack", "cast", "roar", "dodge"}) {
@@ -414,6 +420,17 @@ int main() {
         o.species = Species::Gnome;
         o.armPairs = 2;  // four arms, small body
         checkMotion(generateCharacter(randomGenome(7, o)), "gnomo 4 bracos");
+        // Species traits: a coil instead of legs, a wisp, wings (membrane and feathered).
+        for (Species sp : {Species::Naga, Species::Wraith, Species::Avian, Species::Demon, Species::Dragonborn, Species::Cephalid}) {
+            GenomeOptions so;
+            so.species = sp;
+            for (uint64_t seed : {3, 4}) {
+                const Character c = generateCharacter(randomGenome(seed, so));
+                char name[64];
+                std::snprintf(name, sizeof name, "%.*s %llu", int(toString(sp).size()), toString(sp).data(), (unsigned long long)seed);
+                checkMotion(c, name);
+            }
+        }
         for (const char* st : {"four_armed_giant", "centaur_warlord", "chitin_horror"}) {
             GenOptions go;
             checkMotion(generateCharacter(*studyGenome(st, 2, &go), go), st);
@@ -421,7 +438,10 @@ int main() {
         for (uint64_t s = 1; s <= 6; ++s) {
             GenOptions go;
             const Character c = generateCharacter(fuzzGenome(s * 104729, &go), go);
-            checkMotion(c, "fuzz");
+            char name[96];
+            std::snprintf(name, sizeof name, "fuzz %llu (asas %zu, serpente %zu, pernas %zu)", (unsigned long long)s,
+                          c.rig.wings.size(), c.rig.serpent.size(), c.rig.legs.size());
+            checkMotion(c, name);
         }
     }
     {   // IK reaches, baked clips stay valid and loops close.

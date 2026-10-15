@@ -133,6 +133,13 @@ anim.die(direcaoDoGolpe);
 | **Peso pela escala**: gnomo, humano e ogro no mesmo ataque e na mesma sequência de golpes | **Andar e correr em círculo**: inclinação na curva, pés presos no apoio, cabelo e cauda |
 | ![peso](docs/anim_peso.gif) | ![corrida](docs/anim_corrida.gif) |
 
+**Traços de espécie**: a cauda da naga desliza rente ao chão e ondula ao andar, as asas
+abrem no rugido e no ataque e, na morte, caem pesadas e se deitam no chão em vez de
+sustentar o corpo; a névoa do espectro flutua. Ossos sem carne (as pernas que a naga
+mantém no esqueleto) ficam fora dos músculos, do IK e do ragdoll.
+
+![especies](docs/anim_especies.gif)
+
 ![poses](docs/anim_frases.png)
 
 ## Compilar

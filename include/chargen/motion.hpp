@@ -26,7 +26,7 @@
 //   * IK. Feet are placed on the ground (any height function), locked while in stance and
 //     tilted to the slope, with the pelvis lowered when a leg cannot reach; the head and
 //     spine can track a target and any arm can reach for a point. Two or four legs, two or
-//     four arms.
+//     four arms. A serpent coil hugs the ground and slithers; wings fold against the body.
 //   * Ragdoll. A Verlet particle body (one particle per joint and limb tip, rigid clusters
 //     for pelvis and ribcage) with the rig's joint limits, self collision, ground friction
 //     and a fading muscle tone, so a death crumples instead of falling like a plank. Hair
@@ -109,6 +109,8 @@ private:
     void targetPose(Pose& t);
     void fk(const Pose& p, std::vector<Vec3>& pos, std::vector<Quat>& rot) const;
     void solveFeet(Vec3 worldPos, Quat worldRot, float dt);
+    void solveCoil(Vec3 worldPos, Quat worldRot);
+    void restWings(Vec3 worldPos, Quat worldRot);
     void buildRagdoll();
     void startRagdoll(Vec3 impulse);
     void ragdollStep(float dt);
@@ -118,6 +120,7 @@ private:
     const Character& c_;
     SecondaryMotion sec_;
     std::vector<uint8_t> sim_;        // bone follows the muscle springs
+    std::vector<uint8_t> skin_;       // some vertex hangs from the bone or a descendant (others are hidden: a naga's legs)
     std::vector<float> freq_, damp_;  // per-bone spring
     std::vector<int> depth_;
     std::vector<Vec3> seg_;           // joint -> segment centre, rest (inertia lever)
@@ -165,6 +168,7 @@ private:
     std::vector<Quat> ragLocal_;              // ragdoll local rotations
     std::vector<uint8_t> hinge_;              // knees / elbows
     std::vector<Vec3> hingeAxis_;
+    std::vector<Vec3> wingTip_;               // rest offset of each wing's farthest point from its hand
     float lastFrameDt_ = 1.0f / 60.0f;
     Vec3 ragAnchor_;
 };

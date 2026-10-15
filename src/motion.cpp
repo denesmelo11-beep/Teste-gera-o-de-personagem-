@@ -129,6 +129,19 @@ Animator::Animator(const Character& c, MotionSettings s) : settings(std::move(s)
         if (isChainOrJiggle(c, int(i))) sim_[i] = 0;
     }
     if (r.root >= 0) sim_[size_t(r.root)] = 0;
+    // Bones with no flesh below them (the leg bones a serpent body keeps) only follow the
+    // clip: no muscles, no foot IK, no particles that would prop up a ragdoll.
+    std::vector<float> wsum(n, 0.0f);
+    for (const Vertex& v : c.mesh.vertices)
+        for (int k = 0; k < 4; ++k)
+            if (v.joints[k] < n) wsum[v.joints[k]] += v.weights[k];
+    for (size_t i = n; i-- > 0;)
+        if (bones[i].parent >= 0) wsum[size_t(bones[i].parent)] += wsum[i];
+    skin_.assign(n, 0);
+    for (size_t i = 0; i < n; ++i) {
+        skin_[i] = wsum[i] > 0.5f;
+        if (!skin_[i]) sim_[i] = 0;
+    }
     auto set = [&](int b, float f, float z) {
         if (b >= 0) freq_[size_t(b)] = f, damp_[size_t(b)] = z;
     };
@@ -149,6 +162,15 @@ Animator::Animator(const Character& c, MotionSettings s) : settings(std::move(s)
         set(l.end, 8.0f, 0.85f);
         set(l.tip, 8.0f, 0.85f);
     }
+    // Wings are big sails on light bones: firm at the shoulder so the body's swings do not
+    // fling them about, a little give at the hand so the feathers trail.
+    for (const LimbRig& w : r.wings) {
+        set(w.root, 9.0f, 0.95f);
+        set(w.upper, 7.0f, 0.9f);
+        set(w.lower, 6.5f, 0.85f);
+        set(w.end, 6.0f, 0.75f);
+    }
+    for (size_t k = 0; k < r.serpent.size(); ++k) set(r.serpent[k], 6.0f - 0.25f * float(k), 0.8f);
     // Pendulum scaling: big bodies swing slower, small ones snap.
     sizeK_ = std::sqrt(1.75f / std::max(0.6f, c.height));
     q_.assign(n, Quat{});
@@ -192,6 +214,8 @@ FaceState Animator::face() const {
 
 Vec3 Animator::bodyCenter() const {
     if (rag_) {
+        const int hn = c_.rig.hips >= 0 ? boneNode_[size_t(c_.rig.hips)] : -1;
+        if (hn >= 0) return nodes_[size_t(hn)].p;
         Vec3 s{};
         for (const Node& nd : nodes_) s += nd.p;
         return nodes_.empty() ? lastWorld_ : s / float(nodes_.size());
@@ -480,7 +504,7 @@ void Animator::solveFeet(Vec3 worldPos, Quat worldRot, float dt) {
     fk(out_, op, oq);
     for (size_t i = 0; i < r.legs.size(); ++i) {
         const LimbRig& L = r.legs[i];
-        if (L.upper < 0 || L.lower < 0 || L.end < 0) continue;
+        if (L.upper < 0 || L.lower < 0 || L.end < 0 || !skin_[size_t(L.end)]) continue;
         const Vec3 ank = tp[size_t(L.end)];
         const float h0 = bones[size_t(L.end)].restWorld.y;
         const float legLen = length(bones[size_t(L.lower)].restLocal) + length(bones[size_t(L.end)].restLocal);
@@ -509,7 +533,7 @@ void Animator::solveFeet(Vec3 worldPos, Quat worldRot, float dt) {
     if (pelvisDrop_ > 1e-4f) out_.trans[size_t(r.hips)].y -= pelvisDrop_;
     for (size_t i = 0; i < r.legs.size(); ++i) {
         const LimbRig& L = r.legs[i];
-        if (L.upper < 0 || L.lower < 0 || L.end < 0) continue;
+        if (L.upper < 0 || L.lower < 0 || L.end < 0 || !skin_[size_t(L.end)]) continue;
         twoBoneIK(c_.skeleton, out_, L.upper, L.lower, L.end, goals[i], {0, 0, 1}, 1.0f);
         // Tilt the planted foot to the slope.
         if (settings.ground && stance[i]) {
@@ -527,6 +551,87 @@ void Animator::solveFeet(Vec3 worldPos, Quat worldRot, float dt) {
     }
 }
 
+// A naga's coil lies on the ground: every vertebra keeps its rest height above the terrain
+// whatever the hips do (bob, crouch, lunge), bending the coil instead of lifting it.
+void Animator::solveCoil(Vec3 worldPos, Quat worldRot) {
+    const RigInfo& r = c_.rig;
+    const auto& bones = c_.skeleton.bones;
+    if (r.serpent.size() < 2 || bones[size_t(r.serpent[0])].name.rfind("coil", 0) != 0) return;  // a wraith's wisp floats
+    const float g0 = flatGround(settings, worldPos.x, worldPos.z);
+    for (size_t k = 1; k < r.serpent.size(); ++k) {
+        const int b = r.serpent[k], pa = bones[size_t(b)].parent;
+        if (pa < 0 || !sim_[size_t(pa)] || bones[size_t(pa)].parent < 0) break;  // the spring-driven tip rests on its own
+        fk(out_, fp_, fq_);
+        const Vec3 w = worldPos + rotate(worldRot, fp_[size_t(b)]);
+        const float want = bones[size_t(b)].restWorld.y + flatGround(settings, w.x, w.z) - g0;
+        const Vec3 a = fp_[size_t(pa)], v = fp_[size_t(b)] - a;
+        const Vec3 v2{v.x, want - a.y, v.z};
+        if (length(v) < 1e-5f || length(v2) < 1e-5f) continue;
+        const Quat R = fromTo(normalize(v), normalize(v2));
+        out_.rot[size_t(pa)] = normalize(conj(fq_[size_t(bones[size_t(pa)].parent)]) * R * fq_[size_t(pa)]);
+    }
+}
+
+// Ragdoll wings: the muscles let go, the wings droop and close, and no spar or feather
+// tip goes through the ground (the arm lifts at the shoulder instead).
+void Animator::restWings(Vec3 worldPos, Quat worldRot) {
+    const RigInfo& r = c_.rig;
+    if (r.wings.empty()) return;
+    const auto& bones = c_.skeleton.bones;
+    const float f = smoothstep(0.0f, 0.8f, ragTime_);
+    for (size_t i = 0; i < r.wings.size(); ++i) {
+        const LimbRig& w = r.wings[i];
+        if (w.upper < 0 || w.lower < 0 || w.end < 0) continue;
+        const Quat slack[3] = {Quat::euler(0, 0, -w.side * 0.45f), Quat::euler(0, w.side * 0.3f, 0), Quat::euler(0, w.side * 0.2f, 0)};
+        const int bs[3] = {w.upper, w.lower, w.end};
+        for (int k = 0; k < 3; ++k) out_.rot[size_t(bs[k])] = nlerp(q_[size_t(bs[k])], slack[k], f);
+        // Their weight swings them down at the shoulder (onto the ground beside a fallen body).
+        fk(out_, fp_, fq_);
+        {
+            const Vec3 v = fp_[size_t(w.end)] + rotate(fq_[size_t(w.end)], wingTip_[i]) - fp_[size_t(w.upper)];
+            const Vec3 down = rotate(conj(worldRot), Vec3{0, -1, 0});
+            const float ang = std::acos(clamp(dot(normalize(v), down), -1.0f, 1.0f));
+            if (ang > 1e-3f && length(v) > 1e-5f) {
+                const Vec3 axis = normalize(cross(v, down), {1, 0, 0});
+                const Quat R = Quat::axisAngle(axis, std::min(ang, 2.0f) * f);
+                const int pa = bones[size_t(w.upper)].parent;
+                const Quat wp = pa >= 0 ? fq_[size_t(pa)] : Quat{};
+                out_.rot[size_t(w.upper)] = normalize(conj(wp) * R * fq_[size_t(w.upper)]);
+            }
+        }
+        for (int it = 0; it < 6; ++it) {
+            fk(out_, fp_, fq_);
+            const Vec3 tip = fp_[size_t(w.end)] + rotate(fq_[size_t(w.end)], wingTip_[i]);
+            const Vec3 pts[3] = {fp_[size_t(w.lower)], fp_[size_t(w.end)], tip};
+            float worst = 0;
+            Vec3 at{};
+            for (const Vec3& p : pts) {
+                const Vec3 wp = worldPos + rotate(worldRot, p);
+                const float d = wp.y - (flatGround(settings, wp.x, wp.z) + 0.01f * c_.height);
+                if (d < worst) worst = d, at = p;
+            }
+            if (worst >= 0) break;
+            // Swing the point up onto the ground, out to the side if the wing hangs straight down.
+            const Vec3 a = fp_[size_t(w.upper)], v = at - a;
+            const Vec3 up = rotate(conj(worldRot), Vec3{0, 1, 0});
+            const float L = length(v);
+            if (L < 1e-5f) break;
+            Vec3 hd = v - up * dot(v, up);
+            if (length(hd) < 0.25f * L) {
+                const Vec3 out = rotate(fq_[size_t(w.upper)], Vec3{w.side, 0, 0});
+                hd = out - up * dot(out, up);
+            }
+            hd = normalize(hd, rotate(conj(worldRot), Vec3{w.side, 0, 0}));
+            const float dy = clamp(dot(v, up) - worst * 1.05f, -L, L);
+            const Vec3 v2 = hd * std::sqrt(std::max(0.0f, L * L - dy * dy)) + up * dy;
+            const Quat R = fromTo(normalize(v), normalize(v2));
+            const int pa = bones[size_t(w.upper)].parent;
+            const Quat wp = pa >= 0 ? fq_[size_t(pa)] : Quat{};
+            out_.rot[size_t(w.upper)] = normalize(conj(wp) * R * fq_[size_t(w.upper)]);
+        }
+    }
+}
+
 // ---------------------------------------------------------------- ragdoll
 
 void Animator::buildRagdoll() {
@@ -535,6 +640,11 @@ void Animator::buildRagdoll() {
     const float H = c_.height;
     std::vector<uint8_t> inR(n, 0);
     for (size_t i = 0; i < n; ++i) inR[i] = sim_[i];
+    // Wings stay out of the particle body: their long spars would land first and hold the
+    // body up on their tips. They hang from the ribcage and fold (restWings).
+    for (const LimbRig& w : c_.rig.wings)
+        for (int b : {w.root, w.upper, w.lower, w.end})
+            if (b >= 0) inR[size_t(b)] = 0;
     // Dominant vertices of each bone: limb tips and thickness come from the mesh.
     std::vector<std::vector<Vec3>> verts(n);
     for (const Vertex& v : c_.mesh.vertices) {
@@ -626,6 +736,14 @@ void Animator::buildRagdoll() {
             if (dist[t] < 0 && length(nodeRest(int(s)) - nodeRest(int(t))) > 0.85f * (nodes_[s].radius + nodes_[t].radius))
                 pairs_.push_back({int(s), int(t)});
     }
+    wingTip_.clear();
+    for (const LimbRig& w : c_.rig.wings) {
+        Vec3 far{};
+        if (w.end >= 0)
+            for (const Vec3& v : verts[size_t(w.end)])
+                if (length(v - bones[size_t(w.end)].restWorld) > length(far)) far = v - bones[size_t(w.end)].restWorld;
+        wingTip_.push_back(far);
+    }
     ragLocal_.assign(n, Quat{});
     hinge_.assign(n, 0);
     hingeAxis_.assign(n, Vec3{1, 0, 0});
@@ -658,7 +776,7 @@ void Animator::startRagdoll(Vec3 impulse) {
     ragAnchor_ = lastWorld_;
     sec_.stiffnessScale = 0.08f;
     sec_.gravityScale = 4.0f;
-    events_.push_back("ragdoll");
+    if (std::find(events_.begin(), events_.end(), "ragdoll") == events_.end()) events_.push_back("ragdoll");
 }
 
 void Animator::ragdollStep(float dt) {
@@ -778,10 +896,15 @@ void Animator::ragdollStep(float dt) {
         for (int k : childNodes_[i]) {
             Node& nd = nodes_[size_t(k)];
             const Vec3 want = pn.p + rotate(W[i], nd.tip ? nd.tipOffset : bones[size_t(nd.bone)].restLocal);
-            const Vec3 delta = (want - nd.p) * proj;
+            // A bounded correction that carries most of its own velocity away: a limit
+            // reshapes the body, it never kicks it (a wrist trapped between a horn and the
+            // ground used to launch the whole body).
+            const Vec3 delta = clampLen((want - nd.p) * proj, 0.01f * c_.height);
             const float wc = nd.invMass / (nd.invMass + pn.invMass);
             nd.p += delta * wc;
+            nd.prev += delta * (wc * 0.8f);
             pn.p -= delta * (1.0f - wc);
+            pn.prev -= delta * ((1.0f - wc) * 0.8f);
         }
     }
     // Ground contact: no sinking, friction on the sliding part of the motion.
@@ -873,10 +996,12 @@ void Animator::update(float dt, Vec3 worldPos, Quat worldRot) {
         out_.rot = q_;  // the last animated pose for bones outside the ragdoll (hair, bust, sockets)
         out_.trans = tr_;
         ragdollPose(worldPos, worldRot);
+        restWings(worldPos, worldRot);
     } else {
         out_.rot = q_;
         out_.trans = tr_;
         if (settings.footIK) solveFeet(worldPos, worldRot, dt);
+        if (settings.footIK) solveCoil(worldPos, worldRot);
         // Particle positions of this frame, so a ragdoll starts with the body's velocity.
         std::vector<Vec3> pos;
         std::vector<Quat> rot;

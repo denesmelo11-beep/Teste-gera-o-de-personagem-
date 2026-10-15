@@ -147,6 +147,19 @@ struct Author {
             euler(r.tail[i], lift * f, sway * f, 0);
         }
     }
+    // Serpent coil: a sideways wave travelling from the hips to the tip (slithering).
+    void slither(float phase, float amp) {
+        const size_t n = r.serpent.size();
+        for (size_t i = 1; i < n; ++i) euler(r.serpent[i], 0, amp * std::sin(phase - 0.9f * float(i)) * (0.6f + 0.4f * float(i) / float(n)), 0);
+    }
+    // Wings: raise (+) / lower the arm, and open (+) / close the elbow and wrist.
+    void wings(float raise, float open) {
+        for (const LimbRig& w : r.wings) {
+            euler(w.upper, 0, 0, w.side * raise);
+            euler(w.lower, 0, -w.side * open * 0.6f, 0);
+            euler(w.end, 0, -w.side * open * 0.4f, 0);
+        }
+    }
     // Rotation about a character-space axis on a spine bone (tilts toward a push).
     void tilt(int bone, Vec3 axis, float angle) {
         if (length(axis) > 1e-5f) rot(bone, Quat::axisAngle(axis, angle));
@@ -309,6 +322,8 @@ Clip makeIdleClip(const Character& c) {
             a.leg(i, 0, 0.03f, 0, -0.035f * std::sin(ph) * (0.5f + fem) * a.r.legs[i].side);
         }
         a.tail(0.06f + 0.04f * breath, 0.18f * std::sin(ph + 0.8f), 0.8f);
+        a.wings(0.04f * breath, 0);
+        a.slither(ph, 0.04f);
         a.plantAll();
     });
     // Blinks.
@@ -340,6 +355,8 @@ Clip makeWalkClip(const Character& c) {
             a.arm(i, i >= 2 ? 0.25f : 0.66f, sw, 0.25f + 0.25f * std::max(0.0f, -sw));
         }
         a.tail(0.05f, -0.3f * s, 0.8f);
+        a.wings(0.04f * co, 0);
+        a.slither(ph, 0.14f);
     });
     clip.faceKeys = {{0.0f, {}}};
     clip.events = {{0.25f * clip.duration(), "footL"}, {0.75f * clip.duration(), "footR"}};
@@ -368,6 +385,8 @@ Clip makeRunClip(const Character& c) {
             a.arm(i, i >= 2 ? 0.3f : 0.62f, sw - 0.1f, 1.35f + 0.25f * std::max(0.0f, -sw));
         }
         a.tail(0.3f, -0.35f * s, 0.6f);
+        a.wings(-0.12f, -0.2f);
+        a.slither(ph, 0.22f);
     });
     clip.faceKeys = {{0.0f, {EyeExpr::Smug, MouthExpr::Open}}};
     clip.events = {{0.25f * clip.duration(), "footL"}, {0.75f * clip.duration(), "footR"}};
@@ -405,6 +424,7 @@ Clip makeAttackClip(const Character& c) {
             a.arm(2, 0.3f, -0.6f, 1.6f);
         }
         a.tail(0.15f + 0.3f * std::max(0.0f, lunge), -0.9f * twist, 0.7f);
+        a.wings(0.35f * std::max(0.0f, lunge), 0.3f * std::max(0.0f, lunge));
         a.plantAll();
     });
     clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Neutral}},
@@ -436,6 +456,7 @@ Clip makeDodgeClip(const Character& c) {
             a.arm(i, 0.35f - 0.5f * air, -0.4f * crouch + 0.3f * k * air, 0.6f + 0.6f * crouch, 0.3f * air);
         }
         a.tail(0.4f * air - 0.1f * crouch, -0.6f * twist, 0.6f);
+        a.wings(0.5f * air, 0.3f * air);
         a.plantAll(1.0f - smoothstep(0.0f, 0.15f, air));
     });
     clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Neutral}}, {0.3f, {EyeExpr::Angry, MouthExpr::Open}},
@@ -517,6 +538,7 @@ Clip makeDeathClip(const Character& c, Vec3 push) {
         for (size_t i = 0; i < a.r.legs.size(); ++i) a.leg(i, -0.55f * b, 1.2f * b, 0.25f * b, 0.08f * b);
         for (size_t i = 0; i < a.r.arms.size(); ++i) a.arm(i, 0.2f * b, -0.2f * b, 0.6f * b, 0.15f * b);
         a.tail(-0.4f * b, 0, 0.5f);
+        a.wings(-0.3f * b, -0.3f * b);
         a.plantAll(smoothstep(0.1f, 0.25f, t));
     });
     const float d = clip.duration();
@@ -570,6 +592,7 @@ Clip makeCastClip(const Character& c) {
                   h * (front ? -0.1f : 0.15f) * thrust, 0.06f * crouch);
         }
         a.tail(0.6f * channel + 0.35f * thrust - 0.1f * gather, 0.25f * twist, 0.8f);
+        a.wings(0.3f * channel, 0.2f * channel);
         a.plantAll();
     });
     clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Neutral}}, {0.2f * dur, {EyeExpr::Angry, MouthExpr::Frown}},
@@ -618,6 +641,7 @@ Clip makeRoarClip(const Character& c) {
             a.leg(i, -0.45f * roar * h, 0.9f * roar * h, -0.35f * roar * h, 0.32f * roar);
         }
         a.tail(0.3f * inhale + 0.85f * roar, 0.4f * std::sin(t * dur * kTau * 1.3f) * roar, 0.9f);
+        a.wings(0.15f * inhale + 0.6f * roar, 0.4f * roar);
         a.plantAll();
     });
     clip.faceKeys = {{0.0f, {EyeExpr::Neutral, MouthExpr::Neutral}}, {0.08f * dur, {EyeExpr::Angry, MouthExpr::Oh}},
