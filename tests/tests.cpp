@@ -178,11 +178,15 @@ int main() {
         if (k == 8) CHECK(c.rig.pincers.size() == 2 && c.rig.pincers[0] >= 0, "pinca sem osso");
         if (k == 19) CHECK(c.rig.tentacles.size() == 6, "tentaculos sem rig");
         if (k == 24) CHECK(c.rig.serpent.size() == 3, "corpo de gosma sem rig");
-        if (k == 30) {  // on all fours: forefeet and hind feet on the same ground, the trunk level-ish
+        if (k == 30) {  // on all fours: four legs, the trunk level along z, the head in front
             const auto& bn = c.skeleton.bones;
-            const float hand = bn[size_t(c.rig.arms[0].end)].restWorld.y, foot = bn[size_t(c.rig.legs[0].end)].restWorld.y;
-            const float chestZ = bn[size_t(c.rig.chest)].restWorld.z, hipZ = bn[size_t(c.rig.hips)].restWorld.z;
-            CHECK(hand < 0.35f * c.height && chestZ > hipZ + 0.1f, "besta nao ficou de quatro (mao %f pe %f)", hand, foot);
+            auto P = [&](int b) { return bn[size_t(b)].restWorld; };
+            CHECK(c.rig.legs.size() == 4, "besta sem quatro patas (%zu)", c.rig.legs.size());
+            const float fore = P(c.rig.legs[0].tip).y, hind = P(c.rig.legs[2].tip).y;
+            const float chestZ = P(c.rig.chest).z, hipZ = P(c.rig.hips).z, headZ = P(c.rig.head).z;
+            CHECK(fore < 0.1f * c.height && hind < 0.1f * c.height, "patas fora do chao (%f %f)", fore, hind);
+            CHECK(chestZ > hipZ + 0.3f && headZ > chestZ && std::fabs(P(c.rig.chest).y - P(c.rig.hips).y) < 0.25f * c.height,
+                  "besta nao ficou de quatro (peito %f quadril %f cabeca %f)", chestZ, hipZ, headZ);
         }
         if (k >= 24 && k < 30) {  // the new traits add geometry to a plain human
             Genome plain = g;

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 
-#include "chargen/animation.hpp"
 #include "generator_impl.hpp"
 
 namespace cg::detail {
@@ -630,7 +629,7 @@ void Builder::buildBackTentacles() {
 // Turtle shell: a domed carapace on the back, its scutes in a vertebral row, costal
 // rows and a pale marginal rim; a flat plastron over the belly.
 void Builder::buildShell() {
-    if (!g.body.shell) return;
+    if (!g.body.shell || beast_) return;
     const RigInfo& r = ch.rig;
     const float h = m.h;
     const SuperRing mid = torsoRing(0.62f);
@@ -717,7 +716,7 @@ void Builder::buildShards() {
     for (int k = 0; k < n; ++k) {
         const float a = hash01(g.seed, uint64_t(k) * 3), b = hash01(g.seed, uint64_t(k) * 3 + 1), c = hash01(g.seed, uint64_t(k) * 3 + 2);
         const int site = k % 4;
-        if (site < 2 && !m.arms.empty()) {  // shoulders (site 0) and forearms (site 1)
+        if (site < 2 && !m.arms.empty() && !beast_) {  // shoulders (site 0) and forearms (site 1)
             const ArmMarks& am = m.arms[size_t((k / 4) % 2)];
             const LimbRig& lr = r.arms[size_t((k / 4) % 2)];
             const Vec3 at = site == 0 ? lerp(am.shoulder, am.elbow, 0.10f + 0.20f * a) : lerp(am.elbow, am.wrist, 0.25f + 0.5f * a);
@@ -728,7 +727,7 @@ void Builder::buildShards() {
         } else {  // upper back
             const float t = lerp(0.62f, 0.95f, a), th = 1.5f * kPi + (b - 0.5f) * 1.4f;
             const Vec3 q = torsoPoint(t, th);
-            const Vec3 out = normalize(Vec3{(b - 0.5f) * 1.2f, 0.45f + 0.3f * c, -1.0f});
+            const Vec3 out = beast_ ? normalize(Vec3{(b - 0.5f) * 1.6f, 1.0f, -0.45f - 0.3f * c}) : normalize(Vec3{(b - 0.5f) * 1.2f, 0.45f + 0.3f * c, -1.0f});
             crystal(q - out * (0.02f * h), out, (0.45f + 0.45f * c) * h, (0.08f + 0.05f * c) * h,
                     chainWeights({{0.40f, r.spine}, {0.66f, r.chest}}, t), k);
         }
@@ -1447,105 +1446,158 @@ void Builder::buildBodyEyes() {
     }
 }
 
-// ---------------------------------------------------------------- beast stance
+// ---------------------------------------------------------------- beast body
 
-// On all fours: the finished upright body is posed (the spine pitched forward across
-// hips, waist and chest, the legs and arms held vertical, the neck leaning and the head
-// level, the hands turned into forefeet) and that pose is baked in as the new rest pose.
-// The pitch is solved so the forefeet and the hind feet stand on the same ground.
-void Builder::bakeBeastStance() {
-    if (g.body.stance != 1 || g.body.centaur || g.body.lowerBody) return;
-    Skeleton& sk = ch.skeleton;
-    RigInfo& r = ch.rig;
-    Mesh& mesh = ch.mesh;
-    const size_t nb = sk.bones.size();
-    auto rx = [](float a) { return Quat::axisAngle({1, 0, 0}, a); };
-    auto makePose = [&](float th) {
-        Pose p = restPose(sk);
-        // Most of the pitch at the hip joints (the pelvis tips with the trunk, as when
-        // bending over), the rest spread up the spine so the back stays one long curve.
-        const float kh = 0.55f, ks = (1.0f - kh) * 0.65f;
-        p.rot[size_t(r.hips)] = rx(kh * th);
-        p.rot[size_t(r.spine)] = rx(ks * th);
-        p.rot[size_t(r.chest)] = rx((1.0f - kh - ks) * th);
-        const float ka = 0.30f, kl = 0.15f;  // forearm / thigh slant (fraction of the pitch)
-        for (const LimbRig& l : r.legs) p.rot[size_t(l.upper)] = rx(-(kh - kl) * th);
-        for (const LimbRig& a : r.arms) {
-            // Like a forelimb: the upper arm slants down and back from the shoulder, the
-            // forearm stands vertical, the hand bends forward into a forefoot.
-            p.rot[size_t(a.root)] = rx(-0.4f * th);
-            p.rot[size_t(a.upper)] = rx(-(0.6f - ka) * th);
-            p.rot[size_t(a.lower)] = rx(-ka * th);
-            p.rot[size_t(a.end)] = rx(-1.1f);
+// On all fours (computeBeastMarks): one loft from the round rump along the trunk to the
+// deep chest and on through a short, thick neck into the back of the skull; massive
+// forelegs from high shoulders down to broad clawed paws, crouched digitigrade hind legs.
+void Builder::buildBeastBody() {
+    const RigInfo& r = ch.rig;
+    const float H = m.H, h = m.h, mu = g.body.muscle;
+    const int N = lod.torsoSeg;
+    const int hips = r.hips, spine = r.spine, chest = r.chest, neck = r.neck, head = r.head;
+    // Trunk and neck.
+    {
+        Loft L;
+        const std::vector<float> ts = lod.sparseRings ? std::vector<float>{0.0f, 0.12f, 0.30f, 0.50f, 0.68f, 0.82f, 0.94f, 1.0f}
+                                                      : std::vector<float>{0.0f, 0.05f, 0.12f, 0.22f, 0.34f, 0.46f, 0.58f, 0.68f, 0.77f, 0.85f, 0.92f, 0.97f, 1.0f};
+        for (float t : ts) {
+            const BeastRing br = beastRing(t);
+            L.rings.push_back(makeRing({0, br.y, beastZ(t)}, {1, 0, 0}, {0, -1, 0}, SuperRing{br.w, 0, br.bot, br.top, 2.3f, 2.3f}, N));
+            L.t.push_back(t);
         }
-        for (const LimbRig& w : r.wings) p.rot[size_t(w.root)] = rx(-th);
-        p.rot[size_t(r.neck)] = rx(-0.55f * th);
-        p.rot[size_t(r.head)] = rx(-0.45f * th);
-        return p;
+        const BeastRing f = beastRing(1.0f);
+        const Vec3 n0{0, f.y, beastZ(1.0f)}, n1 = m.headOrigin + Vec3{0, 0.42f * h, -0.24f * h};  // the nape, deep in the skull
+        const Vec3 nd = normalize(n1 - n0, {0, 0, 1}), nv = normalize(Vec3{0, -1, 0} - nd * (-nd.y), {0, -1, 0}), nu = cross(nd, nv);
+        const float nR = std::max(0.30f * h, std::min(g.body.neckThick * h * 0.95f, 0.70f * f.w));
+        const std::vector<float> vs = lod.sparseRings ? std::vector<float>{0.5f, 1.0f} : std::vector<float>{0.35f, 0.7f, 1.0f};
+        for (float v : vs) {
+            const float k = smoothstep(0.0f, 0.55f, v);
+            const float w = lerp(f.w, nR, k), up = lerp(f.top, 0.95f * nR, k), dn = lerp(f.bot, 1.05f * nR, k);
+            L.rings.push_back(makeRing(n0 + nd * (v * length(n1 - n0)), nu, nv, SuperRing{w * (1.0f - 0.10f * v * v), 0, dn, up, 2.2f, 2.2f}, N));
+            L.t.push_back(1.0f + 0.4f * v);
+        }
+        const BeastRing b0 = beastRing(0.0f);
+        L.poleStart = true;
+        L.startPole = {0, b0.y + 0.1f * b0.top, m.beastZR - 0.035f * H};
+        L.tStart = -0.04f;
+        L.poleEnd = true;
+        L.endPole = n1 + nd * (0.4f * nR);
+        L.tEnd = 1.55f;
+        Part& tp = newPart();
+        bodyGroup_ = tp.id;
+        torsoPart_ = parts.size() - 1;
+        if (g.body.furPattern >= 3) {  // tiger stripes: wide over the back, tapering down the flanks
+            const float zR = m.beastZR, zF = m.beastZF, ph0 = 6.0f * hash01(g.seed, 51);
+            const Mat stripeM{g.palette.skin * 0.40f, MaterialClass::Hair};
+            tp.clips.push_back({[=, this](Vec3 q) {
+                const float t = (q.z - zR) / (zF - zR);
+                if (t < 0.04f || t > 0.86f) return 1.0f;
+                const BeastRing br = beastRing(t);
+                const float up = (q.y - br.y) / std::max(br.top, 1e-4f);  // 1 on the spine, -1 under the belly
+                if (up < -0.35f) return 1.0f;
+                const float ph = (q.z + 0.25f * (q.y - br.y)) * (kTau / (0.10f * H)) + ph0;
+                const float thr = lerp(0.85f, 0.15f, smoothstep(-0.35f, 0.9f, up));
+                return (thr - std::sin(ph)) * 0.02f * H;
+            }, stripeM, 1});
+        }
+        emitLoft(tp, L, [=](float t, float, Vec3) {
+            return chainWeights({{0.10f, hips}, {0.22f, hips}, {0.48f, spine}, {0.76f, chest}, {1.0f, chest}, {1.16f, neck}, {1.36f, neck}, {1.50f, head}}, t);
+        }, [this](float, float) { return skin(); });
+    }
+    // Legs: lofts through knots (point, radius, t), sunk into the trunk at the top.
+    struct K { Vec3 p; float r, t; };
+    auto leg = [&](const std::vector<K>& ks, float tb, float tc, int parent, const LimbRig& rig) {
+        Loft L;
+        for (size_t k = 0; k < ks.size(); ++k) {
+            const Vec3 dd = normalize(ks[std::min(k + 1, ks.size() - 1)].p - ks[k > 0 ? k - 1 : 0].p, {0, -1, 0});
+            const Vec3 v = orthoFront(dd), u = cross(dd, v);
+            const float rr = ks[k].r;
+            L.rings.push_back(makeRing(ks[k].p, u, v, SuperRing{rr * 0.86f, 0, rr * 1.0f, rr * 1.08f, 2.2f, 2.2f}, lod.limbSeg));
+            L.t.push_back(ks[k].t);
+        }
+        L.poleStart = true;
+        L.startPole = ks[0].p + normalize(ks[0].p - ks[1].p) * (0.5f * ks[0].r);
+        L.tStart = -0.02f;
+        L.poleEnd = true;  // closed inside the paw
+        L.endPole = ks.back().p + normalize(ks.back().p - ks[ks.size() - 2].p) * (0.6f * ks.back().r);
+        L.tEnd = 1.0f;
+        const int up = rig.upper, lo = rig.lower, ft = rig.end, tip = rig.tip;
+        Part& lp = newPart();
+        lp.id = bodyGroup_;
+        emitLoft(lp, L, [=](float t, float, Vec3) {
+            return chainWeights({{0.0f, parent}, {0.14f, up}, {tb - 0.07f, up}, {tb + 0.05f, lo}, {tc - 0.07f, lo}, {tc + 0.04f, ft}, {1.0f, tip}}, t);
+        }, [this](float, float) { return skin(); });
     };
-    // Which vertices stand on the forelimbs and which on the hind feet.
-    std::vector<char> fore(nb, 0), hind(nb, 0);
-    for (const LimbRig& a : r.arms)
-        for (int b : {a.lower, a.end}) fore[size_t(b)] = 1;
-    for (size_t i = 0; i < nb; ++i)  // fingers, claws and pincers hang from the hand
-        for (int p = sk.bones[i].parent; p >= 0; p = sk.bones[size_t(p)].parent)
-            if (fore[size_t(p)]) fore[i] = 1;
-    for (const LimbRig& l : r.legs)
-        for (int b : {l.end, l.tip}) hind[size_t(b)] = 1;
-    std::vector<Mat4> global, skin;
-    std::vector<Vec3> pos, nrm;
-    auto lowest = [&](float th, float& foreY, float& hindY) {
-        poseMatrices(sk, makePose(th), global, skin);
-        skinMesh(mesh, skin, pos, nrm);
-        foreY = hindY = 1e9f;
-        for (size_t i = 0; i < pos.size(); ++i) {
-            const Vertex& v = mesh.vertices[i];
-            int best = 0;
-            for (int k = 1; k < 4; ++k)
-                if (v.weights[k] > v.weights[best]) best = k;
-            const size_t j = v.joints[best];
-            if (fore[j]) foreY = std::min(foreY, pos[i].y);
-            if (hind[j]) hindY = std::min(hindY, pos[i].y);
+    // Paws: a broad pad resting on the ground and four toes in an arc, each with a hooked
+    // claw; a heavy hoof instead for hoofed peoples.
+    const Mat clawM{g.palette.horn * 0.55f + Vec3{0.03f, 0.03f, 0.03f}, MaterialClass::Horn};
+    const Mat hoofM{g.palette.horn * 0.35f + Vec3{0.05f, 0.04f, 0.04f}, MaterialClass::Horn};
+    auto paw = [&](Vec3 ball, float size, float sd, int toe) {
+        const Vec3 fwd = normalize(Vec3{sd * 0.10f, 0, 1}), up{0, 1, 0}, side = normalize(cross(up, fwd));
+        const float pw = 0.060f * H * size, pl = 0.085f * H * size, ph = 0.032f * H * size;
+        Part& p = newPart();
+        p.id = bodyGroup_;
+        const SkinW w = one(toe);
+        auto blob = [&](Vec3 c, float ra, float ru, float rv, const Mat& mt, int lat, int lon) {
+            Ellipsoid e;
+            e.center = c;
+            e.axis = fwd;
+            e.up = up;
+            e.rAxis = ra;
+            e.rU = ru;
+            e.rV = rv;
+            e.lat = lat;
+            e.lon = lon;
+            emitEllipsoid(p, e, [=](float, float, Vec3) { return w; }, [=](float, float) { return mt; });
+        };
+        const Vec3 base{ball.x, 0.0f, ball.z};
+        const size_t v0 = p.pos.size();
+        auto ground = [&] {  // the sampled pad (or the claw tips) rests exactly on the floor
+            float lowY = 1e9f;
+            for (size_t i = v0; i < p.pos.size(); ++i) lowY = std::min(lowY, p.pos[i].y);
+            for (size_t i = v0; i < p.pos.size(); ++i) p.pos[i].y -= lowY - 0.002f;
+        };
+        if (g.body.hooves) {
+            blob(base + Vec3{0, 0.85f * ph, 0.2f * pl}, 0.75f * pl, 0.85f * pw, 0.85f * ph, hoofM, 4, lod.limbSeg);
+            ground();
+            return;
         }
+        blob(base + Vec3{0, ph, -0.05f * pl}, pl, pw, ph, skin(), lod.sparseRings ? 4 : 5, lod.limbSeg);
+        const float clawK = g.body.claws ? 1.0f : 0.6f;
+        for (int k = 0; k < 4; ++k) {
+            const float off = (float(k) - 1.5f) / 1.5f;
+            const Vec3 c = base + fwd * ((0.78f - 0.22f * off * off) * pl) + side * (off * 0.74f * pw) + Vec3{0, 0.78f * ph, 0};
+            const float tl = 0.36f * pl * (1.0f - 0.15f * std::fabs(off));
+            blob(c, tl, 0.27f * pw, 0.78f * ph, skin(), 3, 6);
+            const Vec3 tipP = c + fwd * (0.75f * tl) + Vec3{0, 0.1f * ph, 0};
+            const Vec3 cd = normalize(fwd * 1.0f + Vec3{0, -0.42f, 0} + side * (0.15f * off));
+            emitSpike(p, tipP, cd, Vec3{0, -1, 0}, 0.050f * H * size * clawK, 0.020f * H * size, 0, w, clawM);
+        }
+        ground();
     };
-    // Bisection on the pitch: a steeper pitch lowers the shoulders and the forefeet.
-    float lo = 0.6f, hi = 2.2f, f = 0, hy = 0;
-    lowest(lo, f, hy);
-    if (f > hy) {
-        for (int it = 0; it < 14; ++it) {
-            const float mid = 0.5f * (lo + hi);
-            lowest(mid, f, hy);
-            (f > hy ? lo : hi) = mid;
+    const float wk = clamp(0.5f * (g.body.shoulderWidth + g.body.chestWidth), 0.8f, 1.4f);
+    const float rf = 0.082f * H * (1.0f + 0.3f * mu) * wk, rh = 0.074f * H * (1.0f + 0.3f * mu) * wk;
+    const float fs = clamp(g.body.footSize, 0.8f, 1.3f), hs = clamp(g.body.handSize, 0.8f, 1.4f);
+    for (int s = 0; s < 2; ++s) {
+        const float sd = s == 0 ? 1.0f : -1.0f;
+        {  // foreleg: shoulder blade, heavy upper arm and forearm, a thick wrist and pastern
+            const Vec3 a = m.hipJoint[s], b = m.knee[s], c = m.ankle[s], d = m.ball[s];
+            leg({{a + Vec3{-sd * 0.02f * H, 0.11f * H, -0.07f * H}, rf * 1.10f, 0.0f}, {a, rf * 1.12f, 0.10f}, {lerp(a, b, 0.5f), rf * 1.0f, 0.24f},
+                 {b + Vec3{0, 0.01f * H, -0.012f * H}, rf * 0.80f, 0.38f}, {lerp(b, c, 0.30f), rf * 0.84f, 0.50f}, {lerp(b, c, 0.72f), rf * 0.60f, 0.64f},
+                 {c, rf * 0.52f, 0.76f}, {lerp(c, d, 0.55f) + Vec3{0, 0.03f * H, 0}, rf * 0.50f, 0.90f}},
+                0.38f, 0.76f, chest, r.legs[size_t(s)]);
+            paw(d, 1.15f * fs * std::sqrt(hs), sd, r.legs[size_t(s)].tip);
+        }
+        {  // hind leg: big thigh, the stifle forward, a lean shank to the hock, long metatarsal
+            const Vec3 a = m.hindHip[s], b = m.hindKnee[s], c = m.hindAnkle[s], d = m.hindBall[s];
+            leg({{a + Vec3{-sd * 0.02f * H, 0.08f * H, 0.03f * H}, rh * 1.15f, 0.0f}, {a, rh * 1.15f, 0.10f}, {lerp(a, b, 0.5f), rh * 1.02f, 0.22f},
+                 {b, rh * 0.74f, 0.34f}, {lerp(b, c, 0.32f), rh * 0.72f, 0.44f}, {lerp(b, c, 0.78f), rh * 0.46f, 0.60f}, {c, rh * 0.42f, 0.72f},
+                 {lerp(c, d, 0.5f), rh * 0.38f, 0.84f}, {d + Vec3{0, 0.035f * H, -0.01f * H}, rh * 0.42f, 0.96f}},
+                0.34f, 0.72f, hips, r.legs[size_t(s + 2)]);
+            paw(d, 0.95f * fs, sd, r.legs[size_t(s + 2)].tip);
         }
     }
-    const float th = 0.5f * (lo + hi);
-    const Pose pose = makePose(th);
-    poseMatrices(sk, pose, global, skin);
-    skinMesh(mesh, skin, pos, nrm);
-    float minY = 1e9f, maxY = -1e9f;
-    for (const Vec3& q : pos) minY = std::min(minY, q.y), maxY = std::max(maxY, q.y);
-    const Vec3 lift{0, -minY, 0};
-    for (size_t i = 0; i < pos.size(); ++i) mesh.vertices[i].pos = pos[i] + lift, mesh.vertices[i].normal = nrm[i];
-    // The pose becomes the rest pose: joints move, rest frames stay world-aligned, so
-    // everything stored in a bone's rest frame turns with that bone's rotation.
-    std::vector<Quat> rot(nb);
-    for (size_t i = 0; i < nb; ++i) {
-        const int p = sk.bones[i].parent;
-        rot[i] = normalize(p >= 0 ? rot[size_t(p)] * pose.rot[i] : pose.rot[i]);
-        sk.bones[i].restWorld = global[i].point({0, 0, 0}) + lift;
-    }
-    for (size_t i = 0; i < nb; ++i) {
-        const int p = sk.bones[i].parent;
-        sk.bones[i].restLocal = p >= 0 ? sk.bones[i].restWorld - sk.bones[size_t(p)].restWorld : sk.bones[i].restWorld;
-    }
-    for (JointLimit& l : r.limits) l.axis = rotate(rot[size_t(l.bone)], l.axis);
-    for (LimbRig& l : r.arms) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
-    for (LimbRig& l : r.legs) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
-    for (LimbRig& l : r.wings) l.restDir = rotate(rot[size_t(l.upper)], l.restDir);
-    for (SpringChain& c : ch.physics.chains)
-        if (!c.bones.empty()) c.tail = rotate(rot[size_t(c.bones.back())], c.tail);
-    for (PhysCollider& c : ch.physics.colliders) c.a = rotate(rot[size_t(c.bone)], c.a), c.b = rotate(rot[size_t(c.bone)], c.b);
-    ch.height = maxY - minY;
 }
 
 // ---------------------------------------------------------------- living world (orb body)
@@ -1554,7 +1606,7 @@ void Builder::bakeBeastStance() {
 // out of its upper front, stubby arms and legs break from its sides and underside, and a
 // few stones circle it. Skinned up the spine so it leans and turns with the body.
 void Builder::buildOrbBody() {
-    if (!g.body.orb || bonesOnly_ || g.body.centaur || g.body.lowerBody) return;
+    if (!g.body.orb || bonesOnly_ || g.body.centaur || g.body.lowerBody || beast_) return;
     const float h = m.h;
     const RigInfo& r = ch.rig;
     // From the hips to well over the crown; the head is carried forward (computeMarks) so

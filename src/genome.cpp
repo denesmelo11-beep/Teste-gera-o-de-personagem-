@@ -892,18 +892,18 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
         case Species::Gloomhound: {  // blind cave hunters on all fours: a long eyeless head, a split maw, a ridge of spines
             b.boneMass *= 1.2f;
             height(fem ? 1.85f : 1.95f, fem ? 2.05f : 2.20f);  // standing; on all fours about half that at the shoulder
-            b.headsTall = r.range(6.2f, 6.6f);
+            b.headsTall = r.range(5.0f, 5.4f);  // on all fours the head is big for the body
             b.legRatio = 0.42f;
             widths(0.95f, 1.05f, 0.80f, 0.95f, 1.15f);
             b.chestDepth *= 1.45f; b.neckLength *= 1.3f; b.neckThick *= 1.4f; b.armLength *= 1.22f; b.handSize *= 1.1f; b.hands = 1;
             b.muscle = saturate(b.muscle + 0.35f); b.belly = 0.0f; b.bust = 0.0f; b.butt *= 0.6f; b.hunch = 0.0f;
-            b.stance = 1; b.digitigrade = true; b.claws = true; b.furPattern = 2; b.ears = EarStyle::None;
+            b.stance = 1; b.digitigrade = true; b.claws = true; b.furPattern = r.chance(0.5f) ? 3 : 2; b.ears = EarStyle::None;
             b.tail = true; b.tailType = r.chance(0.5f) ? 0 : 4; b.tailLength = r.range(0.9f, 1.2f);
             b.spines = r.rangeInt(6, 10); b.spineKind = 0; b.spineSize = r.range(0.9f, 1.3f);
-            b.muzzle = r.range(0.85f, 1.0f); b.snout = 1;
+            b.muzzle = r.range(0.35f, 0.6f); b.snout = 1;  // a blunt face: the maw does the work
             f.eyeKind = 3; f.maw = r.chance(0.6f); f.mouthWidth = 1.5f; f.darkNose = false; f.noseProj = 0.9f; f.noseWidth = 1.3f;
             f.browRidge = 0.6f; f.lipFullness = 0.0f; f.stubble = 0.0f; f.lashWeight = 0.0f; f.headTop = -0.3f;
-            const Vec3 hide = pickC({{0.48f, 0.32f, 0.22f}, {0.38f, 0.30f, 0.28f}, {0.30f, 0.28f, 0.30f}, {0.55f, 0.42f, 0.30f}});
+            const Vec3 hide = pickC({{0.66f, 0.40f, 0.18f}, {0.32f, 0.42f, 0.54f}, {0.50f, 0.40f, 0.28f}, {0.42f, 0.37f, 0.38f}});  // rust, slate, dun, ash
             skinTo(hide);
             pal.lips = hide * 0.35f;
             pal.horn = Vec3{0.80f, 0.72f, 0.55f};  // spines and claws

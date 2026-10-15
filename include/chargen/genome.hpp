@@ -162,7 +162,7 @@ struct BodyShape {
     int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow), 2 reptile (long, flat, wide jaw)
     bool tailFur = false;       // bushy furred tail (hair material)
     bool claws = false;         // dark claws on fingers and toes
-    int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs
+    int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs, 3 also stripes (beasts)
     int bones = 0;              // exposed bones (undead): 1 ribs, 2 forearm, 4 shin, 8 jaw
     int boneSide = 1;           // +1 left, -1 right
     // ---- composable species traits (any people can wear any of them) ----

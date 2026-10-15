@@ -42,7 +42,7 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 | Pesky Dust | fada pequena | Fae: pequena, asas de inseto, antenas plumosas | ◐ |
 | Arachnichimp / Ball Weevil | aranha, aracnídeo | ✗ corpo inferior aracnídeo (drider) | ✗ |
 | Ciclopes | um olho central | `eyeKind = 2` (Cyclops) | ✓ |
-| Wildmutt (vulpimancer) | fera cega de quatro patas | `stance = 1` corpo de besta + `eyeKind = 3` + bocarra + espinhos (Gloomhound) | ✓ |
+| Wildmutt (vulpimancer) | fera cega de quatro patas | `stance = 1` corpo quadrúpede (patas com garras, cernelha alta) + `eyeKind = 3` + bocarra + espinhos + listras (Gloomhound) | ✓ |
 | Gravattack (galileano) | corpo-planeta, rosto na esfera, membros curtos | `orb` + crosta de magma + luas orbitando (Gravitant) | ✓ |
 | Arctiguana (manzardill polar) | bocarra, criatura do gelo | `maw` + escamas + paleta gélida (Rimemaw) | ◐ |
 | Armodrillo / Juryrigg (talpaedano) | escavador, mãos de pá | `hands = 4` pás + focinho, olhos enterrados (Talpid) | ✓ |
@@ -62,6 +62,6 @@ Legenda: ✓ coberto · ◐ aproximado · ✗ ainda não existe.
 
 Combinados com o que o motor já tinha (quatro braços, caudas, cristas dorsais, chifres, cascos,
 digitígrado, centauro, mortos-vivos, esqueletos), isso cobre a maior parte das raças de D&D e WoW.
-Lacunas mais úteis para a próxima rodada: corpo inferior aracnídeo (drider), pele vegetal e um
-modo de andar próprio para quem anda de quatro (hoje usa os clipes bípedes, que já alternam patas
-em diagonal).
+Lacunas mais úteis para a próxima rodada: corpo inferior aracnídeo (drider), pele vegetal e
+clipes próprios para quem anda de quatro (o trote em diagonal já funciona; falta um ataque de
+mordida ou patada no lugar do golpe com os braços).

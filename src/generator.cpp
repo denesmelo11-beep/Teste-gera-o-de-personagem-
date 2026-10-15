@@ -121,6 +121,7 @@ void emitSpike(Part& p, Vec3 base, Vec3 dir, Vec3 sweep, float len, float wid, i
 Builder::Builder(const Genome& genome, const GenOptions& o) : g(genome), opt(o), lod(lodSpec(o.lod)) {
     decay_ = std::max(o.decay, genome.body.skeletal ? 1.0f : 0.0f);
     bonesOnly_ = decay_ >= 0.97f;
+    beast_ = genome.body.stance == 1 && !genome.body.centaur && !genome.body.lowerBody;
     computeMarks();
     const BodyShape& b = g.body;
     const float h = m.h, S = b.shoulderWidth * h, C = b.chestWidth * h, W = b.waistWidth * h, P = b.hipWidth * h;
@@ -243,7 +244,7 @@ void Builder::computeMarks() {
                 a.shoulder = {a.side * std::max(S - 0.55f * del, 0.5f * S), m.shoulderY - 0.05f * h - 0.9f * del - 0.10f * mu * h,
                               -0.02f * h + 0.05f * b.hunch * h + 0.20f * stoop * h};
                 a.clav = {a.side * 0.10f * h, m.shoulderY - 0.10f * h, -0.02f * h + 0.03f * b.hunch * h + 0.20f * stoop * h};
-                angle = b.stance == 1 ? 9.0f : 46.0f;  // forelegs stand under the shoulders
+                angle = 46.0f;
                 fwd = 0.0f;
             } else {
                 // A second shoulder girdle on the lower ribcage: a little smaller, angled
@@ -272,8 +273,74 @@ void Builder::computeMarks() {
 
     m.neckBase = {0, m.shoulderY - 0.06f * h, -0.02f * h + 0.06f * b.hunch * h + 0.24f * stoop * h};
     m.headOrigin = {0, m.chinY, 0.05f * h + 0.12f * b.hunch * h + 0.45f * stoop * h};
-    if (b.orb && !b.centaur && !b.lowerBody) m.headOrigin.z += 0.55f * h;  // the face set in the front of the sphere
+    if (b.orb && !b.centaur && !b.lowerBody && !beast_) m.headOrigin.z += 0.55f * h;  // the face set in the front of the sphere
     m.headPivot = m.headOrigin + Vec3{0, 0.14f * h, -0.10f * h};
+    if (beast_) computeBeastMarks();
+}
+
+// On all fours, in units of the standing height H: high withers over massive forelegs,
+// the back sloping down to a lower rump over crouched, digitigrade hind legs, and the
+// head carried low in front of the chest on a short, thick neck.
+void Builder::computeBeastMarks() {
+    const BodyShape& b = g.body;
+    const float H = m.H, h = m.h;
+    const float fl = clamp(b.legRatio / 0.42f, 0.8f, 1.25f);  // leg length
+    const float bl = clamp(0.85f + 0.15f * b.armLength, 0.9f, 1.15f);  // forelimb length
+    const float wk = clamp(0.5f * (b.shoulderWidth + b.chestWidth) / 1.0f, 0.8f, 1.4f);
+    bTop_ = Curve{{0.0f, 0.47f}, {0.12f, 0.53f}, {0.30f, 0.535f}, {0.45f, 0.55f}, {0.62f, 0.60f}, {0.80f, 0.66f}, {0.92f, 0.65f}, {1.0f, 0.58f}};
+    bBot_ = Curve{{0.0f, 0.40f}, {0.10f, 0.34f}, {0.25f, 0.33f}, {0.42f, 0.34f}, {0.62f, 0.29f}, {0.80f, 0.25f}, {0.93f, 0.27f}, {1.0f, 0.34f}};
+    bHw_ = Curve{{0.0f, 0.075f}, {0.10f, 0.13f}, {0.22f, 0.135f}, {0.40f, 0.115f}, {0.62f, 0.14f}, {0.80f, 0.17f}, {0.92f, 0.16f}, {1.0f, 0.105f}};
+    m.beastZR = -0.40f * H;
+    m.beastZF = 0.30f * H;
+    for (int s = 0; s < 2; ++s) {
+        const float sd = s == 0 ? 1.0f : -1.0f;
+        // Forelegs: the point of the shoulder low on the chest front, the elbow back under
+        // the chest, a straight forearm to the wrist, a short pastern to the paw.
+        m.hipJoint[s] = {sd * 0.13f * H * wk, 0.46f * H * fl * bl, 0.19f * H};
+        m.knee[s] = {sd * 0.18f * H * wk, 0.28f * H * fl * bl, 0.09f * H};
+        m.ankle[s] = {sd * 0.19f * H * wk, 0.09f * H, 0.13f * H};
+        m.ball[s] = {sd * 0.20f * H * wk, 0.025f * H, 0.20f * H};
+        // Hind legs: the stifle forward, the hock well back, a long metatarsal.
+        m.hindHip[s] = {sd * 0.12f * H * wk, 0.43f * H * fl, -0.27f * H};
+        m.hindKnee[s] = {sd * 0.16f * H * wk, 0.27f * H * fl, -0.16f * H};
+        m.hindAnkle[s] = {sd * 0.16f * H * wk, 0.13f * H * fl, -0.37f * H};
+        m.hindBall[s] = {sd * 0.16f * H * wk, 0.025f * H, -0.28f * H};
+    }
+    m.ankleY = m.ankle[0].y;
+    const BeastRing fr = beastRing(1.0f);
+    m.neckBase = {0, fr.y + 0.2f * fr.top, m.beastZF - 0.04f * H};
+    // The head low and forward: its centre a little under the withers' base.
+    const float headC = 0.43f * H * fl * bl;
+    m.headOrigin = {0, headC - 0.55f * h, m.beastZF + 0.15f * H + 0.45f * h + 0.25f * (b.neckLength - 1.0f) * h};
+    m.headPivot = m.headOrigin + Vec3{0, 0.30f * h, -0.30f * h};
+    // The arm bones stay in the rig (sockets, clips) folded away inside the chest.
+    for (ArmMarks& a : m.arms) {
+        const float k = a.pair ? 0.8f : 1.0f;
+        a.clav = {a.side * 0.03f * H, fr.y + 0.05f * H, m.beastZF - 0.14f * H * k};
+        a.shoulder = {a.side * 0.07f * H, fr.y, m.beastZF - 0.14f * H * k};
+        a.dir = normalize(Vec3{a.side * 0.3f, -1.0f, 0.4f});
+        a.elbow = a.shoulder + a.dir * (0.05f * H);
+        a.wrist = a.elbow + a.dir * (0.04f * H);
+        a.handTip = a.wrist + a.dir * (0.03f * H);
+        a.radius = std::min(a.radius, 0.03f * H);
+    }
+}
+
+// Beast trunk profile, t from the rump (0) to the chest front (1), in units of H: a
+// round croup, the loins tucked up, the back rising to high withers over a deep chest.
+BeastRing Builder::beastRing(float t) const {
+    const BodyShape& b = g.body;
+    const float H = m.H, fl = clamp(b.legRatio / 0.42f, 0.8f, 1.25f), bl = clamp(0.85f + 0.15f * b.armLength, 0.9f, 1.15f);
+    const float wk = clamp(0.5f * (b.shoulderWidth + b.chestWidth), 0.8f, 1.4f), mu = 1.0f + 0.15f * b.muscle;
+    const Curve &top = bTop_, &bot = bBot_, &hw = bHw_;
+    const float tc = clamp(t, 0.0f, 1.0f);
+    // Front of the trunk rides on the forelegs, the back on the hind legs.
+    const float yk = lerp(fl, fl * bl, smoothstep(0.3f, 0.8f, tc));
+    const float yt = top(tc) * H * yk, yb = bot(tc) * H * yk;
+    const float y = 0.5f * (yt + yb), half = 0.5f * (yt - yb);
+    // Deep chest, lean loins: more of the height hangs below the centre at the chest.
+    const float sk = 0.18f * bump((tc - 0.78f) / 0.25f);
+    return {y, hw(tc) * H * wk * mu, half * (1.0f - sk), half * (1.0f + sk)};
 }
 
 Part& Builder::newPart(bool flat, SubmeshKind kind) {
@@ -328,6 +395,11 @@ float Builder::gluteDepth(float t) const {
 // strength comes from the Anatomy fields (muscle size, bone prominence) and from
 // `definition` (how much body fat softens the forms).
 Vec3 Builder::torsoPoint(float t, float th) const {
+    if (beast_) {  // the trunk lies along z: the torso's front is the belly, its back the spine
+        const BeastRing br = beastRing(t);
+        const Vec2 q = SuperRing{br.w, 0, br.bot, br.top, 2.3f, 2.3f}.point(th);
+        return {q.x, br.y - q.y, beastZ(t)};
+    }
     // Relief is sized in head units; big-headed short peoples (gnomes, dwarves, chibi)
     // have a small torso for their head, so their muscles and bones scale down with it
     // (else the planes stack into horizontal bands).
@@ -503,9 +575,16 @@ void Builder::buildSkeleton() {
     RigInfo& r = ch.rig;
     const float h = m.h;
     r.root = sk.add("root", -1, {0, 0, 0});
-    r.hips = sk.add("hips", r.root, {0, m.hipJointY, 0});
-    r.spine = sk.add("spine", r.hips, {0, m.waistY, 0});
-    r.chest = sk.add("chest", r.spine, {0, m.chestY, 0});
+    if (beast_) {  // the spine runs along the trunk, rump to withers
+        auto axis = [&](float t) { return Vec3{0, beastRing(t).y + 0.25f * beastRing(t).top, beastZ(t)}; };
+        r.hips = sk.add("hips", r.root, axis(0.17f));
+        r.spine = sk.add("spine", r.hips, axis(0.48f));
+        r.chest = sk.add("chest", r.spine, axis(0.78f));
+    } else {
+        r.hips = sk.add("hips", r.root, {0, m.hipJointY, 0});
+        r.spine = sk.add("spine", r.hips, {0, m.waistY, 0});
+        r.chest = sk.add("chest", r.spine, {0, m.chestY, 0});
+    }
     r.neck = sk.add("neck", r.chest, m.neckBase);
     r.head = sk.add("head", r.neck, m.headPivot);
     for (const ArmMarks& a : m.arms) {
@@ -524,7 +603,7 @@ void Builder::buildSkeleton() {
         LimbRig l;
         l.side = s == 0 ? 1.0f : -1.0f;
         l.restDir = normalize(m.knee[s] - m.hipJoint[s]);
-        l.upper = sk.add("thigh" + suf, r.hips, m.hipJoint[s]);
+        l.upper = sk.add("thigh" + suf, beast_ ? r.chest : r.hips, m.hipJoint[s]);  // a beast's forelegs hang from the chest
         l.lower = sk.add("shin" + suf, l.upper, m.knee[s]);
         l.end = sk.add("foot" + suf, l.lower, m.ankle[s]);
         l.tip = sk.add("toe" + suf, l.end, m.ball[s]);
@@ -544,7 +623,7 @@ void Builder::buildSkeleton() {
         r.limits.push_back({a.lower, true, normalize(cross(a.restDir, {0, 0, 1})), -0.05f, 2.55f});
         cone(a.end, 1.25f);
     }
-    if (g.body.centaur)
+    if (g.body.centaur || beast_)
         for (int s = 0; s < 2; ++s) {
             std::string suf = s == 0 ? ".L" : ".R";
             LimbRig l;
@@ -563,7 +642,7 @@ void Builder::buildSkeleton() {
         cone(l.end, 0.9f);
         cone(l.tip, 0.7f);
     }
-    if (g.body.bust > 0.05f) {
+    if (g.body.bust > 0.05f && !beast_) {
         const float bust = std::min(g.body.bust, 1.5f);
         const float tb = 0.735f - 0.035f * bust - 0.05f * g.body.sag, depth = (0.06f + 0.31f * bust) * h;
         for (int s = 0; s < 2; ++s) {
@@ -1786,8 +1865,12 @@ void Builder::buildTail() {
     float y0 = m.crotchY + 0.22f * m.torsoLen;
     float z0 = torsoRing(torsoT(y0)).backZ(0) - gluteDepth(0.22f) + 0.02f * h;
     if (g.body.centaur) y0 = m.barrelY + 0.80f * m.barrelHalfH, z0 = m.barrelBack + 0.05f * h;
-    const float len = lenK[type] * g.body.tailLength * (g.body.centaur ? m.barrelY + 0.4f * m.barrelHalfH : m.hipJointY) * 0.95f;
-    const float r0 = 0.11f * h * (1 + 0.3f * g.body.muscle) * (g.body.centaur ? 1.6f : 1.0f);
+    if (beast_) {  // from the top of the rump
+        const BeastRing br = beastRing(0.04f);
+        y0 = br.y + 0.55f * br.top, z0 = beastZ(0.04f) - 0.01f * m.H;
+    }
+    const float len = lenK[type] * g.body.tailLength * (g.body.centaur ? m.barrelY + 0.4f * m.barrelHalfH : beast_ ? 0.36f * m.H : m.hipJointY) * 0.95f;
+    const float r0 = beast_ ? 0.032f * m.H * (1 + 0.3f * g.body.muscle) : 0.11f * h * (1 + 0.3f * g.body.muscle) * (g.body.centaur ? 1.6f : 1.0f);
     const float rt = r0 * radK[type];
     constexpr int kPts = 9;
     std::vector<Vec3> pts;
@@ -1804,6 +1887,11 @@ void Builder::buildTail() {
             case 5: d = {0.22f * std::sin(u * 5.0f), lerp(-1.8f, -0.4f, u), -0.8f}; break;   // limp rat tail
             case 4: d = {0, lerp(-1.3f, 0.2f, u), -1.0f}; break;
             default: d = {0, lerp(-1.2f, 0.3f, u), -1.0f}; break;
+        }
+        if (beast_) {  // carried up off the rump in an arc, then curling over (heavy and bushy ones lower)
+            const float lift = type == 1 ? 0.25f : type == 3 ? -0.15f : type == 5 ? 0.45f : 1.0f;
+            d.y = lerp(0.25f + 0.55f * lift, -0.45f - 0.4f * (1.0f - lift), u);
+            d.z = -lerp(1.0f, 0.55f, u);
         }
         p += normalize(d) * step;
         // Long tails on short bodies reach the ground: they trail along it instead.
@@ -1872,7 +1960,7 @@ void Builder::buildTail() {
     Vec3 base = g.palette.skin;
     const bool fur = type == 3, tuft = g.body.hooves && !fur;
     const Vec3 hairC = g.palette.hair;
-    const float darken = type == 1 ? 0.30f : 0.15f;
+    const float darken = beast_ ? 0.0f : type == 1 ? 0.30f : 0.15f;  // (a beast's tail takes its fur)
     emitLoft(newPart(), L, [=](float t, float, Vec3) { return tw(t); }, [=](float t, float) {
         if (fur) return Mat{lerp(hairC, base, 0.3f) * (1.0f - 0.2f * t), MaterialClass::Hair};
         if (tuft && t > 0.8f) return Mat{hairC, MaterialClass::Hair};
@@ -1944,8 +2032,8 @@ void Builder::buildCore() {
     const RigInfo& r = ch.rig;
     const bool chest = g.body.core == 2;
     const float t = chest ? 0.74f : 0.38f;
-    const Vec3 q = torsoPoint(t, 0.5f * kPi);
-    const Vec3 n{0, 0, 1};
+    const Vec3 q = beast_ ? torsoPoint(chest ? 0.99f : 0.50f, 0.5f * kPi) : torsoPoint(t, 0.5f * kPi);
+    const Vec3 n = beast_ ? normalize(chest ? Vec3{0, -0.55f, 1} : Vec3{0, -1, 0}) : Vec3{0, 0, 1};
     const float R = (chest ? 0.17f : 0.20f) * h;
     const int bone = chest ? r.chest : r.spine;
     Part& p = newPart();
@@ -2130,8 +2218,9 @@ void Builder::buildSpines() {
         const float len = (g.body.spineKind == 2 ? 0.24f : g.body.spineKind == 1 ? 0.42f : 0.55f) * h * sz;
         const float wid = (g.body.spineKind == 1 ? 0.17f : g.body.spineKind == 2 ? 0.12f : 0.11f) * h * sz;
         // Spikes rake back towards the hips; near the neck they lean up and back.
-        const Vec3 dir = normalize(Vec3{0, lerp(-0.45f, 0.25f, a), -1.0f});
-        const Vec3 sweep = Vec3{0, -1, 0};
+        Vec3 dir = normalize(Vec3{0, lerp(-0.45f, 0.25f, a), -1.0f});
+        Vec3 sweep = Vec3{0, -1, 0};
+        if (beast_) dir = normalize(Vec3{0, 1.0f, lerp(-0.85f, -0.45f, a)}), sweep = {0, 0, -1};  // up from the back, raked to the rump
         const SkinW w = chainWeights({{0.12f, r.hips}, {0.40f, r.spine}, {0.66f, r.chest}, {1.0f, r.chest}, {1.16f, r.neck}}, t);
         const float shade = 1.0f - 0.12f * float(k % 2);
         // Plates grow from hide (darker, skin-toned at the root) and stagger left and right.
@@ -2163,10 +2252,21 @@ void Builder::buildColliders() {
         float half = std::max(0.0f, tr.w - rad);
         add(bone, {-half, y, zc}, {half, y, zc}, rad);
     };
-    band(r.chest, 0.88f, 0.0f);
-    band(r.chest, 0.74f, 0.0f);
-    band(r.spine, 0.48f, 0.0f);
-    band(r.hips, 0.12f, gluteDepth(0.06f));
+    if (beast_) {  // the trunk: a capsule through the rump and loins, one through the chest
+        auto trunk = [&](int bone, float t0, float t1) {
+            const BeastRing a = beastRing(t0), b = beastRing(t1);
+            const float rad = 0.9f * std::min({a.w, b.w, a.top, b.top});
+            add(bone, {0, a.y, beastZ(t0)}, {0, b.y, beastZ(t1)}, rad);
+        };
+        trunk(r.hips, 0.08f, 0.40f);
+        trunk(r.chest, 0.55f, 0.95f);
+        for (int s = 0; s < 2; ++s) add(r.legs[size_t(s + 2)].upper, m.hindHip[s], m.hindKnee[s], 0.06f * m.H);
+    } else {
+        band(r.chest, 0.88f, 0.0f);
+        band(r.chest, 0.74f, 0.0f);
+        band(r.spine, 0.48f, 0.0f);
+        band(r.hips, 0.12f, gluteDepth(0.06f));
+    }
     if (r.bustL >= 0) {
         float depth = (0.06f + 0.31f * std::min(g.body.bust, 1.5f)) * h;
         const float B = std::min(g.body.bust, 1.5f), sag = g.body.sag;
@@ -2183,12 +2283,12 @@ void Builder::buildColliders() {
             ch.physics.jiggles.push_back(jb);
         }
     }
-    for (size_t i = 0; i < std::min<size_t>(2, r.arms.size()); ++i) {
+    for (size_t i = 0; i < std::min<size_t>(2, r.arms.size()) && !beast_; ++i) {
         const ArmMarks& a = m.arms[i];
         add(r.arms[i].upper, a.shoulder, a.elbow, a.radius * 1.05f);
         add(r.arms[i].lower, a.elbow, a.wrist, a.radius * 0.85f);
     }
-    for (int s = 0; s < 2; ++s) add(r.legs[size_t(s)].upper, m.hipJoint[s], m.knee[s], g.body.thigh * h * 0.95f);
+    for (int s = 0; s < 2; ++s) add(r.legs[size_t(s)].upper, m.hipJoint[s], m.knee[s], beast_ ? 0.065f * m.H : g.body.thigh * h * 0.95f);
     if (g.body.centaur)  // the horse barrel: hair and tails rest on it
         add(r.hips, Vec3{0, m.barrelY + 0.1f * m.barrelHalfH, m.barrelFront - 0.6f * h}, Vec3{0, m.barrelY + 0.1f * m.barrelHalfH, m.barrelBack + 0.6f * h},
             0.92f * m.barrelHalfH);
@@ -2327,6 +2427,15 @@ void Builder::applyFur() {
             if (tr.m.cls != MaterialClass::Skin || length(tr.m.color - sk) > 0.02f) continue;
             const Vec3 A = p.pos[tr.a], B = p.pos[tr.b], C = p.pos[tr.c], c = (A + B + C) / 3.0f;
             const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
+            if (beast_) {  // pale throat and belly, a dark saddle, dark paws; some are striped
+                const float H = m.H;
+                Vec3 col = lerp(sk, pale, 0.40f * smoothstep(-0.25f, -0.85f, n.y));
+                col = lerp(col, dark, 0.35f * smoothstep(0.30f, 0.85f, n.y) * smoothstep(0.30f * H, 0.42f * H, c.y));
+                if (pat >= 2) col = lerp(col, dark, 0.7f * smoothstep(0.10f * H, 0.04f * H, c.y));
+                tr.m.color = col;
+                tr.m.cls = MaterialClass::Hair;
+                continue;
+            }
             const float front = smoothstep(0.25f, 0.85f, n.z) * smoothstep(m.crotchY - 0.1f * m.h, m.crotchY + 0.2f * m.h, c.y) *
                                 smoothstep(m.H, m.H - 0.6f * m.h, c.y + 0.3f * m.h * smoothstep(0.0f, 0.3f, -n.y));
             const float back = smoothstep(-0.2f, -0.8f, n.z) * smoothstep(m.crotchY, m.shoulderY, c.y);
@@ -2346,7 +2455,7 @@ void Builder::buildFurTufts() {
     const float h = m.h;
     Rng r = Rng(g.seed).fork(61);
     Part& p = newPart();
-    const Vec3 c0 = lerp(g.palette.hair, g.palette.skin, 0.35f);
+    const Vec3 c0 = beast_ ? g.palette.skin * 0.80f : lerp(g.palette.hair, g.palette.skin, 0.35f);  // a beast's tufts are its own coat
     auto tuft = [&](Vec3 base, Vec3 n, Vec3 flow, float w, float L, int bone) {
         flow = normalize(flow - n * dot(flow, n), Vec3{0, -1, 0});
         const Vec3 side = normalize(cross(n, flow));
@@ -2382,6 +2491,27 @@ void Builder::buildFurTufts() {
                 tuft(lerp(a, b, t) + n * (0.90f * rr), n, d, 3.0f * size * h * r.range(0.8f, 1.2f), 2.4f * size * h * r.range(0.8f, 1.25f), bone);
             }
     };
+    if (beast_) {
+        const float H = m.H, wk = clamp(0.5f * (g.body.shoulderWidth + g.body.chestWidth), 0.8f, 1.4f);
+        const float rf = 0.082f * H * (1.0f + 0.3f * g.body.muscle) * wk, rh = 0.074f * H * (1.0f + 0.3f * g.body.muscle) * wk;
+        for (int s = 0; s < 2; ++s) {
+            const float sd = s == 0 ? 1.0f : -1.0f;
+            const LimbRig &fl = ch.rig.legs[size_t(s)], &hl = ch.rig.legs[size_t(s + 2)];
+            alongLimb(m.hipJoint[s], m.knee[s], 1.05f * rf, 0.85f * rf, Vec3{sd, 0.3f, -0.5f}, 0.9f, 2, 3, fl.upper, 0.07f);
+            alongLimb(m.knee[s], m.ankle[s], 0.80f * rf, 0.55f * rf, Vec3{0, 0, -1}, 1.0f, 3, 3, fl.lower, 0.06f);
+            alongLimb(m.hindHip[s], m.hindKnee[s], 1.0f * rh, 0.78f * rh, Vec3{sd, 0, -0.7f}, 0.8f, 2, 3, hl.upper, 0.065f);
+            alongLimb(m.hindKnee[s], m.hindAnkle[s], 0.70f * rh, 0.45f * rh, Vec3{0, 0.4f, -1}, 0.9f, 3, 2, hl.lower, 0.055f);
+        }
+        // Spiky tufts over the withers and up the neck, combed back.
+        for (int i = 0; i < 30; ++i) {
+            const float t = r.range(0.62f, 1.0f), th = 1.5f * kPi + r.range(-1.35f, 1.35f);
+            const Vec3 q = torsoPoint(t, th);
+            const Vec3 n = normalize(Vec3{q.x, q.y - beastRing(t).y, 0}, Vec3{0, 1, 0});
+            const float big = 1.0f + 0.6f * smoothstep(0.7f, 1.0f, t);
+            tuft(q, n, Vec3{0, 0.35f, -1}, 0.15f * h * big * r.range(0.8f, 1.2f), 0.36f * h * big * r.range(0.8f, 1.3f), ch.rig.chest);
+        }
+        return;
+    }
     for (size_t i = 0; i < m.arms.size(); ++i) {
         const ArmMarks& am = m.arms[i];
         if (am.pair != 0) continue;
@@ -2407,6 +2537,14 @@ void Builder::buildFurTufts() {
     }
 }
 
+// A beast's height is that of its back and head on all fours, not its standing height.
+void Builder::fitBeastHeight() {
+    if (!beast_ || ch.mesh.vertices.empty()) return;
+    float top = 0.0f;
+    for (const Vertex& v : ch.mesh.vertices) top = std::max(top, v.pos.y);
+    ch.height = top;
+}
+
 Character Builder::build() {
     ch.genome = g;
     ch.height = m.H;
@@ -2428,17 +2566,23 @@ Character Builder::build() {
         breakConstruct();
         applyConstructCut();
         finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
-        bakeBeastStance();
+        fitBeastHeight();
         ch.faceAtlas = paintFaceAtlas(g);
         return std::move(ch);
     }
     buildSkeleton();
-    buildTorso();
-    buildHead();
-    buildNose();
-    buildArms();
-    buildLegs();
-    buildFeet();
+    if (beast_) {
+        buildBeastBody();
+        buildHead();
+        buildNose();
+    } else {
+        buildTorso();
+        buildHead();
+        buildNose();
+        buildArms();
+        buildLegs();
+        buildFeet();
+    }
     buildTail();
     buildSpines();
     buildCore();
@@ -2477,7 +2621,7 @@ Character Builder::build() {
     buildBodyEyes();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
-    bakeBeastStance();
+    fitBeastHeight();
     ch.faceAtlas = paintFaceAtlas(g);
     return std::move(ch);
 }

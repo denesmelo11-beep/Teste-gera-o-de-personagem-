@@ -262,10 +262,15 @@ mesmo esqueleto, então as animações e a física existentes as movem:
 - **Corpo inferior** (`lowerBody`): cauda de serpente enrolada (ossos `coil0..7` em `rig.serpent`,
   ponta com física), rastro espectral (`wisp0..3`) ou monte de gosma com poça (`ooze0..2`). Os ossos de perna continuam existindo, então
   clipes e retargeting não quebram.
-- **Corpo de besta** (`stance = 1`): de quatro patas. O corpo pronto é posado (coluna inclinada
-  nos quadris, cintura e peito, braços viram patas dianteiras com o úmero inclinado, cabeça erguida
-  à frente) e essa pose vira a pose de repouso; a inclinação é resolvida para as quatro patas
-  tocarem o mesmo chão. Funciona em qualquer povo (um worgen de quatro vira lobo atroz).
+- **Corpo de besta** (`stance = 1`): um quadrúpede de verdade, não um humano curvado. Tronco
+  horizontal (garupa redonda, lombo recolhido, cernelha alta sobre um peito fundo), pescoço curto e
+  grosso levando a cabeça baixa à frente, patas dianteiras maciças (escápula, úmero, antebraço,
+  quartela) e traseiras digitígradas (joelho à frente, jarrete atrás), todas terminando em patas
+  largas com almofada, quatro dedos e garras (ou cascos). As quatro patas são `rig.legs[0..3]`
+  (dianteiras do peito, traseiras do quadril), então o trote em diagonal já funciona; os ossos de
+  braço ficam recolhidos no peito para soquetes. Cauda, espinhos, tufos, asas, tentáculos, cristais,
+  esqueleto e decomposição seguem o tronco deitado. `furPattern = 3` pinta listras de tigre.
+  Funciona em qualquer povo (um worgen de quatro vira lobo atroz).
 - **Corpo-planeta** (`orb`): o tronco engolido por uma esfera dos joelhos até acima da cabeça, o
   rosto saindo da frente, braços e pernas curtos, pedras orbitando.
 - **Mãos** (`hands`): garras de três dedos, pinça de caranguejo (osso `pincer` com dobradiça,

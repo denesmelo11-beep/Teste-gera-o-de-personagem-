@@ -143,7 +143,7 @@ Vec3 Builder::collide(Vec3 p, float margin) const {
         }
         // Torso (sculpted surface).
         float t = torsoT(p.y);
-        if (t > -0.05f && t < 1.03f) {
+        if (t > -0.05f && t < 1.03f && !beast_) {  // (a beast's trunk is in the colliders)
             float zc = cZc_(t);
             Vec2 d{p.x, p.z - zc};
             float ang = std::atan2(d.y, d.x), th = ang;
