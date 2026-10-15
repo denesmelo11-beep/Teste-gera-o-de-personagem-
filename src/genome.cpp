@@ -17,7 +17,8 @@ constexpr std::string_view kHairNames[] = {"bald", "buzz", "shortcrop", "sidepar
                                            "shoulder", "longstraight", "longwavy", "ponytail", "highponytail", "braid", "bun", "halfup", "manbun",
                                            "crewcut", "tonsure", "warriorbraids", "curly", "afro", "mullet", "topknot", "locs", "wolf",
                                            "hime", "crownbraid", "twinbraids", "sidebraid", "lowponytail", "bowlcut", "messybun",
-                                           "longcurly", "verylong", "asymbob"};
+                                           "longcurly", "verylong", "asymbob", "mohawk", "spiky", "pompadour", "cornrows", "braidedcrest",
+                                           "sideshave", "pigtails", "spacebuns", "wildmane", "warriortail", "sweptlong", "beadedbraids"};
 static_assert(std::size(kHairNames) == size_t(cg::HairStyle::Count));
 constexpr std::string_view kBeardNames[] = {"none", "stubble", "mustache", "goatee", "shortbeard", "fullbeard", "longbeard", "braidedbeard", "muttonchops", "tendrils"};
 constexpr std::string_view kSpeciesNames[] = {"human", "dwarf", "gnome", "orc", "troll", "undead", "nightelf", "highelf", "draenei", "tauren", "goblin", "worgen", "ogre", "centaur", "skeleton",
@@ -107,7 +108,8 @@ bool isShortHair(HairStyle h) {
     using H = HairStyle;
     switch (h) {
         case H::Bald: case H::Buzz: case H::ShortCrop: case H::SidePart: case H::SlickedBack: case H::Messy: case H::Undercut:
-        case H::Pixie: case H::CrewCut: case H::Tonsure: case H::Curly: case H::Afro: case H::BowlCut: return true;
+        case H::Pixie: case H::CrewCut: case H::Tonsure: case H::Curly: case H::Afro: case H::BowlCut: case H::Mohawk: case H::Spiky:
+        case H::Pompadour: case H::Cornrows: case H::BraidedCrest: return true;
         default: return false;
     }
 }
@@ -115,7 +117,7 @@ bool isTiedHair(HairStyle h) {
     using H = HairStyle;
     switch (h) {
         case H::Ponytail: case H::HighPonytail: case H::Braid: case H::Bun: case H::ManBun: case H::Topknot: case H::CrownBraid:
-        case H::TwinBraids: case H::SideBraid: case H::LowPonytail: case H::MessyBun: return true;
+        case H::TwinBraids: case H::SideBraid: case H::LowPonytail: case H::MessyBun: case H::Pigtails: case H::SpaceBuns: case H::WarriorTail: return true;
         default: return false;
     }
 }
@@ -225,7 +227,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             hairColor(pickC({{0.55f, 0.20f, 0.10f}, {0.30f, 0.20f, 0.14f}, {0.16f, 0.13f, 0.12f}, {0.75f, 0.60f, 0.35f}, {0.45f, 0.30f, 0.18f}}));
             hair({{HairStyle::Braid, 2}, {HairStyle::TwinBraids, fem ? 3.0f : 0.8f}, {HairStyle::Bald, fem ? 0.0f : 2.0f},
                   {HairStyle::WarriorBraids, 2}, {HairStyle::LongStraight, 1}, {HairStyle::CrownBraid, fem ? 2.0f : 0.0f},
-                  {HairStyle::Messy, 1}, {HairStyle::Topknot, fem ? 0.0f : 1.0f}});
+                  {HairStyle::Messy, 1}, {HairStyle::Topknot, fem ? 0.0f : 1.0f},
+                  {HairStyle::BraidedCrest, 1.5f}, {HairStyle::BeadedBraids, 1.5f}});
             beard({{FacialHair::LongBeard, 3}, {FacialHair::BraidedBeard, 3}, {FacialHair::FullBeard, 2}, {FacialHair::MuttonChops, 0.6f}});
             break;
         case Species::Gnome:
@@ -245,7 +248,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             hairColor(pickC({{0.62f, 0.36f, 0.44f}, {0.30f, 0.50f, 0.50f}, {0.42f, 0.32f, 0.52f}, {0.42f, 0.50f, 0.30f}, {0.80f, 0.80f, 0.80f},
                              {0.58f, 0.30f, 0.18f}, {0.70f, 0.62f, 0.40f}}));  // dyed, but faded
             hair({{HairStyle::TwinBraids, fem ? 2.0f : 0.0f}, {HairStyle::HighPonytail, fem ? 2.0f : 0.3f}, {HairStyle::Messy, 2},
-                  {HairStyle::Bun, fem ? 1.0f : 0.0f}, {HairStyle::BowlCut, 1}, {HairStyle::Curly, 1}, {HairStyle::Topknot, 1}});
+                  {HairStyle::Bun, fem ? 1.0f : 0.0f}, {HairStyle::BowlCut, 1}, {HairStyle::Curly, 1}, {HairStyle::Topknot, 1},
+                  {HairStyle::Pigtails, fem ? 2.0f : 0.0f}, {HairStyle::SpaceBuns, fem ? 1.5f : 0.0f}, {HairStyle::Spiky, 1.0f}, {HairStyle::Mohawk, 0.6f}});
             beard({{FacialHair::None, 1}, {FacialHair::Mustache, 2}, {FacialHair::Goatee, 1}, {FacialHair::FullBeard, 1.5f},
                    {FacialHair::MuttonChops, 1}});
             break;
@@ -270,7 +274,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.iris = pickC({{0.75f, 0.15f, 0.10f}, {0.85f, 0.55f, 0.10f}, {0.35f, 0.22f, 0.12f}});
             hairColor(pickC({{0.12f, 0.11f, 0.11f}, {0.22f, 0.15f, 0.11f}, {0.30f, 0.20f, 0.12f}}));
             hair({{HairStyle::Topknot, 2}, {HairStyle::Ponytail, 2}, {HairStyle::Bald, fem ? 0.2f : 2.0f}, {HairStyle::Braid, 1.5f},
-                  {HairStyle::WarriorBraids, 2}, {HairStyle::LowPonytail, 1}, {HairStyle::LongStraight, 1}, {HairStyle::Undercut, 1}});
+                  {HairStyle::WarriorBraids, 2}, {HairStyle::LowPonytail, 1}, {HairStyle::LongStraight, 1}, {HairStyle::Undercut, 1},
+                  {HairStyle::Mohawk, 2.0f}, {HairStyle::BraidedCrest, 2.0f}, {HairStyle::WarriorTail, 2.0f}, {HairStyle::Cornrows, 0.8f}});
             beard({{FacialHair::None, 2}, {FacialHair::Goatee, 2}, {FacialHair::BraidedBeard, 2}, {FacialHair::ShortBeard, 1}});
             break;
         case Species::Troll:
@@ -293,7 +298,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             hairColor(pickC({{0.85f, 0.25f, 0.15f}, {0.25f, 0.70f, 0.65f}, {0.92f, 0.92f, 0.95f}, {0.55f, 0.30f, 0.75f}, {0.40f, 0.75f, 0.35f},
                              {0.95f, 0.55f, 0.15f}}));
             hair({{HairStyle::Topknot, 3}, {HairStyle::Locs, 2}, {HairStyle::HighPonytail, 1.5f}, {HairStyle::Messy, 1},
-                  {HairStyle::Undercut, 1}, {HairStyle::Ponytail, 1}});
+                  {HairStyle::Undercut, 1}, {HairStyle::Ponytail, 1},
+                  {HairStyle::Mohawk, 3.0f}, {HairStyle::Spiky, 1.0f}, {HairStyle::WarriorTail, 1.0f}, {HairStyle::BeadedBraids, 1.0f}});
             beard({{FacialHair::None, 3}, {FacialHair::Goatee, 1}});
             break;
         case Species::Undead:
@@ -313,7 +319,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.lips = pal.skin * 0.55f;
             hairColor(pickC({{0.14f, 0.13f, 0.14f}, {0.55f, 0.55f, 0.55f}, {0.85f, 0.85f, 0.82f}, {0.35f, 0.28f, 0.24f}}));
             hair({{HairStyle::LongStraight, 2}, {HairStyle::Messy, 2}, {HairStyle::Bald, 1.5f}, {HairStyle::Ponytail, 1},
-                  {HairStyle::Shoulder, 1.5f}, {HairStyle::Tonsure, 0.5f}});
+                  {HairStyle::Shoulder, 1.5f}, {HairStyle::Tonsure, 0.5f},
+                  {HairStyle::SweptLong, 1.0f}, {HairStyle::SideShave, 1.0f}, {HairStyle::Mohawk, 0.5f}});
             beard({{FacialHair::None, 3}, {FacialHair::Stubble, 1}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::NightElf:
@@ -333,7 +340,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
                              {0.18f, 0.20f, 0.45f}}));
             if (fem && r.chance(0.65f)) { f.tattoo = 1 + r.rangeInt(0, 2); f.tattooColor = pickC({{0.25f, 0.15f, 0.40f}, {0.10f, 0.35f, 0.35f}, {0.20f, 0.35f, 0.15f}}); }
             hair({{HairStyle::LongStraight, 2}, {HairStyle::Ponytail, 2}, {HairStyle::HighPonytail, 1.5f}, {HairStyle::Braid, 1.5f},
-                  {HairStyle::HalfUp, 1}, {HairStyle::VeryLong, 1}, {HairStyle::WarriorBraids, 1}, {HairStyle::SidePart, fem ? 0.0f : 1.0f}});
+                  {HairStyle::HalfUp, 1}, {HairStyle::VeryLong, 1}, {HairStyle::WarriorBraids, 1}, {HairStyle::SidePart, fem ? 0.0f : 1.0f},
+                  {HairStyle::WarriorTail, 1.0f}, {HairStyle::SweptLong, 0.6f}, {HairStyle::BeadedBraids, 0.6f}});
             beard({{FacialHair::None, 3}, {FacialHair::LongBeard, 1.2f}, {FacialHair::FullBeard, 0.8f}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::HighElf:
@@ -352,7 +360,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             skinTo(pickC({{0.98f, 0.88f, 0.80f}, {0.96f, 0.84f, 0.74f}, {0.90f, 0.76f, 0.64f}}));
             hairColor(pickC({{0.92f, 0.82f, 0.50f}, {0.95f, 0.93f, 0.88f}, {0.70f, 0.22f, 0.12f}, {0.14f, 0.12f, 0.12f}, {0.50f, 0.25f, 0.14f}}));
             hair({{HairStyle::LongStraight, 3}, {HairStyle::Ponytail, 2}, {HairStyle::HalfUp, 2}, {HairStyle::SidePart, fem ? 0.3f : 2.0f},
-                  {HairStyle::SlickedBack, fem ? 0.0f : 1.5f}, {HairStyle::VeryLong, fem ? 1.5f : 0.3f}, {HairStyle::Bun, fem ? 1.0f : 0.0f}});
+                  {HairStyle::SlickedBack, fem ? 0.0f : 1.5f}, {HairStyle::VeryLong, fem ? 1.5f : 0.3f}, {HairStyle::Bun, fem ? 1.0f : 0.0f},
+                  {HairStyle::SweptLong, 1.5f}, {HairStyle::Pompadour, fem ? 0.0f : 0.5f}, {HairStyle::SideShave, 0.4f}});
             beard({{FacialHair::None, 6}, {FacialHair::Goatee, 0.5f}});
             break;
         case Species::Draenei:
@@ -370,7 +379,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.horn = Vec3{0.22f, 0.20f, 0.24f};
             hairColor(pickC({{0.14f, 0.13f, 0.16f}, {0.90f, 0.92f, 0.96f}, {0.25f, 0.30f, 0.60f}, {0.45f, 0.30f, 0.60f}}));
             hair({{HairStyle::LongStraight, 2}, {HairStyle::Ponytail, 2}, {HairStyle::Braid, 1.5f}, {HairStyle::HighPonytail, 1},
-                  {HairStyle::Bald, fem ? 0.0f : 2.0f}, {HairStyle::Topknot, fem ? 0.0f : 1.0f}});
+                  {HairStyle::Bald, fem ? 0.0f : 2.0f}, {HairStyle::Topknot, fem ? 0.0f : 1.0f},
+                  {HairStyle::BeadedBraids, 1.0f}, {HairStyle::WarriorTail, 1.0f}});
             beard({{FacialHair::Tendrils, 6}, {FacialHair::None, 1}});
             break;
         case Species::Tauren:
@@ -395,7 +405,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.iris = pickC({{0.30f, 0.20f, 0.12f}, {0.15f, 0.12f, 0.10f}});
             hairColor(pickC({{0.12f, 0.11f, 0.10f}, {0.30f, 0.20f, 0.14f}, {0.88f, 0.86f, 0.80f}, {0.45f, 0.32f, 0.20f}}));
             hair({{HairStyle::Braid, 2}, {HairStyle::TwinBraids, 2}, {HairStyle::LongStraight, 1.5f}, {HairStyle::WarriorBraids, 2},
-                  {HairStyle::Shoulder, 1}});
+                  {HairStyle::Shoulder, 1},
+                  {HairStyle::BeadedBraids, 2.0f}, {HairStyle::WildMane, 1.0f}});
             beard({{FacialHair::BraidedBeard, 3}, {FacialHair::None, 2}, {FacialHair::Goatee, 1}});
             if (g.facialHair == FacialHair::Goatee || g.facialHair == FacialHair::None) f.stubble = 0.0f;
             break;
@@ -416,7 +427,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.iris = pickC({{0.85f, 0.65f, 0.10f}, {0.75f, 0.15f, 0.10f}, {0.30f, 0.55f, 0.20f}});
             hairColor(pickC({{0.12f, 0.11f, 0.11f}, {0.30f, 0.20f, 0.14f}, {0.60f, 0.20f, 0.12f}, {0.55f, 0.55f, 0.55f}}));
             hair({{HairStyle::SlickedBack, 2}, {HairStyle::Topknot, 1.5f}, {HairStyle::Undercut, 1}, {HairStyle::Bald, fem ? 0.0f : 1.5f},
-                  {HairStyle::Messy, 1}, {HairStyle::Ponytail, fem ? 2.0f : 0.5f}, {HairStyle::Bun, fem ? 1.5f : 0.0f}});
+                  {HairStyle::Messy, 1}, {HairStyle::Ponytail, fem ? 2.0f : 0.5f}, {HairStyle::Bun, fem ? 1.5f : 0.0f},
+                  {HairStyle::Mohawk, 1.5f}, {HairStyle::Spiky, 1.5f}, {HairStyle::Pompadour, fem ? 0.0f : 1.0f}, {HairStyle::Pigtails, fem ? 1.0f : 0.0f}});
             beard({{FacialHair::None, 3}, {FacialHair::Mustache, 1.5f}, {FacialHair::Goatee, 1}, {FacialHair::MuttonChops, 1}});
             break;
         case Species::Worgen: {
@@ -443,7 +455,7 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.iris = pickC({{0.95f, 0.70f, 0.15f}, {0.85f, 0.45f, 0.10f}, {0.70f, 0.75f, 0.30f}});
             hairColor(fur * 0.78f);
             pal.horn = Vec3{0.20f, 0.18f, 0.17f};  // claws
-            if (!opt.hair) g.hair = r.chance(0.5f) ? HairStyle::Wolf : r.chance(0.5f) ? HairStyle::Shoulder : HairStyle::Messy;
+            if (!opt.hair) g.hair = r.chance(0.5f) ? HairStyle::Wolf : r.chance(0.5f) ? (r.chance(0.5f) ? HairStyle::WildMane : HairStyle::Shoulder) : HairStyle::Messy;
             g.fringe = Fringe::None;
             g.facialHair = FacialHair::MuttonChops;  // the cheek ruff
             break;
@@ -469,7 +481,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             skinTo(pickC({{0.55f, 0.50f, 0.42f}, {0.50f, 0.42f, 0.38f}, {0.58f, 0.36f, 0.30f}, {0.46f, 0.50f, 0.44f}, {0.44f, 0.44f, 0.50f}}));
             pal.iris = pickC({{0.85f, 0.55f, 0.10f}, {0.30f, 0.22f, 0.15f}, {0.75f, 0.20f, 0.10f}});
             hairColor(pickC({{0.12f, 0.11f, 0.11f}, {0.30f, 0.20f, 0.13f}, {0.45f, 0.18f, 0.10f}}));
-            hair({{HairStyle::Bald, fem ? 0.3f : 3.0f}, {HairStyle::Topknot, 2}, {HairStyle::Ponytail, 1}, {HairStyle::Messy, 1}, {HairStyle::Buzz, 1}});
+            hair({{HairStyle::Bald, fem ? 0.3f : 3.0f}, {HairStyle::Topknot, 2}, {HairStyle::Ponytail, 1}, {HairStyle::Messy, 1}, {HairStyle::Buzz, 1},
+                  {HairStyle::Mohawk, 1.5f}, {HairStyle::BraidedCrest, 0.8f}});
             beard({{FacialHair::None, 2}, {FacialHair::Stubble, 2}, {FacialHair::ShortBeard, 1}, {FacialHair::BraidedBeard, 1}});
             break;
         }
@@ -485,7 +498,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             b.ear = {0.20f, 0.08f, 0.35f, 0.40f, 0.0f};
             hairColor(pickC({{0.16f, 0.13f, 0.11f}, {0.36f, 0.24f, 0.15f}, {0.62f, 0.55f, 0.42f}, {0.75f, 0.74f, 0.70f}, {0.45f, 0.20f, 0.12f}}));
             hair({{HairStyle::LongStraight, 2}, {HairStyle::Braid, 2}, {HairStyle::WarriorBraids, 2}, {HairStyle::Ponytail, 1.5f},
-                  {HairStyle::LongWavy, 1}, {HairStyle::Topknot, fem ? 0.0f : 1.0f}});
+                  {HairStyle::LongWavy, 1}, {HairStyle::Topknot, fem ? 0.0f : 1.0f},
+                  {HairStyle::WildMane, 1.5f}, {HairStyle::BeadedBraids, 1.0f}});
             beard({{FacialHair::None, 2}, {FacialHair::FullBeard, 2}, {FacialHair::LongBeard, 1.5f}, {FacialHair::BraidedBeard, 1}});
             break;
         }
@@ -683,7 +697,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             pal.beak = pal.horn;
             hairColor(pickC({{0.08f, 0.07f, 0.08f}, {0.60f, 0.10f, 0.10f}, {0.85f, 0.85f, 0.88f}, {0.30f, 0.15f, 0.35f}}));
             hair({{HairStyle::LongStraight, 2}, {HairStyle::VeryLong, fem ? 1.5f : 0.3f}, {HairStyle::HighPonytail, 1}, {HairStyle::Bald, fem ? 0.0f : 1.5f},
-                  {HairStyle::SlickedBack, 1}, {HairStyle::Wolf, 1}});
+                  {HairStyle::SlickedBack, 1}, {HairStyle::Wolf, 1},
+                  {HairStyle::SweptLong, 1.0f}, {HairStyle::Mohawk, 0.6f}});
             beard({{FacialHair::None, 3}, {FacialHair::Goatee, 2}});
             break;
         }
@@ -722,7 +737,8 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
             skinTo(pickC({{0.78f, 0.80f, 0.82f}, {0.62f, 0.66f, 0.58f}, {0.72f, 0.64f, 0.78f}, {0.50f, 0.56f, 0.62f}}));
             pal.wing = pickC({{0.55f, 0.50f, 0.42f}, {0.40f, 0.48f, 0.52f}, {0.50f, 0.40f, 0.52f}, {0.62f, 0.60f, 0.50f}});
             hairColor(pickC({{0.85f, 0.85f, 0.88f}, {0.25f, 0.30f, 0.22f}, {0.45f, 0.30f, 0.55f}, {0.70f, 0.55f, 0.30f}}));
-            hair({{HairStyle::LongWavy, 2}, {HairStyle::Messy, 1.5f}, {HairStyle::Pixie, 1.5f}, {HairStyle::VeryLong, 1}, {HairStyle::Wolf, 1}});
+            hair({{HairStyle::LongWavy, 2}, {HairStyle::Messy, 1.5f}, {HairStyle::Pixie, 1.5f}, {HairStyle::VeryLong, 1}, {HairStyle::Wolf, 1},
+                  {HairStyle::SpaceBuns, 1.0f}, {HairStyle::Pigtails, 0.8f}, {HairStyle::SweptLong, 0.6f}});
             beard({{FacialHair::None, 6}});
             break;
         }
@@ -1315,6 +1331,8 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         W(H::Hime) = 0.3f; W(H::CrownBraid) = 1.6f; W(H::TwinBraids) = 1.5f; W(H::SideBraid) = 1.6f; W(H::LowPonytail) = 1.6f;
         W(H::MessyBun) = 1.4f; W(H::LongCurly) = 1.3f; W(H::VeryLong) = 0.9f; W(H::AsymBob) = 0.3f; W(H::Locs) = 0.4f;
         W(H::WarriorBraids) = 1.0f; W(H::Undercut) = 0.15f; W(H::BowlCut) = 0.2f;
+        W(H::Pigtails) = 0.6f; W(H::SpaceBuns) = 0.4f; W(H::SweptLong) = 0.8f; W(H::SideShave) = 0.35f; W(H::WildMane) = 0.35f;
+        W(H::BeadedBraids) = 0.5f; W(H::Cornrows) = 0.3f; W(H::WarriorTail) = 0.5f; W(H::Mohawk) = 0.1f;
         if (elder) { W(H::Bun) += 2.5f; W(H::CrownBraid) += 1.0f; W(H::HighPonytail) *= 0.2f; W(H::Pixie) *= 0.5f;
                      W(H::LongWavy) *= 0.5f; W(H::VeryLong) *= 0.3f; W(H::Wolf) *= 0.3f; }
     } else {
@@ -1324,15 +1342,23 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         W(H::CrewCut) = 1.5f; W(H::Tonsure) = elder || mature ? 0.8f : 0.3f; W(H::WarriorBraids) = 1.4f; W(H::Curly) = 1.0f;
         W(H::Afro) = 0.4f; W(H::Mullet) = 0.4f; W(H::Topknot) = 0.6f; W(H::Locs) = 0.5f; W(H::Wolf) = 1.0f;
         W(H::LowPonytail) = 1.0f; W(H::SideBraid) = 0.2f; W(H::BowlCut) = young ? 1.0f : 0.5f; W(H::TwinBraids) = 0.3f;
-        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; W(H::Wolf) *= 0.3f; W(H::BowlCut) *= 0.3f; }
+        W(H::Mohawk) = 0.5f; W(H::Spiky) = 0.6f; W(H::Pompadour) = 0.5f; W(H::Cornrows) = 0.4f; W(H::BraidedCrest) = 0.7f;
+        W(H::SideShave) = 0.3f; W(H::WildMane) = 0.7f; W(H::WarriorTail) = 0.7f; W(H::SweptLong) = 0.4f; W(H::BeadedBraids) = 0.4f;
+        if (elder) { W(H::Undercut) *= 0.2f; W(H::ManBun) *= 0.3f; W(H::Wolf) *= 0.3f; W(H::BowlCut) *= 0.3f; W(H::Mohawk) *= 0.2f;
+                     W(H::Spiky) *= 0.2f; W(H::Pompadour) *= 0.4f; W(H::SideShave) *= 0.2f; }
     }
     switch (per) {
-        case Persona::Rogue: W(H::Messy) += 2; W(H::Wolf) += 1; W(H::Undercut) += 0.6f; W(H::Locs) += 0.5f; W(H::WarriorBraids) += 0.6f; break;
+        case Persona::Rogue: W(H::Messy) += 2; W(H::Wolf) += 1; W(H::Undercut) += 0.6f; W(H::Locs) += 0.5f; W(H::WarriorBraids) += 0.6f;
+                            W(H::Mohawk) += 0.6f; W(H::SideShave) += 0.6f; W(H::SweptLong) += 0.5f; W(H::Spiky) += 0.4f; break;
         case Persona::Noble: (fem ? W(H::LongStraight) : W(H::SlickedBack)) += 1.5f; W(H::Bun) += fem ? 1.0f : 0.0f;
-                             W(H::CrownBraid) += fem ? 1.5f : 0.0f; W(H::VeryLong) += fem ? 0.6f : 0.0f; W(H::Topknot) += fem ? 0.0f : 0.4f; break;
-        case Persona::Cute: W(H::Bob) += fem ? 0.8f : 0.0f; W(H::TwinBraids) += fem ? 1.2f : 0.0f; W(H::BowlCut) += 0.6f; W(H::Curly) += 0.5f; break;
-        case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Bald) += fem ? 0.0f : 0.6f; break;
-        case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::WarriorBraids) += 1.0f; W(H::Ponytail) += 1; W(H::Braid) += 0.6f; break;
+                             W(H::CrownBraid) += fem ? 1.5f : 0.0f; W(H::VeryLong) += fem ? 0.6f : 0.0f; W(H::Topknot) += fem ? 0.0f : 0.4f;
+                             W(H::Pompadour) += fem ? 0.0f : 0.5f; break;
+        case Persona::Cute: W(H::Bob) += fem ? 0.8f : 0.0f; W(H::TwinBraids) += fem ? 1.2f : 0.0f; W(H::BowlCut) += 0.6f; W(H::Curly) += 0.5f;
+                           W(H::Pigtails) += fem ? 1.2f : 0.0f; W(H::SpaceBuns) += fem ? 0.8f : 0.0f; break;
+        case Persona::Villainous: W(H::LongStraight) += 1; W(H::SlickedBack) += 1.5f; W(H::Bald) += fem ? 0.0f : 0.6f; W(H::SweptLong) += 0.6f;
+                                 W(H::WarriorTail) += 0.5f; break;
+        case Persona::Heroic: W(H::ShortCrop) += fem ? 0.0f : 1.0f; W(H::WarriorBraids) += 1.0f; W(H::Ponytail) += 1; W(H::Braid) += 0.6f;
+                              W(H::BraidedCrest) += 0.5f; W(H::WildMane) += 0.4f; break;
         case Persona::Sexy: W(H::LongWavy) += fem ? 1.5f : 0.3f; W(H::HalfUp) += 1; break;
         case Persona::Stern: W(H::Tonsure) += fem ? 0.0f : 0.6f; W(H::CrewCut) += 0.6f; W(H::Bun) += fem ? 0.8f : 0.0f; break;
         case Persona::Gentle: W(H::Braid) += 0.6f; W(H::BowlCut) += 0.3f; break;
@@ -1344,7 +1370,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     g.fringe = Fringe(rh.weighted({shortHair ? 3.0f : 1.0f, shortHair ? 0.3f : 2.0f, 2.0f, shortHair ? 0.4f : 1.0f}));
     if (g.hair == HairStyle::SlickedBack || g.hair == HairStyle::Bald || g.hair == HairStyle::Buzz || g.hair == HairStyle::CrewCut ||
         g.hair == HairStyle::Tonsure || g.hair == HairStyle::WarriorBraids || g.hair == HairStyle::Afro || g.hair == HairStyle::Topknot ||
-        g.hair == HairStyle::Locs || g.hair == HairStyle::CrownBraid)
+        g.hair == HairStyle::Locs || g.hair == HairStyle::CrownBraid || g.hair == HairStyle::BeadedBraids || g.hair == HairStyle::WildMane)
         g.fringe = Fringe::None;
     if (g.hair == HairStyle::Hime || g.hair == HairStyle::BowlCut) g.fringe = Fringe::Straight;
     g.hairVolume = clamp(1.0f + 0.1f * z(rh), 0.8f, 1.25f);
@@ -1394,6 +1420,54 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
         sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f, 0.6f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
     if (opt.armPairs) g.body.armPairs = std::clamp(*opt.armPairs, 1, 2);
+    // ---- adornment: body art, coat markings, piercings and whiskers (own stream: the rest of the draw is unchanged) ----
+    {
+        Rng ra = root.fork(23);
+        BodyShape& b = g.body;
+        FaceStyle& f = g.face;
+        const bool skinBody = b.skinKind == 0 && !b.skeletal && b.furPattern == 0;
+        // Weights per art: none, tribal bands, war paint, rune sleeve, scars, bone paint, glowing runes.
+        std::array<float, 7> aw{6.0f, 0.5f, 0.4f, 0.35f, 0.5f, 0.15f, 0.08f};
+        switch (sp) {
+            case Species::Orc: aw[1] += 1.5f; aw[2] += 2.0f; aw[4] += 1.0f; aw[5] += 0.4f; break;
+            case Species::Troll: aw[1] += 1.5f; aw[5] += 1.2f; aw[2] += 0.8f; break;
+            case Species::Tauren: aw[1] += 1.2f; aw[2] += 1.2f; break;
+            case Species::NightElf: aw[3] += 1.2f; aw[6] += 0.8f; aw[1] += 0.5f; break;
+            case Species::HighElf: aw[3] += 0.6f; aw[6] += 0.4f; break;
+            case Species::Draenei: aw[3] += 0.8f; aw[6] += 1.0f; break;
+            case Species::Dwarf: aw[3] += 1.2f; aw[1] += 0.6f; aw[4] += 0.6f; break;
+            case Species::Undead: aw[4] += 1.5f; aw[5] += 0.5f; break;
+            case Species::Demon: aw[6] += 2.0f; aw[3] += 0.6f; break;
+            case Species::Ogre: aw[2] += 1.2f; aw[4] += 1.0f; aw[5] += 0.5f; break;
+            case Species::Goblin: aw[1] += 0.5f; aw[4] += 0.6f; break;
+            default: break;
+        }
+        if (per == Persona::Heroic || per == Persona::Stern) aw[4] += 0.6f;
+        if (per == Persona::Rogue || per == Persona::Villainous) aw[1] += 0.5f, aw[3] += 0.4f;
+        const int art = ra.weighted(std::span<const float>(aw.data(), aw.size()));
+        if (skinBody) b.bodyArt = art;
+        static constexpr Vec3 kPaint[] = {{0.55f, 0.12f, 0.10f}, {0.85f, 0.83f, 0.76f}, {0.16f, 0.24f, 0.45f}, {0.12f, 0.12f, 0.14f}, {0.66f, 0.42f, 0.14f}};
+        static constexpr Vec3 kInk[] = {{0.12f, 0.18f, 0.30f}, {0.10f, 0.22f, 0.20f}, {0.20f, 0.12f, 0.22f}};
+        b.bodyArtColor = b.bodyArt == 5 ? Vec3{0.86f, 0.84f, 0.78f}
+                       : b.bodyArt == 6 ? (f.glowEyes ? f.glow : Vec3{0.45f, 0.95f, 0.35f})
+                       : b.bodyArt == 1 || b.bodyArt == 3 ? kInk[ra.rangeInt(0, 2)] : kPaint[ra.rangeInt(0, 4)];
+        // Coats: spots, a dark streak down the spine or banded legs.
+        if (b.furPattern > 0 && ra.chance(sp == Species::Worgen ? 0.45f : 0.35f)) b.furMarks = 1 + ra.weighted({1.0f, 1.0f, 0.7f});
+        // Face: more ink styles where the people paints its face.
+        const bool painters = sp == Species::Orc || sp == Species::Troll || sp == Species::Tauren || sp == Species::NightElf ||
+                              sp == Species::Draenei || sp == Species::Human;
+        if (painters && f.tattoo == 0 && ra.chance(sp == Species::Human ? 0.06f : 0.22f)) {
+            f.tattoo = 4 + ra.weighted({1.0f, sp == Species::NightElf ? 2.5f : 0.8f, 0.7f});
+            f.tattooColor = b.bodyArt == 2 ? b.bodyArtColor * 0.6f : kInk[ra.rangeInt(0, 2)];
+        }
+        const bool plainFace = f.beak == 0 && !f.mandibles && !f.maw && b.muzzle < 0.3f && b.skinKind == 0;
+        float pp = 0.10f + (per == Persona::Rogue ? 0.25f : 0.0f) + (per == Persona::Sexy ? 0.1f : 0.0f);
+        if (sp == Species::Troll || sp == Species::Orc || sp == Species::Goblin || sp == Species::HighElf || sp == Species::NightElf) pp += 0.25f;
+        if (b.ears != EarStyle::Fin && b.ears != EarStyle::None && ra.chance(pp)) f.piercings |= 1;
+        if (plainFace && ra.chance(0.4f * pp)) f.piercings |= 2;
+        if (plainFace && ra.chance(0.3f * pp)) f.piercings |= 4;
+        f.whiskers = b.muzzle > 0.3f && b.furPattern > 0 && ra.chance(0.6f);
+    }
     // Exaggerated proportions, once the people has rescaled them: keep the hips within
     // what the shoulders carry and the waist below both, or short peoples turn into
     // blocks with a flared skirt.

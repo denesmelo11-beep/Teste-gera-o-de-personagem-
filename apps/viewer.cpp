@@ -468,7 +468,7 @@ int runCuts(Scene& s, const std::string& path, uint64_t seed) {
         o.age = cg::AgeGroup::Adult;
         const cg::HairStyle hsI = cg::HairStyle(i);
         bool masc = (cg::isShortHair(hsI) && hsI != cg::HairStyle::Pixie) || hsI == cg::HairStyle::ManBun || hsI == cg::HairStyle::Topknot ||
-                    hsI == cg::HairStyle::Mullet || hsI == cg::HairStyle::Locs;
+                    hsI == cg::HairStyle::Mullet || hsI == cg::HairStyle::Locs || hsI == cg::HairStyle::WildMane || hsI == cg::HairStyle::WarriorTail;
         o.sex = masc ? cg::Sex::Male : cg::Sex::Female;
         if (i == int(cg::HairStyle::Bald)) o.age = cg::AgeGroup::Elder;
         s.actors.emplace_back();
@@ -720,6 +720,12 @@ cg::Genome withOverrides(cg::Genome g) {
     envI("CHARGEN_CREST", g.body.crest);
     envI("CHARGEN_SKIN", g.body.skinKind);
     envI("CHARGEN_TENTACLES", g.body.backTentacles);
+    envI("CHARGEN_ART", g.body.bodyArt);
+    envI("CHARGEN_FURMARKS", g.body.furMarks);
+    envI("CHARGEN_TATTOO", g.face.tattoo);
+    envI("CHARGEN_PIERCE", g.face.piercings);
+    if (const char* w = std::getenv("CHARGEN_WHISKERS")) g.face.whiskers = std::atoi(w) != 0;
+    if (std::getenv("CHARGEN_ARTCOLOR")) g.body.bodyArtColor = g.body.bodyArt == 6 ? cg::Vec3{0.45f, 0.95f, 0.35f} : g.body.bodyArtColor;
     if (std::getenv("CHARGEN_FOLD")) g.body.wingsFolded = true;
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
@@ -780,6 +786,13 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
             for (const cg::Vertex& vx : a.ch.mesh.vertices) z0 = std::min(z0, vx.pos.z), z1 = std::max(z1, vx.pos.z);
             span = std::max(1.0f, 1.15f * (z1 - z0) / H);
             zc = 0.5f * (z0 + z1);
+        } else {  // broad bodies (the boulder of a gravitant) are framed by their width
+            std::vector<float> ax;  // a high percentile, so small floating bits (moons) do not count
+            for (const cg::Vertex& vx : a.ch.mesh.vertices) ax.push_back(std::fabs(vx.pos.x));
+            if (!ax.empty()) {
+                std::nth_element(ax.begin(), ax.begin() + long(ax.size() * 97 / 100), ax.end());
+                span = std::max(span, 2.0f * ax[ax.size() * 97 / 100] / (0.55f * H));
+            }
         }
         Camera3D cam = makeCam({0, H * fy, zc}, yaws[v % 4], pitch, H * 3.0f * span / zoom, 21.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);

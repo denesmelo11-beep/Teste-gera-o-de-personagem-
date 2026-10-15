@@ -1725,4 +1725,320 @@ void Builder::buildOrbBody() {
     }
 }
 
+// Body art (painted, inked, scarred or glowing marks on bare skin) and markings in a
+// coat (spots, a dorsal streak, banded limbs). All are clip regions on the body
+// surface, so their edges stay clean at any triangle size.
+void Builder::buildBodyArt() {
+    // Paint and ink belong on bare flesh: none over scales, crystal, metal or bone.
+    const int art = g.body.skinKind == 0 && !g.body.skeletal ? g.body.bodyArt : 0, marks = g.body.furMarks;
+    if ((!art && !marks) || bonesOnly_ || torsoPart_ >= parts.size()) return;
+    const float h = m.h;
+    const Vec3 sk = g.palette.skin;
+    std::vector<ClipRegion> clips;
+    // A band round a limb segment a..b: at tc (0..1 along it), half width hw, zig-zagging k times by amp.
+    auto band = [&](Vec3 a, Vec3 b, float r, float tc, float hw, float amp, int k) {
+        const Vec3 d = normalize(b - a), e1 = normalize(cross(d, Vec3{0, 0, 1}), Vec3{1, 0, 0}), e2 = cross(d, e1);
+        const float L = length(b - a);
+        return [=](Vec3 q) {
+            const float tt = dot(q - a, d) / L;
+            const Vec3 rad = q - (a + d * (tt * L));
+            if (length(rad) > 1.5f * r || tt < -0.1f || tt > 1.1f) return 1.0f;
+            const float ang = std::atan2(dot(rad, e2), dot(rad, e1));
+            return std::fabs((tt - tc) * L - amp * std::sin(float(k) * ang)) - hw;
+        };
+    };
+    // Chevrons repeating along a limb segment between t0 and t1 (a sleeve).
+    auto sleeve = [&](Vec3 a, Vec3 b, float r, float t0, float t1, float period, float hw) {
+        const Vec3 d = normalize(b - a), e1 = normalize(cross(d, Vec3{0, 0, 1}), Vec3{1, 0, 0}), e2 = cross(d, e1);
+        const float L = length(b - a);
+        return [=](Vec3 q) {
+            const float tt = dot(q - a, d) / L;
+            const Vec3 rad = q - (a + d * (tt * L));
+            if (length(rad) > 1.5f * r) return 1.0f;
+            const float ang = std::atan2(dot(rad, e2), dot(rad, e1));
+            const float u = tt * L + 0.45f * r * std::fabs(std::sin(ang));
+            const float f = std::fabs(std::fmod(u + 100.0f * period, period) - 0.5f * period) - hw;
+            return std::max(f, std::max(t0 - tt, tt - t1) * L);
+        };
+    };
+    // A stroke over the body through points, tapering at both ends.
+    auto stroke = [&](std::vector<Vec3> pts, float hw) {
+        return [=](Vec3 q) {
+            float best = 1e9f;
+            const size_t n = pts.size();
+            for (size_t i = 0; i + 1 < n; ++i) {
+                const Vec3 ab = pts[i + 1] - pts[i];
+                const float u = clamp(dot(q - pts[i], ab) / std::max(dot(ab, ab), 1e-9f), 0.0f, 1.0f);
+                const float gu = (float(i) + u) / float(n - 1);
+                const float w = hw * std::sqrt(std::max(0.05f, std::sin(kPi * gu)));
+                best = std::min(best, length(q - (pts[i] + ab * u)) - w);
+            }
+            return best;
+        };
+    };
+    // A stroke over the torso through (t, th) points (th = pi/2 the front), measured on the
+    // torso's own parameters so it follows the sculpted surface whatever stands over it.
+    auto tstroke = [&](std::vector<Vec2> pts, float hw) {
+        const float tl = m.torsoLen;
+        return [=, this](Vec3 q) {
+            const float t = torsoT(q.y), tc = clamp(t, -0.06f, 1.1f);
+            if (std::fabs(q.x) > 1.2f * cHw_(tc) + 0.03f * h) return 1.0f;  // not the arms
+            const float rw = cHw_(tc);
+            const Vec2 Q{std::atan2(q.z - cZc_(tc), q.x) * rw, t * tl};
+            float best = 1e9f;
+            const size_t n = pts.size();
+            for (size_t i = 0; i + 1 < n; ++i) {
+                const Vec2 A{pts[i].y * rw, pts[i].x * tl}, B{pts[i + 1].y * rw, pts[i + 1].x * tl}, ab = B - A;
+                const float u = clamp(dot(Q - A, ab) / std::max(dot(ab, ab), 1e-9f), 0.0f, 1.0f);
+                const float gu = (float(i) + u) / float(n - 1);
+                best = std::min(best, length(Q - (A + ab * u)) - hw * std::sqrt(std::max(0.08f, std::sin(kPi * gu))));
+            }
+            return best;
+        };
+    };
+    const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;
+    Rng r = Rng(g.seed).fork(73);
+    const Vec3 col = g.body.bodyArtColor;
+    const Mat paint{col, MaterialClass::Skin};
+    if (!beast_) {
+        switch (art) {
+            case 1:  // tribal bands: a zig-zag and a thin band on the upper arms, one on the forearms
+                for (const ArmMarks& a : m.arms) {
+                    if (a.pair != 0 || (a.side != sx && g.seed % 3 == 0)) continue;
+                    clips.push_back({band(a.shoulder, a.elbow, a.radius, 0.50f, 0.032f * h, 0.030f * h, 4), paint, 2});
+                    clips.push_back({band(a.shoulder, a.elbow, a.radius, 0.72f, 0.018f * h, 0.0f, 0), paint, 2});
+                    clips.push_back({band(a.elbow, a.wrist, a.radius * 0.85f, 0.70f, 0.026f * h, 0.020f * h, 4), paint, 2});
+                }
+                break;
+            case 2: {  // war paint: three claw strokes across the chest and a broad band round each upper arm
+                for (int k = 0; k < 3; ++k) {
+                    const float o = float(k - 1);
+                    std::vector<Vec2> pts;
+                    for (int i = 0; i <= 3; ++i) {
+                        const float u = float(i) / 3.0f;
+                        pts.push_back({lerp(0.94f, 0.34f, u) - 0.07f * o, kPi / 2 + sx * (lerp(0.85f, -0.30f, u) - 0.22f * o)});
+                    }
+                    clips.push_back({tstroke(pts, 0.040f * h), paint, 2});
+                }
+                for (const ArmMarks& a : m.arms)
+                    if (a.pair == 0) clips.push_back({band(a.shoulder, a.elbow, a.radius, 0.45f, 0.045f * h, 0.0f, 0), paint, 1});
+                break;
+            }
+            case 3:  // rune sleeve: chevrons from shoulder to wrist down one arm
+            case 6:  // glowing runes: both arms and two lines down the chest
+                for (const ArmMarks& a : m.arms) {
+                    if (a.pair != 0 || (art == 3 && a.side != sx)) continue;
+                    const Mat mt = art == 6 ? Mat{col, MaterialClass::Glow} : paint;
+                    clips.push_back({sleeve(a.shoulder, a.elbow, a.radius, 0.20f, 0.92f, 0.16f * h, 0.022f * h), mt, 2});
+                    clips.push_back({sleeve(a.elbow, a.wrist, a.radius * 0.85f, 0.08f, 0.82f, 0.15f * h, 0.020f * h), mt, 2});
+                }
+                if (art == 6)
+                    for (float sd : {1.0f, -1.0f}) {
+                        const std::vector<Vec2> pts{{0.97f, kPi / 2 + sd * 0.62f}, {0.82f, kPi / 2 + sd * 0.32f}, {0.72f, kPi / 2 + sd * 0.48f},
+                                                    {0.56f, kPi / 2 + sd * 0.24f}, {0.40f, kPi / 2 + sd * 0.34f}};
+                        clips.push_back({tstroke(pts, 0.020f * h), Mat{col, MaterialClass::Glow}, 2});
+                    }
+                break;
+            case 4: {  // battle scars: pale seams over the chest, belly and arms
+                const Mat scarM{lerp(sk, Vec3{0.70f, 0.34f, 0.32f}, 0.55f), MaterialClass::Skin};
+                for (int k = 0; k < 4; ++k) {
+                    const float t = r.range(0.40f, 0.88f), th = kPi / 2 + r.range(-0.9f, 0.9f), dt = r.range(-0.14f, 0.14f), dth = r.range(0.25f, 0.5f);
+                    clips.push_back({tstroke({{t, th - dth}, {t + 0.5f * dt, th}, {t + dt, th + dth}}, 0.028f * h), scarM, 2});
+                }
+                for (const ArmMarks& a : m.arms) {
+                    if (a.pair != 0 || !r.chance(0.6f)) continue;
+                    const Vec3 d = normalize(a.elbow - a.shoulder), out = normalize(Vec3{a.side, 0, 0.6f} - d * dot(Vec3{a.side, 0, 0.6f}, d));
+                    const float t0 = r.range(0.3f, 0.6f);
+                    const Vec3 p0 = lerp(a.shoulder, a.elbow, t0) + out * a.radius, p1 = lerp(a.shoulder, a.elbow, t0 + 0.2f) + out * a.radius + Vec3{0, 0, 0.3f * a.radius};
+                    clips.push_back({stroke({p0, (p0 + p1) * 0.5f + out * (0.1f * a.radius), p1}, 0.024f * h), scarM, 2});
+                }
+                break;
+            }
+            case 5: {  // bone paint: ribs and a breastbone over the chest
+                const float tl = m.torsoLen;
+                clips.push_back({[=, this](Vec3 q) {
+                    const float t = torsoT(q.y);
+                    if (t < 0.45f || t > 0.95f) return 1.0f;
+                    const float tc = clamp(t, -0.06f, 1.1f);
+                    if (std::fabs(q.x) > 1.15f * cHw_(tc) + 0.02f * h || q.z < cZc_(tc)) return 1.0f;  // the chest front only, not the arms
+                    const float phi = std::atan2(std::fabs(q.x), q.z - cZc_(tc));                    // 0 centre .. pi/2 side
+                    const float sternum = std::max(std::fabs(q.x) - 0.026f * h, std::max(0.58f - t, t - 0.92f) * tl);
+                    float ribs = 1e9f;
+                    for (int i = 0; i < 5; ++i) {
+                        const float ti = 0.86f - 0.065f * float(i) - 0.07f * smoothstep(0.2f, 1.3f, phi);
+                        ribs = std::min(ribs, std::fabs(t - ti) * tl - 0.022f * h * (1.0f - 0.35f * phi));
+                    }
+                    ribs = std::max(ribs, std::max(0.14f - phi, phi - 1.30f) * 0.1f * h);
+                    return std::min(sternum, ribs);
+                }, paint, 2});
+                break;
+            }
+            default: break;
+        }
+    }
+    if (marks) {
+        const Mat darkM{sk * 0.52f, MaterialClass::Hair};
+        if (marks == 1 || (marks == 3 && beast_)) {  // spots: a scatter of rounded blotches
+            const float cell = (beast_ ? 0.055f * m.H : 0.20f * h), rad = 0.30f * cell;
+            const uint64_t sd = g.seed;
+            clips.push_back({[=](Vec3 q) {
+                const float fx = std::floor(q.x / cell), fy = std::floor(q.y / cell), fz = std::floor(q.z / cell);
+                float best = 1e9f;
+                for (int k = 0; k < 27; ++k) {
+                    const float cx = fx + float(k % 3 - 1), cy = fy + float(k / 3 % 3 - 1), cz = fz + float(k / 9 - 1);
+                    const uint64_t id = uint64_t(int64_t(cx) * 73856093) ^ uint64_t(int64_t(cy) * 19349663) ^ uint64_t(int64_t(cz) * 83492791);
+                    const Vec3 fp{(cx + 0.2f + 0.6f * hash01(sd, id)) * cell, (cy + 0.2f + 0.6f * hash01(sd, id + 1)) * cell,
+                                  (cz + 0.2f + 0.6f * hash01(sd, id + 2)) * cell};
+                    best = std::min(best, length(q - fp) - rad * (0.7f + 0.6f * hash01(sd, id + 3)));
+                }
+                return best;
+            }, darkM, 1});
+        } else if (marks == 2) {  // a dark streak down the spine
+            const Mat darkM{sk * 0.34f, MaterialClass::Hair};
+            if (beast_) {
+                clips.push_back({[=, this](Vec3 q) {
+                    const float t = (q.z - m.beastZR) / (m.beastZF - m.beastZR);
+                    if (t < 0.0f || t > 1.0f) return 1.0f;
+                    const BeastRing br = beastRing(t);
+                    return std::fabs(q.x) - 0.35f * br.w * smoothstep(0.0f, 0.15f, t) * smoothstep(1.0f, 0.8f, t) - (q.y < br.y ? 1.0f : 0.0f);
+                }, darkM, 1});
+            } else {
+                clips.push_back({[=, this](Vec3 q) {
+                    const float t = torsoT(q.y);
+                    if (t < 0.15f || t > 1.05f) return 1.0f;
+                    const float tc = clamp(t, -0.06f, 1.1f);
+                    if (q.z > cZc_(tc)) return 1.0f;
+                    return std::fabs(q.x) - 0.42f * cHw_(tc) * (0.6f + 0.4f * smoothstep(0.2f, 0.9f, t));
+                }, darkM, 1});
+            }
+        } else if (marks == 3) {  // banded limbs: dark rings round the arms and legs
+            for (const ArmMarks& a : m.arms)
+                for (float tc : {0.30f, 0.55f, 0.80f}) {
+                    clips.push_back({band(a.shoulder, a.elbow, a.radius, tc, 0.025f * h, 0.012f * h, 3), darkM, 1});
+                    clips.push_back({band(a.elbow, a.wrist, a.radius * 0.85f, tc, 0.022f * h, 0.010f * h, 3), darkM, 1});
+                }
+            for (int s = 0; s < 2; ++s)
+                for (float tc : {0.35f, 0.65f}) {
+                    clips.push_back({band(m.hipJoint[s], m.knee[s], g.body.thigh * h, tc, 0.03f * h, 0.015f * h, 3), darkM, 1});
+                    clips.push_back({band(m.knee[s], m.ankle[s], g.body.calf * h, tc, 0.026f * h, 0.012f * h, 3), darkM, 1});
+                }
+        }
+    }
+    // Triangle budget: the clips refine where their edges cross the body; dense bodies cut without refining.
+    size_t tris = 0;
+    for (const Part& pp : parts) tris += pp.tris.size();
+    for (ClipRegion& c : clips) {
+        if (tris > 16000) c.refine = 0;
+        else if (tris > 12000) c.refine = std::min(c.refine, 1);
+        parts[torsoPart_].clips.push_back(std::move(c));
+    }
+}
+
+void Builder::buildPiercings() {
+    const FaceStyle& f = g.face;
+    if ((!f.piercings && !f.whiskers) || bonesOnly_) return;
+    const float h = m.h;
+    const int head = ch.rig.head;
+    const Mat metal{(g.seed % 3 == 0) ? Vec3{0.66f, 0.66f, 0.70f} : Vec3{0.74f, 0.57f, 0.26f}, MaterialClass::Metal};
+    Part& p = newPart();
+    p.id = headPartId_;
+    p.smoothAlways = true;
+    const SkinW w = one(head);
+    auto vtx = [&](Vec3 q) {
+        p.pos.push_back(q);
+        p.w.push_back(w);
+        p.uv.push_back({});
+        return uint32_t(p.pos.size() - 1);
+    };
+    // A hoop: a torus of major radius R and wire radius r round `axis`.
+    auto hoop = [&](Vec3 c, Vec3 axis, float R, float r) {
+        axis = normalize(axis, Vec3{1, 0, 0});
+        const Vec3 e1 = normalize(cross(axis, Vec3{0, 1, 0.3f}), Vec3{0, 0, 1}), e2 = cross(axis, e1);
+        const int N = 10, S = 4;
+        const uint32_t i0 = uint32_t(p.pos.size());
+        for (int i = 0; i < N; ++i) {
+            const float a = kTau * float(i) / float(N);
+            const Vec3 rd = e1 * std::cos(a) + e2 * std::sin(a), ctr = c + rd * R;
+            for (int j = 0; j < S; ++j) {
+                const float b = kTau * float(j) / float(S);
+                vtx(ctr + (rd * std::cos(b) + axis * std::sin(b)) * r);
+            }
+        }
+        for (int i = 0; i < N; ++i)
+            for (int j = 0; j < S; ++j) {
+                const uint32_t A = i0 + uint32_t(i * S + j), B = i0 + uint32_t(((i + 1) % N) * S + j), C = i0 + uint32_t(((i + 1) % N) * S + (j + 1) % S),
+                               D = i0 + uint32_t(i * S + (j + 1) % S);
+                const Vec3 mid = (p.pos[A] + p.pos[C]) * 0.5f;
+                const float a = kTau * (float(i) + 0.5f) / float(N);
+                const Vec3 wire = c + (e1 * std::cos(a) + e2 * std::sin(a)) * R;
+                const bool flip = dot(cross(p.pos[B] - p.pos[A], p.pos[C] - p.pos[A]), mid - wire) < 0;
+                p.tris.push_back(flip ? Part::Tri{A, C, B, metal} : Part::Tri{A, B, C, metal});
+                p.tris.push_back(flip ? Part::Tri{A, D, C, metal} : Part::Tri{A, C, D, metal});
+            }
+    };
+    auto stud = [&](Vec3 c, Vec3 n, float r) {
+        Ellipsoid e;
+        e.center = c;
+        e.axis = normalize(n, Vec3{0, 0, 1});
+        e.up = std::fabs(e.axis.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+        e.rAxis = 0.8f * r;
+        e.rU = e.rV = r;
+        e.lat = 3;
+        e.lon = 6;
+        emitEllipsoid(p, e, [=](float, float, Vec3) { return w; }, [=](float, float) { return metal; });
+    };
+    const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;
+    if ((f.piercings & 1) && g.body.ears != EarStyle::None && g.body.ears != EarStyle::Fin) {
+        // Hoops through the lower edge of the ear blade (as built in buildEars): one at the lobe,
+        // a row climbing a long elven ear.
+        const EarShape& E = g.body.ear;
+        const float es = f.earSize, len = E.length * h * es, wid = E.width * h * std::sqrt(es);
+        const bool longEar = E.length > 0.45f;
+        for (float sd : {1.0f, -1.0f}) {
+            if (!longEar && sd != sx && g.seed % 4 == 0) continue;
+            const float th = sd > 0 ? E.baseIn : kPi - E.baseIn;
+            const Vec3 base = headSurface(th, E.baseS, -0.03f * h) + Vec3{0, 0, E.baseS > 0.6f ? -0.02f * h : -0.05f * h};
+            const Vec3 dir = normalize(Vec3{sd * std::cos(E.up) * std::cos(E.back), std::sin(E.up), -std::cos(E.up) * std::sin(E.back)});
+            const Vec3 bladeUp = normalize(Vec3{0, 1, 0} - dir * dir.y, Vec3{0, 0, 1});
+            auto at = [&](float t) { return base + dir * (len * t) + Vec3{0, -1, 0} * (E.droop * len * t * t); };
+            const std::vector<float> ts = longEar ? std::vector<float>{0.30f, 0.46f, 0.62f} : std::vector<float>{0.30f};
+            for (float t : ts) {
+                const float wsAt = t < 0.28f ? 0.97f : lerp(1.0f, 0.72f, (t - 0.28f) / 0.30f);
+                const Vec3 edge = at(t) - bladeUp * (0.85f * wid * wsAt);
+                const float R = (longEar ? 0.030f : 0.040f) * h;
+                hoop(edge - bladeUp * (0.8f * R), normalize(cross(dir, bladeUp)), R, 0.0065f * h);
+            }
+        }
+    }
+    if (f.piercings & 2) {  // a bar through one eyebrow: two studs
+        const float th = std::acos(clamp(sx * 0.17f / 0.30f, -1.0f, 1.0f));
+        for (float s : {0.505f, 0.565f}) {
+            const Vec3 q = headSurface(th, s, 0.0f);
+            stud(q + headNormalDir(q) * (0.008f * h), headNormalDir(q), 0.016f * h);
+        }
+    }
+    if (f.piercings & 4) {  // a ring through the lower lip, at one corner
+        const float th = std::acos(clamp(sx * 0.040f / 0.30f, -1.0f, 1.0f));
+        const Vec3 q = headSurface(th, 0.20f, 0.0f);
+        hoop(q + headNormalDir(q) * (0.010f * h) + Vec3{0, -0.012f * h, 0}, Vec3{1, 0, 0}, 0.020f * h, 0.0045f * h);
+    }
+    if (f.whiskers) {  // long whiskers fanning from the sides of the muzzle
+        Part& wp = newPart();
+        wp.id = headPartId_;
+        const Mat wm{lerp(g.palette.skin, Vec3{0.9f, 0.88f, 0.82f}, 0.6f), MaterialClass::Hair};
+        for (float sd : {1.0f, -1.0f})
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 b0 = headSurface(kPi / 2 - sd * 0.55f, 0.27f + 0.035f * float(k), -0.004f * h);
+                const Vec3 d = normalize(Vec3{sd * 1.0f, -0.20f + 0.14f * float(k), -0.15f});
+                std::vector<Vec3> pts;
+                for (int i = 0; i <= 4; ++i) {
+                    const float u = float(i) / 4.0f;
+                    pts.push_back(b0 + d * (0.36f * h * u) + Vec3{0, -0.05f * h * u * u, 0});
+                }
+                emitTube(wp, pts, [=](float t) { return 0.0055f * h * (1.0f - 0.8f * t); }, 4, [=](float, float, Vec3) { return w; },
+                         [=](float, float) { return wm; });
+            }
+    }
+}
+
 }  // namespace cg::detail

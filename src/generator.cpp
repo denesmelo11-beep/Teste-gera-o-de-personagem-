@@ -262,12 +262,17 @@ void Builder::computeMarks() {
                 const float shortK = saturate((0.6f - m.torsoLen / (2.2f * h)) / 0.2f);
                 if (!cen) angle += 14.0f * shortK, fwd -= 0.25f * shortK;
             }
-            float ar = angle * kPi / 180.0f;
-            a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), fwd});
             float L = std::max(a.shoulder.y - (m.crotchY - 0.05f * h), 0.9f * m.torsoLen) * b.armLength;
-            a.elbow = a.shoulder + a.dir * (0.53f * L);
-            a.wrist = a.elbow + a.dir * (0.47f * L);
-            a.handTip = a.wrist + a.dir * (std::min(0.66f * h, 0.33f * L) * b.handSize);
+            // Arms too long for a low body (short legs, an ooze) are held out instead of reaching through the ground.
+            for (int k = 0; k < 16; ++k, angle += 5.0f) {
+                float ar = angle * kPi / 180.0f;
+                a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), fwd});
+                a.elbow = a.shoulder + a.dir * (0.53f * L);
+                a.wrist = a.elbow + a.dir * (0.47f * L);
+                a.handTip = a.wrist + a.dir * (std::min(0.66f * h, 0.33f * L) * b.handSize);
+                const float drop = b.hands != 0 ? 1.1f * length(a.handTip - a.wrist) : 0.0f;  // talons, pincers and tendrils reach past the tip
+                if (a.handTip.y > 0.06f * h + drop || angle >= 100.0f) break;
+            }
             m.arms.push_back(a);
         }
 
@@ -292,11 +297,16 @@ void Builder::computeMarks() {
             const float e = (sy - cy) / ry;
             a.shoulder = {a.side * 0.92f * rx * std::sqrt(std::max(0.2f, 1.0f - e * e)), sy, m.orbC.z};
             a.clav = {a.side * 0.3f * rx, sy + 0.05f * h, m.orbC.z};
-            const float ar = (a.pair ? 40.0f : 30.0f) * kPi / 180.0f;
-            a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), 0.12f});
-            a.elbow = a.shoulder + a.dir * L1;
-            a.wrist = a.elbow + a.dir * L2;
-            a.handTip = a.wrist + a.dir * L3;
+            // Held further out when long arms on a low boulder would drag the fists through the ground.
+            const float drop = g.body.hands != 0 ? 1.1f * L3 : 0.0f;  // pincers, spades and tendrils reach past the tip
+            for (float deg = a.pair ? 40.0f : 30.0f; deg <= 105.0f; deg += 5.0f) {
+                const float ar = deg * kPi / 180.0f;
+                a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), 0.12f});
+                a.elbow = a.shoulder + a.dir * L1;
+                a.wrist = a.elbow + a.dir * L2;
+                a.handTip = a.wrist + a.dir * L3;
+                if (a.handTip.y > 0.14f * h + drop) break;
+            }
         }
     }
 }
@@ -2610,6 +2620,7 @@ Character Builder::build() {
     buildSpines();
     buildCore();
     buildEars();
+    buildPiercings();
     buildHorns();
     buildTusks();
     buildWings();
@@ -2628,6 +2639,7 @@ Character Builder::build() {
     buildHair();
     buildFacialHair();
     buildBones();
+    buildBodyArt();
     applyFur();
     buildFurTufts();
     dentConstruct();

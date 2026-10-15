@@ -104,6 +104,8 @@ private:
     void buildFeet();
     void buildDigitigradeFeet();
     void buildBones();
+    void buildBodyArt();
+    void buildPiercings();  // ear hoops, brow studs, a lip ring and muzzle whiskers  // tattoos, paint and scars on the body; markings in a coat
     void applyFur();
     void buildFurTufts();
     void buildTail();
