@@ -387,7 +387,7 @@ void Builder::buildWings() {
 // fades to shadow (wraith). The leg bones stay in the skeleton (unskinned) so every
 // clip and engine query keeps working.
 void Builder::buildSerpent() {
-    const int kind = std::clamp(g.body.lowerBody, 0, 2);
+    const int kind = std::clamp(g.body.lowerBody, 0, 3);
     if (!kind) return;
     Skeleton& sk = ch.skeleton;
     RigInfo& r = ch.rig;
@@ -414,6 +414,9 @@ void Builder::buildSerpent() {
             ctrl.push_back({flip * std::sin(float(k) * 1.25f + 0.4f) * 0.95f * h * L, R0 * (1.0f - 0.05f * float(k)), c0.z - float(k) * 1.30f * h * L});
         const Vec3 last = ctrl.back();
         ctrl.push_back(last + Vec3{-flip * 0.45f * h, 0.30f * h, -0.85f * h * L});
+    } else if (kind == 3) {  // ooze: straight down into a spreading mound
+        R0 = rT;
+        ctrl = {c0, Vec3{0, c0.y * 0.62f, c0.z + 0.03f * h}, Vec3{0, c0.y * 0.28f, c0.z + 0.06f * h}, Vec3{0, 0.0015f, c0.z + 0.05f * h}};
     } else {
         R0 = 0.92f * rT;
         ctrl = {c0, Vec3{0, c0.y * 0.58f, c0.z - 0.12f * h}, Vec3{flip * 0.12f * h, c0.y * 0.26f, c0.z - 0.50f * h * L},
@@ -422,13 +425,15 @@ void Builder::buildSerpent() {
     const std::vector<Vec3> path = smoothPath(ctrl, 96);
     auto radius = [&](float u) {
         if (kind == 1) return R0 * (1.0f - 0.86f * smoothstep(0.30f, 1.0f, u)) * (1.0f + 0.05f * bump((u - 0.15f) / 0.12f));
+        if (kind == 3)  // a sagging belly of goo, then a wide pool
+            return R0 * (1.0f + 0.60f * std::pow(std::max(0.0f, std::sin(kPi * std::min(u / 0.75f, 1.0f))), 1.5f) + 1.6f * g.body.serpentLength * std::pow(smoothstep(0.50f, 1.0f, u), 1.3f));
         return R0 * (1.0f - 0.92f * std::pow(u, 0.75f));
     };
     // Bones along the path.
-    const int nb = kind == 1 ? 8 : 4;
+    const int nb = kind == 1 ? 8 : kind == 3 ? 3 : 4;
     int parent = r.hips;
     for (int b = 0; b < nb; ++b) {
-        parent = sk.add((kind == 1 ? "coil" : "wisp") + std::to_string(b), parent, pathAt(path, 0.03f + 0.95f * float(b) / float(nb)));
+        parent = sk.add((kind == 1 ? "coil" : kind == 3 ? "ooze" : "wisp") + std::to_string(b), parent, pathAt(path, 0.03f + 0.95f * float(b) / float(nb)));
         r.serpent.push_back(parent);
         r.limits.push_back({parent, false, {1, 0, 0}, 0.0f, kind == 1 ? 0.7f : 0.9f});
     }
@@ -472,6 +477,10 @@ void Builder::buildSerpent() {
             if (kind == 2) {  // ragged, uneven folds
                 const float rag = 1.0f + 0.30f * u * std::sin(5.0f * ang + 7.0f * u + float(sd % 7));
                 ox *= rag, oz *= rag;
+            } else if (kind == 3) {  // lumpy, sagging lobes
+                const float lump = 1.0f + 0.16f * smoothstep(0.15f, 0.8f, u) * std::sin(3.0f * ang + 4.0f * u + float(sd % 11)) +
+                                   0.07f * smoothstep(0.35f, 0.9f, u) * std::sin(9.0f * ang + float(sd % 5));  // drip ridges
+                ox *= lump, oz *= lump;
             }
             Vec3 p = c + ux * ox + v * oz;
             p.y = std::max(p.y, 0.0015f);
@@ -481,7 +490,7 @@ void Builder::buildSerpent() {
         Lf.t.push_back(u);
     }
     Lf.poleStart = true;
-    Lf.startPole = path.back() + pathDir(path, 1.0f) * (kind == 1 ? 0.6f * radius(1.0f) : 0.05f * h);
+    Lf.startPole = path.back() + pathDir(path, 1.0f) * (kind == 1 ? 0.6f * radius(1.0f) : kind == 3 ? 0.0f : 0.05f * h);
     Lf.startPole.y = std::max(Lf.startPole.y, 0.0015f);
     Lf.tStart = 1.0f;
     const Vec3 skinC = g.palette.skin, bellyC = g.palette.belly, shadow = Vec3{0.05f, 0.05f, 0.06f};
@@ -492,6 +501,11 @@ void Builder::buildSerpent() {
             if (s > 0.62f) return Mat{bellyC * (0.90f + 0.10f * float(int(u * 70.0f) % 2)), MaterialClass::Skin};  // belly scutes
             const float stripe = s < -0.75f ? 0.78f : 1.0f;  // a darker dorsal stripe
             return Mat{skinC * stripe, MaterialClass::Skin};
+        };
+    else if (kind == 3)
+        pf = [=](float u, float th) {  // darker and denser towards the ground, a glossy sheen in streaks
+            const float streak = 0.92f + 0.10f * std::sin(6.0f * th + 9.0f * u);
+            return Mat{lerp(skinC, bellyC, smoothstep(0.3f, 0.95f, u)) * streak, MaterialClass::Skin};
         };
     else
         pf = [=](float u, float) {
@@ -511,6 +525,24 @@ void Builder::buildSerpent() {
     std::vector<uint32_t> top;
     for (int j = 0; j < N; ++j) top.push_back(base + uint32_t((us.size() - 1) * size_t(N) + size_t(j)));
     emitStrip(tp, top, torsoRing0_, pf(0.01f, 1.5f * kPi));
+    if (kind == 3) {  // a few droplets shed around the mound
+        Part& dp = newPart();
+        for (int k = 0; k < 6; ++k) {
+            const float a = kTau * (float(k) + hash01(sd, 40 + uint64_t(k))) / 6.0f;
+            const float rr = radius(0.97f) * (1.15f + 0.35f * hash01(sd, 50 + uint64_t(k)));
+            const float sz = (0.04f + 0.05f * hash01(sd, 60 + uint64_t(k))) * h;
+            Ellipsoid e;
+            e.center = path.back() + Vec3{rr * std::cos(a), 0.45f * sz, rr * std::sin(a)};
+            e.axis = {0, 1, 0};
+            e.up = {0, 0, 1};
+            e.rAxis = 0.45f * sz;
+            e.rU = e.rV = sz;
+            e.lat = 3;
+            e.lon = 6;
+            emitEllipsoid(dp, e, [=](float, float, Vec3) { return one(bones.back()); }, [=](float, float) { return Mat{bellyC, MaterialClass::Skin}; });
+        }
+        return;
+    }
     if (kind == 1) {  // the tip sways
         SpringChain sc;
         sc.name = "coiltip";
@@ -795,6 +827,33 @@ void Builder::buildTraitHand(const ArmMarks& a, const LimbRig& rig) {
             emitTube(tp, pts, [=](float t) { return fr * (1.0f - 0.85f * t); }, 5, handW, [&](float t, float) {
                 return Mat{lerp(g.palette.skin, g.palette.belly, 0.5f * t), MaterialClass::Skin};
             });
+        }
+        return;
+    }
+    if (kind == 4) {  // ---- digging spades: a broad, flat palm and five shovel claws fanned out
+        palmBlock(0.50f, 1.30f);
+        Part& sp = newPart();
+        sp.id = armGroup_;
+        const Mat spadeM{g.palette.beak * 0.9f, MaterialClass::Horn};
+        for (int f = 0; f < 5; ++f) {
+            const float off = (2.0f - float(f)) / 2.0f;  // -1 .. 1 across the palm
+            Vec3 fd = normalize(d + v * (0.22f * off) + palm * 0.10f), p = a.wrist + d * (0.46f * Lh) + v * (off * 0.90f * hw);
+            const float len = (0.62f - 0.12f * std::fabs(off)) * Lh, wid = 0.46f * hw, thick = 0.30f * th;
+            Loft L;
+            const int n = 5;
+            for (int k = 0; k <= n; ++k) {
+                const float t = float(k) / float(n);
+                const Vec3 vv = normalize(v - fd * dot(v, fd), orthoFront(fd)), uu = cross(fd, vv);
+                const float taper = 1.0f - 0.55f * t * t;
+                L.rings.push_back(makeRing(p, uu, vv, SuperRing{thick * (1.0f - 0.6f * t), 0, wid * taper, wid * taper, 2.6f, 2.6f}, 6));
+                L.t.push_back(t);
+                fd = normalize(fd + palm * 0.10f);
+                p += fd * (len / float(n));
+            }
+            L.poleEnd = true;
+            L.endPole = p + fd * (0.15f * wid);
+            L.tEnd = 1;
+            emitLoft(sp, L, handW, [=, this](float t, float) { return t < 0.18f ? skin() : Mat{spadeM.color * (t > 0.8f ? 0.75f : 1.0f), MaterialClass::Horn}; });
         }
         return;
     }
@@ -1156,6 +1215,205 @@ void Builder::buildCrest() {
         return Mat{mark ? skinC * 0.35f : rr > 0.85f ? g.palette.belly : skinC, MaterialClass::Skin};
     });
     emitSheet(p, sh, 0.01f * h, 0.85f);
+}
+
+// ---------------------------------------------------------------- eyes and maws
+
+// 2 cyclopean: one great eye over the nose bridge, framed by a heavy lid ring; the paired
+// sockets heal over. 3 eyeless: skin grown smooth over both sockets.
+void Builder::buildTraitEyes() {
+    const int kind = g.face.eyeKind;
+    if ((kind != 2 && kind != 3) || bonesOnly_) return;
+    const float h = m.h;
+    const int head = ch.rig.head;
+    auto headW = [=](float, float, Vec3) { return one(head); };
+    Part& p = newPart(true);
+    p.id = headPartId_;
+    const Mat flesh{g.palette.skin * 0.97f, MaterialClass::Skin};
+    for (float sd : {1.0f, -1.0f}) {  // the healed sockets
+        const float x = sd * 0.20f * g.face.eyeSpacing * g.body.headWidth;
+        const float th = std::acos(clamp(x / 0.36f, -1.0f, 1.0f));
+        const Vec3 q = headPoint(th, 0.49f);
+        const Vec3 n = normalize(headNormalDir(q) + Vec3{0, 0, 0.35f});
+        Ellipsoid e;
+        e.center = q - n * (0.035f * h);
+        e.axis = n;
+        e.up = {0, 1, 0};
+        e.rAxis = 0.06f * h;
+        e.rU = (kind == 2 ? 0.11f : 0.12f) * h * g.face.eyeSize;
+        e.rV = 0.09f * h * g.face.eyeSize;
+        e.lat = 4;
+        e.lon = 8;
+        emitEllipsoid(p, e, headW, [=](float, float) { return flesh; });
+    }
+    if (kind != 2) return;
+    const float R = 0.15f * h * g.face.eyeSize;
+    const Vec3 q = headPoint(0.5f * kPi, 0.52f);
+    const Vec3 n = normalize(Vec3{0, 0.05f, 1});
+    const Vec3 iris = g.face.glowEyes ? g.face.glow : g.palette.iris, sclera = g.face.sclera;
+    const MaterialClass irisCls = g.face.glowEyes ? MaterialClass::Glow : MaterialClass::Skin;
+    Ellipsoid e;
+    e.center = q - n * (0.40f * R);
+    e.axis = n;
+    e.up = {0, 1, 0};
+    e.rAxis = e.rU = R;
+    e.rV = 0.92f * R;
+    e.lat = 8;
+    e.lon = 12;
+    emitEllipsoid(p, e, headW, [=, this](float t, float) {
+        if (t > 0.86f) return Mat{g.face.glowEyes ? iris : Vec3{0.03f, 0.03f, 0.03f}, irisCls};  // pupil
+        if (t > 0.70f) return Mat{iris, irisCls};
+        return Mat{sclera, MaterialClass::Skin};
+    });
+    // Lids: a thick ring of flesh round the eye, heavier on top, and a brow shelf above.
+    std::vector<Vec3> rim;
+    for (int k = 0; k <= 18; ++k) {
+        const float a = kTau * float(k) / 18.0f;
+        const float top = std::sin(a) > 0 ? 1.0f : 0.0f;
+        rim.push_back(e.center + n * (0.42f * R) + Vec3{std::cos(a) * 0.98f * R, std::sin(a) * (0.86f + 0.10f * top) * R, 0});
+    }
+    emitTube(p, rim, [=](float t) { return (0.14f + 0.08f * std::max(0.0f, std::sin(kTau * t))) * R; }, 6, headW,
+             [=, this](float, float) { return Mat{g.palette.skin * 0.92f, MaterialClass::Skin}; });
+    Ellipsoid brow;
+    brow.center = e.center + Vec3{0, 0.95f * R, 0.30f * R};
+    brow.axis = {1, 0, 0};
+    brow.up = {0, 1, 0};
+    brow.rAxis = 1.25f * R;
+    brow.rU = 0.38f * R;
+    brow.rV = 0.22f * R * (1.0f + 0.5f * g.face.browRidge);
+    brow.lat = 5;
+    brow.lon = 7;
+    emitEllipsoid(p, brow, headW, [=, this](float, float) { return Mat{g.palette.skin * 0.95f, MaterialClass::Skin}; });
+}
+
+// A maw: the mouth split wide, past the cheeks, a dark gape lined with rows of teeth.
+void Builder::buildMaw() {
+    if (!g.face.maw || g.face.beak || bonesOnly_) return;
+    const float h = m.h;
+    const int head = ch.rig.head;
+    const float sM = 0.215f, half = 0.70f + 0.16f * g.face.mouthWidth;  // angular half-width from the front
+    const int n = 20;
+    Sheet sh;
+    std::vector<Vec3> top, bot, nrm;
+    for (int i = 0; i <= n; ++i) {
+        const float a = float(i) / float(n);  // 0 .. 1 across
+        const float th = 0.5f * kPi + half * (2.0f * a - 1.0f);
+        const float gape = 0.075f * h * std::pow(std::sin(kPi * a), 0.6f) * (0.8f + 0.25f * g.face.jaw);
+        const Vec3 c = headPoint(th, sM);
+        const Vec3 nn = headNormalDir(c);
+        nrm.push_back(nn);
+        top.push_back(headPoint(th, sM + gape / h * 0.55f) + nn * (0.006f * h));
+        bot.push_back(headPoint(th, sM - gape / h * 0.45f) + nn * (0.006f * h));
+    }
+    const Mat gapeM{Vec3{0.10f, 0.03f, 0.04f}, MaterialClass::Dark};
+    std::vector<uint32_t> ti, bi;
+    for (int i = 0; i <= n; ++i) ti.push_back(sh.add(top[size_t(i)], one(head))), bi.push_back(sh.add(bot[size_t(i)], one(head)));
+    for (int i = 0; i < n; ++i) {
+        sh.tri(ti[size_t(i)], bi[size_t(i)], bi[size_t(i + 1)], gapeM);
+        sh.tri(ti[size_t(i)], bi[size_t(i + 1)], ti[size_t(i + 1)], gapeM);
+    }
+    Part& p = newPart();
+    p.id = headPartId_;
+    emitSheet(p, sh, 0.004f * h, 1.0f);
+    // Lip ridges: thin rolls of flesh along both edges, so the gape reads as cut into the face.
+    auto ridge = [&](const std::vector<Vec3>& edge, float lift) {
+        std::vector<Vec3> pts;
+        for (size_t i = 0; i < edge.size(); ++i) pts.push_back(edge[i] + nrm[i] * (0.004f * h) + Vec3{0, lift, 0});
+        emitTube(p, pts, [=](float t) { return 0.016f * h * (0.4f + 0.6f * std::sin(kPi * t)); }, 5, [=](float, float, Vec3) { return one(head); },
+                 [=, this](float, float) { return Mat{g.palette.lips, MaterialClass::Skin}; });
+    };
+    ridge(top, 0.010f * h);
+    ridge(bot, -0.010f * h);
+    // Teeth: needle rows in the upper jaw, a few longer fangs; shorter teeth below.
+    const Mat toothM{Vec3{0.86f, 0.82f, 0.70f}, MaterialClass::Horn};
+    for (int i = 1; i < n; ++i) {
+        const float a = float(i) / float(n);
+        const float gape = length(top[size_t(i)] - bot[size_t(i)]);
+        if (gape < 0.02f * h) continue;
+        const bool fang = i == n / 2 - 3 || i == n / 2 + 3;
+        const Vec3 in = -nrm[size_t(i)] * 0.3f;
+        emitSpike(p, top[size_t(i)], Vec3{0, -1, 0} + in, nrm[size_t(i)], (fang ? 0.75f : 0.42f) * gape, 0.012f * h * (fang ? 1.4f : 1.0f), 0,
+                  one(head), toothM);
+        if (i % 2 == 0)
+            emitSpike(p, bot[size_t(i)], Vec3{0, 1, 0} + in, nrm[size_t(i)], 0.32f * gape, 0.010f * h, 0, one(head), toothM);
+        (void)a;
+    }
+}
+
+// Eyes opening over the skin of the body (the watchers): sampled by area over the torso
+// and limbs, each a glossy eyeball half sunk in the flesh with a ring of lid.
+void Builder::buildBodyEyes() {
+    if (g.body.bodyEyes <= 0 || bonesOnly_ || decay_ >= 0.3f) return;
+    const float h = m.h;
+    Rng r = Rng(g.seed).fork(83);
+    struct Cand {
+        size_t part, tri;
+        float area;
+    };
+    std::vector<Cand> cands;
+    float total = 0;
+    for (size_t pi = 0; pi < parts.size(); ++pi) {
+        const Part& p = parts[pi];
+        if (p.kind != SubmeshKind::Body || p.flat || pi == headPart_ || pi == nosePart_ || p.tris.size() < 60) continue;
+        for (size_t ti = 0; ti < p.tris.size(); ++ti) {
+            const auto& t = p.tris[ti];
+            if (t.m.cls != MaterialClass::Skin) continue;
+            const float ar = 0.5f * length(cross(p.pos[t.b] - p.pos[t.a], p.pos[t.c] - p.pos[t.a]));
+            const Vec3 c = (p.pos[t.a] + p.pos[t.b] + p.pos[t.c]) / 3.0f;
+            if (c.y < 0.12f * m.H) continue;  // not on the soles and ankles
+            cands.push_back({pi, ti, ar});
+            total += ar;
+        }
+    }
+    if (cands.empty() || total <= 0) return;
+    const Vec3 iris = g.face.glowEyes ? g.face.glow : g.palette.iris, sclera = g.face.sclera;
+    const MaterialClass irisCls = g.face.glowEyes ? MaterialClass::Glow : MaterialClass::Skin;
+    struct Eye {
+        Vec3 c, n;
+        float R;
+        SkinW w;
+        Vec3 skinC;
+    };
+    std::vector<Eye> eyes;
+    for (int tries = 0; tries < g.body.bodyEyes * 12 && int(eyes.size()) < g.body.bodyEyes; ++tries) {
+        float pick = r.uniform() * total;
+        size_t k = 0;
+        while (k + 1 < cands.size() && pick > cands[k].area) pick -= cands[k].area, ++k;
+        const Part& p = parts[cands[k].part];
+        const auto& t = p.tris[cands[k].tri];
+        const Vec3 c = (p.pos[t.a] + p.pos[t.b] + p.pos[t.c]) / 3.0f;
+        const Vec3 nn = normalize(cross(p.pos[t.b] - p.pos[t.a], p.pos[t.c] - p.pos[t.a]), {0, 0, 1});
+        const float R = r.range(0.14f, 0.28f) * h;
+        bool clear = true;
+        for (const Eye& e : eyes) clear = clear && length(e.c - c) > 1.6f * (e.R + R);
+        if (clear) eyes.push_back({c, nn, R, p.w[t.a], t.m.color});
+    }
+    Part& p = newPart(true);
+    for (const Eye& e : eyes) {
+        auto wf = [w = e.w](float, float, Vec3) { return w; };
+        const Vec3 look = normalize(e.n + Vec3{r.range(-0.25f, 0.25f), r.range(-0.15f, 0.15f), r.range(-0.1f, 0.25f)});
+        Ellipsoid b;
+        b.center = e.c - e.n * (0.45f * e.R);  // sunk: only the front of the ball shows
+        b.axis = look;
+        b.up = std::fabs(look.y) > 0.9f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
+        b.rAxis = b.rU = b.rV = e.R;
+        b.lat = 6;
+        b.lon = 8;
+        emitEllipsoid(p, b, wf, [=, this](float t, float) {
+            if (t > 0.86f) return Mat{g.face.glowEyes ? iris : Vec3{0.03f, 0.03f, 0.03f}, irisCls};
+            if (t > 0.70f) return Mat{iris, irisCls};
+            return Mat{sclera, MaterialClass::Skin};
+        });
+        // A lid ring where the eyeball meets the skin, a little slit-shaped.
+        const Vec3 u = normalize(cross(e.n, b.up), {1, 0, 0}), v = cross(u, e.n);
+        std::vector<Vec3> rim;
+        for (int k = 0; k <= 12; ++k) {
+            const float a = kTau * float(k) / 12.0f;
+            rim.push_back(e.c + e.n * (0.12f * e.R) + u * (std::cos(a) * 0.86f * e.R) + v * (std::sin(a) * 0.62f * e.R));
+        }
+        const Mat lidM{e.skinC * 0.82f, MaterialClass::Skin};
+        emitTube(p, rim, [=](float) { return 0.22f * e.R; }, 5, wf, [=](float, float) { return lidM; });
+    }
 }
 
 }  // namespace cg::detail

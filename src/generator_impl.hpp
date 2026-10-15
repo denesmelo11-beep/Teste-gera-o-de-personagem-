@@ -100,7 +100,7 @@ private:
     void initHead();
     // traits.cpp: composable species traits
     void buildWings();
-    void buildSerpent();        // replaces the legs (lowerBody 1 coil, 2 wisp)
+    void buildSerpent();        // replaces the legs (lowerBody 1 coil, 2 wisp, 3 ooze)
     void buildBackTentacles();
     void buildShell();
     void buildShards();
@@ -111,6 +111,9 @@ private:
     void buildAntennae();
     void buildCompoundEyes();
     void buildCrest();
+    void buildTraitEyes();  // cyclopean eye, eyeless sockets
+    void buildMaw();
+    void buildBodyEyes();
     // head.cpp
     void buildHead();
     void buildNose();

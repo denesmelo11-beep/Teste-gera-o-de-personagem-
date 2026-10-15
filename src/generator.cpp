@@ -2451,6 +2451,8 @@ Character Builder::build() {
     buildMandibles();
     buildAntennae();
     buildCompoundEyes();
+    buildTraitEyes();
+    buildMaw();
     buildCrest();
     buildColliders();
     buildHair();
@@ -2469,6 +2471,7 @@ Character Builder::build() {
     }
     buildEyelids();
     applySkinKind();
+    buildBodyEyes();
     buildFaceDecals();
     finalizeParts(parts, ch.mesh, opt.faceted, opt.creaseAngle);
     ch.faceAtlas = paintFaceAtlas(g);

@@ -972,6 +972,12 @@ int runTraits(Scene& s, const std::string& path, uint64_t seed) {
         {cg::Species::Cephalid, cg::Sex::Male, Back, "tentaculos nas costas", [](cg::Genome& g) { g.body.backTentacles = 4; }},
         {cg::Species::Crystalborn, cg::Sex::Male, Body, "pele de cristal + lascas", none},
         {cg::Species::Emberkin, cg::Sex::Male, Body, "crosta de magma", none},
+        {cg::Species::Cyclops, cg::Sex::Male, Head, "olho ciclope", [](cg::Genome& g) { g.facialHair = cg::FacialHair::None; }},
+        {cg::Species::Talpid, cg::Sex::Male, HeadSide, "sem olhos + focinho de toupeira", [](cg::Genome& g) { g.face.eyeKind = 3; }},
+        {cg::Species::Rimemaw, cg::Sex::Male, Head, "bocarra", none},
+        {cg::Species::Talpid, cg::Sex::Female, Hand, "maos de pa (escavar)", none},
+        {cg::Species::Oculite, cg::Sex::Male, Body, "olhos pelo corpo", none},
+        {cg::Species::Slime, cg::Sex::Female, Body, "corpo de gosma", none},
     };
     if (const char* only = std::getenv("CHARGEN_TRAITS")) {  // indices: "0 3 7"
         std::vector<Panel> sub;
@@ -1420,7 +1426,12 @@ int main(int argc, char** argv) {
         return rc;
     }
     if (!peoples.empty()) {
-        int rc = runRaces(s, peoples, seed, int(cg::kFirstTraitSpecies), int(cg::Species::Count));
+        const char* from = std::getenv("CHARGEN_FROM");  // first people by name (e.g. cyclops): only the newer ones
+        int first = int(cg::kFirstTraitSpecies);
+        if (from)
+            for (int k = 0; k < int(cg::Species::Count); ++k)
+                if (cg::toString(cg::Species(k)) == from) first = k;
+        int rc = runRaces(s, peoples, seed, first, int(cg::Species::Count));
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

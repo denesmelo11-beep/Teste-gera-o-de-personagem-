@@ -113,13 +113,13 @@ chargen_viewer --decay morte.png --seed 12              # estágios de decomposi
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
 chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDYFACES=1 retratos; CHARGEN_STUDIES="a b" subconjunto)
-chargen_viewer --peoples povos_tracos.png --seed 5      # os 13 povos de traços (dragonborn ... wraith), homem e mulher
-chargen_viewer --traits tracos.png --seed 3             # 24 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
+chargen_viewer --peoples povos_tracos.png --seed 5      # os 18 povos de traços, homem e mulher (CHARGEN_FROM=cyclops: a partir de um povo)
+chargen_viewer --traits tracos.png --seed 3             # 30 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
 # CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome,
-# CHARGEN_WINGS=0..3, CHARGEN_FOLD=1, CHARGEN_LOWER=0..2, CHARGEN_HANDS=0..3, CHARGEN_FEET=0..1, CHARGEN_BEAK=0..3,
+# CHARGEN_WINGS=0..3, CHARGEN_FOLD=1, CHARGEN_LOWER=0..3, CHARGEN_HANDS=0..4, CHARGEN_FEET=0..1, CHARGEN_BEAK=0..3,
 # CHARGEN_CREST=0..4, CHARGEN_SKIN=0..5, CHARGEN_TENTACLES=0..6 (forçam traços de espécie em qualquer modo)
 # CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
@@ -260,20 +260,24 @@ mesmo esqueleto, então as animações e a física existentes as movem:
 - **Asas** (`wings`): membrana de morcego/dragão, penas ou inseto; abertas ou dobradas nas costas;
   ossos `wing/wingarm/wingfore/winghand.L/R` em `rig.wings`.
 - **Corpo inferior** (`lowerBody`): cauda de serpente enrolada (ossos `coil0..7` em `rig.serpent`,
-  ponta com física) ou rastro espectral (`wisp0..3`). Os ossos de perna continuam existindo, então
+  ponta com física), rastro espectral (`wisp0..3`) ou monte de gosma com poça (`ooze0..2`). Os ossos de perna continuam existindo, então
   clipes e retargeting não quebram.
 - **Mãos** (`hands`): garras de três dedos, pinça de caranguejo (osso `pincer` com dobradiça,
-  `rig.pincers`), tentáculos no lugar dos dedos. **Pés** (`feet`): garras de ave.
+  `rig.pincers`), tentáculos no lugar dos dedos, pás de escavar. **Pés** (`feet`): garras de ave.
 - **Costas**: tentáculos com física (`backTentacles`, `rig.tentacles`), casco de tartaruga com
   plastrão (`shell`), lascas de cristal (`shards`).
 - **Cabeça**: bico de rapina, longo ou curto (`beak`), mandíbulas, antenas finas ou plumosas com
   física (`rig.antennae`), olhos compostos, focinho réptil (`snout = 2`), orelhas-barbatana e sem
-  orelha, cristas (barbatana, penas, gola óssea, capuz de naja).
+  orelha, cristas (barbatana, penas, gola óssea, capuz de naja), olho ciclope, rosto sem olhos
+  (`eyeKind` 2 e 3) e bocarra de orelha a orelha com fileiras de dentes (`maw`).
 - **Pele** (`skinKind`): escamas, cristal facetado com veios luminosos e crosta de magma com
-  fissuras incandescentes, recortadas na malha ao longo das bordas das placas.
+  fissuras incandescentes, recortadas na malha ao longo das bordas das placas; olhos abertos pelo
+  tronco e membros (`bodyEyes`), presos aos ossos da pele onde nascem.
 
-Treze povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
-insectoid, fishfolk, demon, cephalid, fae, crystalborn, emberkin e wraith. Eles ficam fora de
+Dezoito povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
+insectoid, fishfolk, demon, cephalid, fae, crystalborn, emberkin, wraith, cyclops (gigantes de um
+olho), talpid (toupeiras escavadoras), oculite (vigias cobertos de olhos), slime (gosma viva) e
+rimemaw (caçadores do gelo de bocarra). Eles ficam fora de
 `mixedSpecies` (as chaves antigas geram os mesmos personagens); peça-os por `GenomeOptions::species`
 ou ligue qualquer traço em qualquer povo. Hitboxes novas: `wing` e `tentacle`.
 A cobertura de formas usada como referência está em [docs/especies.md](docs/especies.md).

@@ -696,14 +696,14 @@ std::string describe(const Genome& g) {
     if (b.muzzle > 0.3f) fx.push_back(b.snout == 1 ? "wolf muzzle" : b.snout == 2 ? "reptile snout" : "bovine snout");
     {
         static constexpr std::string_view kWings[] = {"", "membrane wings", "feathered wings", "insect wings"};
-        static constexpr std::string_view kLower[] = {"", "serpent coil", "wraith wisp"};
-        static constexpr std::string_view kHands[] = {"", "taloned hands", "crab pincers", "tendril hands"};
+        static constexpr std::string_view kLower[] = {"", "serpent coil", "wraith wisp", "ooze body"};
+        static constexpr std::string_view kHands[] = {"", "taloned hands", "crab pincers", "tendril hands", "digging spades"};
         static constexpr std::string_view kCrest[] = {"", "head fin", "feather crest", "bony frill", "cobra hood"};
         static constexpr std::string_view kBeak[] = {"", "raptor beak", "long beak", "short beak"};
         static constexpr std::string_view kSkin[] = {"", "metal skin", "carapace", "scales", "crystal hide", "magma crust"};
         if (b.wings > 0 && b.wings <= 3) fx.emplace_back(kWings[size_t(b.wings)]);
-        if (b.lowerBody > 0 && b.lowerBody <= 2) fx.emplace_back(kLower[size_t(b.lowerBody)]);
-        if (b.hands > 0 && b.hands <= 3) fx.emplace_back(kHands[size_t(b.hands)]);
+        if (b.lowerBody > 0 && b.lowerBody <= 3) fx.emplace_back(kLower[size_t(b.lowerBody)]);
+        if (b.hands > 0 && b.hands <= 4) fx.emplace_back(kHands[size_t(b.hands)]);
         if (b.feet == 1) fx.push_back("bird talons");
         if (b.backTentacles > 0) fx.push_back("back tentacles");
         if (b.shell) fx.push_back("turtle shell");
@@ -714,6 +714,10 @@ std::string describe(const Genome& g) {
         if (g.face.mandibles) fx.push_back("mandibles");
         if (g.face.antennae) fx.push_back("antennae");
         if (g.face.eyeKind == 1) fx.push_back("compound eyes");
+        if (g.face.eyeKind == 2) fx.push_back("a single cyclopean eye");
+        if (g.face.eyeKind == 3) fx.push_back("eyeless");
+        if (g.face.maw) fx.push_back("a maw split ear to ear");
+        if (b.bodyEyes > 0) fx.push_back(std::to_string(b.bodyEyes) + " eyes over the body");
     }
     if (b.tail) {
         static constexpr std::string_view kTail[] = {"tail", "heavy reptile tail", "whip tail with a spade", "bushy tail",
@@ -806,8 +810,10 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.15f)) f.eyePairs = 2;
     // Species traits.
     if (r.chance(0.15f)) b.wings = r.rangeInt(1, 3), b.wingsFolded = r.chance(0.3f), b.wingSize = r.range(0.7f, 1.3f);
-    if (r.chance(0.10f)) b.lowerBody = r.rangeInt(1, 2), b.serpentLength = r.range(0.7f, 1.4f);
-    if (r.chance(0.15f)) b.hands = r.rangeInt(1, 3);
+    if (r.chance(0.10f)) b.lowerBody = r.rangeInt(1, 3), b.serpentLength = r.range(0.7f, 1.4f);
+    if (r.chance(0.15f)) b.hands = r.rangeInt(1, 4);
+    if (r.chance(0.06f)) b.bodyEyes = r.rangeInt(4, 20);
+    if (r.chance(0.05f)) f.maw = true;
     if (r.chance(0.10f)) b.feet = 1;
     if (r.chance(0.10f)) b.backTentacles = r.rangeInt(1, 6), b.tentacleLength = r.range(0.6f, 1.4f);
     if (r.chance(0.08f)) b.shell = true;
@@ -816,7 +822,7 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.12f)) f.beak = r.rangeInt(1, 3);
     if (r.chance(0.08f)) f.mandibles = true;
     if (r.chance(0.08f)) f.antennae = r.rangeInt(1, 2), f.antennaLength = r.range(0.6f, 1.5f);
-    if (r.chance(0.06f)) f.eyeKind = 1;
+    if (r.chance(0.10f)) f.eyeKind = r.rangeInt(1, 3), f.eyePairs = 1;
     if (r.chance(0.08f)) b.ears = EarStyle(r.rangeInt(0, int(EarStyle::Count) - 1));
     if (r.chance(0.2f)) f.mouthStyle = r.rangeInt(0, 3);
     if (r.chance(0.3f)) g.hair = HairStyle(r.rangeInt(0, int(HairStyle::Count) - 1));
