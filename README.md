@@ -147,6 +147,17 @@ na frente do quadril.
 
 ![quatro braços](docs/anim_quatro_bracos.gif)
 
+**Feras quadrúpedes** (corpo de besta, como o Gloomhound) têm clipes próprios. O passo
+apoia três patas por vez, o trote move as diagonais juntas e o galope alterna as
+patas com um tempo de voo. A mordida avança o tronco pelos ombros e fecha a boca no
+contato. A patada (`swipe`) empina a frente e rasga com a pata dianteira. O uivo
+(`cast`) ergue o focinho, o rosnado (`roar`) abaixa a frente e o golpe faz o tronco
+recuar. Na morte, as patas da frente cedem antes das de trás e o corpo tomba de lado.
+`makeTrotClip` e `makeSwipeClip` existem para todos os corpos; quem não é fera recebe a
+corrida e o ataque.
+
+![feras](docs/anim_feras.gif)
+
 **Chifres e bicos** saem de uma base de pele afundada no crânio (no bico, uma cúpula de
 pele nua como a cera de uma ave de rapina). Há dez formatos de chifre (`hornKind`): para
 trás, carneiro, reto, bovino, saca-rolhas, gancho para frente, galhada, coroa de

@@ -444,8 +444,9 @@ int main() {
         o.species = Species::Gnome;
         o.armPairs = 2;  // four arms, small body
         checkMotion(generateCharacter(randomGenome(7, o)), "gnomo 4 bracos");
-        // Species traits: a coil instead of legs, a wisp, wings (membrane and feathered).
-        for (Species sp : {Species::Naga, Species::Wraith, Species::Avian, Species::Demon, Species::Dragonborn, Species::Cephalid}) {
+        // Species traits: a coil instead of legs, a wisp, wings (membrane and feathered), a beast on all fours.
+        for (Species sp : {Species::Naga, Species::Wraith, Species::Avian, Species::Demon, Species::Dragonborn, Species::Cephalid,
+                        Species::Gloomhound}) {
             GenomeOptions so;
             so.species = sp;
             for (uint64_t seed : {3, 4}) {

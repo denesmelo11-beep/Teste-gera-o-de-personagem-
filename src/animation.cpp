@@ -304,9 +304,338 @@ float phrase(std::initializer_list<Beat> keys, float t) {
 // Hind legs of a four-legged body are indices 2 and 3.
 bool hind(size_t leg) { return leg >= 2; }
 
+// ---------------------------------------------------------------- beasts on all fours
+//
+// The trunk lies along +z (hips at the back, chest in front), legs[0..1] are the forelegs
+// and legs[2..3] the hind legs; the arms are folded away inside the chest. Pitch about x
+// tips the front down (+) or up (-), yaw about y turns the nose to +x, roll about z.
+
+bool beastBody(const Character& c) {
+    const BodyShape& b = c.genome.body;
+    return b.stance == 1 && !b.centaur && !b.lowerBody && c.rig.legs.size() >= 4;
+}
+
+// A gait: the share of the cycle each foot is on the ground, the swing of the leg
+// (radians either side), how high it folds, and when each leg starts its stance.
+struct Gait {
+    float duty, stride, lift;
+    float phase[4];  // fore L, fore R, hind L, hind R
+};
+
+// One leg through its cycle: planted, it travels from reaching forward to pushing back;
+// lifted, it folds and swings forward again. Returns how planted it is.
+float gaitLeg(Author& a, size_t i, float t, const Gait& g) {
+    float p = t + g.phase[std::min<size_t>(i, 3)];
+    p -= std::floor(p);
+    const bool hindLeg = i >= 2;
+    float sw, knee, foot, planted;
+    if (p < g.duty) {
+        const float u = p / g.duty;
+        sw = g.stride * (2.0f * u - 1.0f);
+        knee = 0.08f + 0.12f * std::sin(kPi * u);  // the leg yields as it takes the weight
+        foot = 0.0f;
+        planted = 1.0f;
+    } else {
+        const float u = (p - g.duty) / (1.0f - g.duty), l = std::sin(kPi * u);
+        sw = g.stride * (1.0f - 2.0f * shape(Ease::Smooth, u));
+        knee = 0.08f + g.lift * l * (hindLeg ? 1.0f : 1.2f);
+        foot = (hindLeg ? -0.35f : 0.7f) * g.lift * l;  // the forepaw curls back, the hind paw trails
+        planted = 1.0f - smoothstep(0.0f, 0.12f, u) * (1.0f - smoothstep(0.88f, 1.0f, u));
+    }
+    a.leg(i, sw, knee, foot);
+    return planted;
+}
+
+void beastLegs(Author& a, float t, const Gait& g) {
+    float w[4];
+    for (size_t i = 0; i < 4; ++i) w[i] = gaitLeg(a, i, t, g);
+    for (size_t i = 0; i < 4; ++i) a.plant(i, w[i]);
+}
+
+Clip beastIdle(const Character& c) {
+    Clip clip = author(c, "idle", 120, 30, true, [&](Author& a, float t) {
+        const float ph = kTau * t, breath = std::sin(ph * 3);
+        a.tension = 0.3f;
+        a.move(a.r.hips, {0.012f * a.h * std::sin(ph), -0.006f * a.h * (1 + breath), 0});
+        a.euler(a.r.hips, 0, 0.03f * std::sin(ph), 0.02f * std::sin(ph));
+        a.euler(a.r.chest, -0.015f * breath, 0, 0);
+        // Head low and searching: it turns, pauses, sniffs.
+        const float look = std::sin(ph) + 0.35f * std::sin(2 * ph + 1.0f);
+        a.euler(a.r.neck, 0.05f * std::sin(2 * ph + 0.5f), 0.22f * look, 0);
+        a.euler(a.r.head, 0.06f * std::sin(4 * ph) * std::max(0.0f, std::cos(ph)), 0.12f * look, 0.06f * std::sin(ph + 0.3f));
+        for (size_t i = 0; i < a.r.legs.size(); ++i) a.leg(i, 0, 0.06f + 0.02f * breath, 0);
+        a.tail(0.1f + 0.05f * breath, 0.3f * std::sin(ph + 0.8f), 0.8f);
+        a.wings(0.03f * breath, 0);
+        a.plantAll();
+    });
+    clip.faceKeys = {{0.0f, {}}};
+    return clip;
+}
+
+// Four-beat walk (hind, fore on the same side, then the other side): always three feet down.
+Clip beastWalk(const Character& c) {
+    const Gait g{0.68f, 0.30f, 0.85f, {0.25f, 0.75f, 0.0f, 0.5f}};
+    Clip clip = author(c, "walk", 40, 30, true, [&](Author& a, float t) {
+        const float ph = kTau * t;
+        a.tension = 0.45f;
+        a.move(a.r.hips, {0.012f * a.h * std::sin(ph), 0.012f * a.h * std::cos(2 * ph) - 0.01f * a.h, 0});
+        a.euler(a.r.hips, 0, 0.07f * std::sin(ph), 0.04f * std::sin(ph));
+        a.euler(a.r.spine, 0, -0.04f * std::sin(ph), 0);
+        a.euler(a.r.chest, 0, -0.06f * std::sin(ph + 0.5f), -0.04f * std::sin(ph + kPi / 2));
+        a.euler(a.r.neck, 0.05f * std::sin(2 * ph + 1.2f), 0.05f * std::sin(ph + 1.0f), 0);  // the head nods with the forelegs
+        a.euler(a.r.head, -0.04f * std::sin(2 * ph + 1.2f), 0.03f * std::sin(ph + 1.4f), 0);
+        a.tail(0.05f, -0.35f * std::sin(ph + 0.6f), 0.8f);
+        a.wings(0, 0);
+        beastLegs(a, t, g);
+    });
+    clip.faceKeys = {{0.0f, {}}};
+    clip.events = {{0.75f * clip.duration(), "footL"}, {0.25f * clip.duration(), "footR"}};
+    return clip;
+}
+
+// Trot: diagonal pairs together, a springy bounce on every beat.
+Clip beastTrot(const Character& c) {
+    const Gait g{0.48f, 0.42f, 1.05f, {0.0f, 0.5f, 0.5f, 0.0f}};
+    Clip clip = author(c, "trot", 24, 30, true, [&](Author& a, float t) {
+        const float ph = kTau * t;
+        a.tension = 0.55f;
+        a.move(a.r.hips, {0, 0.035f * a.h * std::cos(2 * ph) - 0.02f * a.h, 0});
+        a.euler(a.r.hips, 0.03f, 0.05f * std::sin(ph), 0.05f * std::sin(ph));
+        a.euler(a.r.chest, -0.02f * std::cos(2 * ph), -0.05f * std::sin(ph), -0.05f * std::sin(ph));
+        a.euler(a.r.neck, -0.05f + 0.06f * std::cos(2 * ph + 0.8f), 0, 0);
+        a.euler(a.r.head, 0.05f - 0.05f * std::cos(2 * ph + 0.8f), 0, 0);
+        a.tail(0.2f + 0.1f * std::cos(2 * ph), -0.3f * std::sin(ph + 0.5f), 0.6f);
+        a.wings(-0.05f, -0.1f);
+        beastLegs(a, t, g);
+    });
+    clip.faceKeys = {{0.0f, {}}};
+    clip.events = {{0.0f, "footL"}, {0.5f * clip.duration(), "footR"}};
+    return clip;
+}
+
+// Rotary gallop: hind left, hind right, fore right, fore left, then all four off the
+// ground. The spine coils as the hind legs reach under the chest and stretches out as
+// they drive; the head counters the pitch of the body.
+Clip beastGallop(const Character& c) {
+    const Gait g{0.36f, 0.62f, 1.35f, {0.55f, 0.45f, 0.0f, 0.9f}};
+    Clip clip = author(c, "run", 18, 30, true, [&](Author& a, float t) {
+        const float ph = kTau * t, coil = std::sin(ph - 0.6f);
+        a.tension = 0.7f;
+        a.move(a.r.hips, {0, 0.07f * a.h * std::max(0.0f, std::sin(ph + 1.2f)) - 0.05f * a.h, 0});
+        a.euler(a.r.hips, 0.12f * std::sin(ph + 0.3f), 0.03f * std::sin(ph), 0);
+        a.euler(a.r.spine, 0.16f * coil, 0, 0);
+        a.euler(a.r.chest, 0.10f * coil - 0.08f * std::sin(ph + 0.3f), 0, 0);
+        a.euler(a.r.neck, -0.12f - 0.14f * std::sin(ph + 2.0f), 0, 0);
+        a.euler(a.r.head, 0.18f + 0.06f * std::sin(ph + 2.4f), 0, 0);
+        a.tail(0.15f + 0.15f * std::sin(ph + 1.5f), 0.08f * std::sin(ph), 0.4f);  // streams out behind
+        a.wings(-0.15f, -0.3f);
+        beastLegs(a, t, g);
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Open}}};
+    clip.events = {{0.45f * clip.duration(), "footL"}, {0.55f * clip.duration(), "footR"}};
+    return clip;
+}
+
+// Bite: sink back on the haunches with the head drawn in, then a snapping lunge, the
+// forelegs reaching, the jaws closing at full stretch, and a shake before letting go.
+Clip beastBite(const Character& c) {
+    const float dur = 1.1f;
+    Clip clip = author(c, "attack", int(dur * 30), 30, false, [&](Author& a, float t) {
+        const float coil = phrase({{0.0f, 0.0f}, {0.28f, 1.0f, Ease::Out}, {0.36f, 0.0f, Ease::Snap}}, t);
+        const float lunge = phrase({{0.28f, 0.0f}, {0.38f, 1.0f, Ease::Snap}, {0.62f, 0.85f, Ease::Linear}, {1.0f, 0.0f}}, t);
+        const float snap = phrase({{0.34f, 0.0f}, {0.4f, 1.0f, Ease::Snap}, {0.5f, 0.6f}, {0.75f, 0.0f}}, t);
+        const float shake = phrase({{0.42f, 0.0f}, {0.48f, 1.0f}, {0.66f, 0.0f}}, t) * std::sin(t * dur * kTau * 7.0f);
+        a.tension = 0.35f + 0.65f * lunge;
+        a.move(a.r.hips, {0, (-0.16f * coil + 0.04f * lunge) * a.h, (-0.12f * coil + 0.42f * lunge) * a.h});
+        a.euler(a.r.hips, -0.08f * coil + 0.05f * lunge, 0, 0);
+        a.euler(a.r.spine, 0.06f * coil - 0.05f * lunge, 0, 0);
+        a.euler(a.r.chest, 0.12f * coil - 0.1f * lunge, 0.08f * shake, 0);
+        a.euler(a.r.neck, 0.25f * coil - 0.3f * lunge, 0.12f * shake, 0.1f * shake);
+        a.euler(a.r.head, -0.3f * coil - 0.2f * lunge + 0.35f * snap, 0.1f * shake, 0);
+        for (size_t i = 0; i < 2; ++i) a.leg(i, 0.2f * coil - 0.55f * lunge, 0.35f * coil + 0.35f * std::sin(kPi * saturate(lunge)), 0.2f * coil);
+        for (size_t i = 2; i < 4; ++i) a.leg(i, -0.15f * coil + 0.45f * lunge, 0.55f * coil, -0.2f * coil);
+        a.tail(0.15f * coil + 0.45f * lunge, 0.25f * shake, 0.7f);
+        a.wings(0.4f * lunge, 0.35f * lunge);
+        a.plantAll(1.0f - 0.6f * std::sin(kPi * saturate((t - 0.3f) / 0.16f)) * float(t > 0.3f && t < 0.46f));
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Frown}}, {0.3f * dur, {EyeExpr::Angry, MouthExpr::Shout}},
+                     {0.75f * dur, {EyeExpr::Angry, MouthExpr::Neutral}}};
+    clip.events = {{0.4f * dur, "contact"}};
+    return clip;
+}
+
+// Swipe: rear back onto the haunches, raise a forepaw high and rake it down and across.
+Clip beastSwipe(const Character& c) {
+    const float dur = 1.0f;
+    Clip clip = author(c, "swipe", int(dur * 30), 30, false, [&](Author& a, float t) {
+        const float rear = phrase({{0.0f, 0.0f}, {0.3f, 1.0f, Ease::Out}, {0.62f, 0.7f}, {1.0f, 0.0f}}, t);
+        const float rake = phrase({{0.3f, 0.0f}, {0.42f, 1.0f, Ease::Snap}, {0.66f, 1.0f, Ease::Linear}, {1.0f, 0.0f}}, t);
+        const float sd = a.r.legs[0].side;
+        a.tension = 0.4f + 0.6f * rake;
+        a.move(a.r.hips, {0, -0.08f * a.h * rear, -0.1f * a.h * rear + 0.14f * a.h * rake});
+        a.euler(a.r.hips, -0.26f * rear + 0.08f * rake, 0, sd * 0.06f * rear);
+        a.euler(a.r.spine, -0.14f * rear + 0.1f * rake, 0, 0);
+        a.euler(a.r.chest, -0.1f * rear + 0.12f * rake, sd * 0.15f * rear - sd * 0.3f * rake, sd * 0.08f * rear);
+        a.euler(a.r.neck, -0.1f * rear + 0.1f * rake, -sd * 0.2f * rake, 0);
+        a.euler(a.r.head, 0.05f * rake, -sd * 0.1f * rake, 0);
+        // The striking forepaw: up and out, then down and across the body.
+        a.leg(0, -1.5f * rear + 1.7f * rake, 1.1f * rear * (1.0f - rake) + 0.2f, -0.5f * rear + 0.4f * rake, 0.5f * rear - 0.6f * rake);
+        a.leg(1, 0.1f * rear, 0.25f * rear, 0);
+        for (size_t i = 2; i < 4; ++i) a.leg(i, -0.3f * rear, 0.8f * rear, -0.3f * rear);
+        a.tail(0.3f * rear + 0.2f * rake, sd * 0.4f * rake, 0.7f);
+        a.wings(0.5f * rear, 0.4f * rear);
+        const float up = std::sin(kPi * saturate(t / 0.85f));
+        a.plant(0, 1.0f - up);
+        for (size_t i = 1; i < 4; ++i) a.plant(i);
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Frown}}, {0.35f * dur, {EyeExpr::Angry, MouthExpr::Shout}},
+                     {0.8f * dur, {EyeExpr::Angry, MouthExpr::Neutral}}};
+    clip.events = {{0.42f * dur, "contact"}};
+    return clip;
+}
+
+// Dodge: crouch, spring sideways with the body twisting in the air, land on the forepaws.
+Clip beastDodge(const Character& c) {
+    Clip clip = author(c, "dodge", 30, 30, false, [&](Author& a, float t) {
+        const float crouch = phrase({{0.0f, 0.0f}, {0.18f, 1.0f, Ease::Out}, {0.28f, 0.0f, Ease::Snap}, {0.58f, 0.0f}, {0.68f, 0.8f, Ease::Out}, {1.0f, 0.0f}}, t);
+        const float air = phrase({{0.22f, 0.0f}, {0.4f, 1.0f, Ease::Out}, {0.58f, 0.0f, Ease::In}}, t);
+        const float side = phrase({{0.2f, 0.0f}, {0.58f, 1.0f, Ease::Out}, {1.0f, 0.0f, Ease::Smooth}}, t);
+        const float twist = phrase({{0.2f, 0.0f}, {0.42f, 1.0f}, {0.62f, 0.2f}, {1.0f, 0.0f}}, t);
+        a.tension = 0.5f + 0.4f * air;
+        a.move(a.r.hips, {0.5f * a.h * side, (-0.14f * crouch + 0.25f * air) * a.h, 0});
+        a.euler(a.r.hips, 0, 0.25f * twist, -0.15f * twist);
+        a.euler(a.r.chest, 0, 0.2f * twist, -0.1f * twist);
+        a.euler(a.r.neck, 0.1f * crouch, -0.25f * twist, 0);
+        for (size_t i = 0; i < 4; ++i) {
+            const bool hindLeg = i >= 2;
+            a.leg(i, (hindLeg ? 0.3f : -0.35f) * air, 0.6f * crouch + 0.5f * air, (hindLeg ? -0.3f : 0.5f) * air, 0.2f * air);
+        }
+        a.tail(0.3f * air, -0.6f * twist, 0.6f);
+        a.wings(0.6f * air, 0.4f * air);
+        a.plantAll(1.0f - smoothstep(0.0f, 0.2f, air));
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Angry, MouthExpr::Neutral}}, {0.3f, {EyeExpr::Angry, MouthExpr::Open}}, {0.7f, {EyeExpr::Neutral, MouthExpr::Neutral}}};
+    clip.events = {{0.58f, "land"}};
+    return clip;
+}
+
+// Howl (the beast's "cast"): sit back on the haunches, throw the head up and hold the note.
+Clip beastHowl(const Character& c) {
+    const float dur = 2.0f;
+    Clip clip = author(c, "cast", int(dur * 30), 30, false, [&](Author& a, float t) {
+        const float sit = phrase({{0.0f, 0.0f}, {0.3f, 1.0f, Ease::Smooth}, {0.82f, 1.0f}, {1.0f, 0.0f}}, t);
+        const float howl = phrase({{0.25f, 0.0f}, {0.45f, 1.0f, Ease::Out}, {0.8f, 1.0f, Ease::Linear}, {1.0f, 0.0f}}, t);
+        const float quaver = howl * std::sin(t * dur * kTau * 5.0f);
+        a.tension = 0.3f + 0.4f * howl;
+        a.move(a.r.hips, {0, -0.22f * a.h * sit, -0.05f * a.h * sit});
+        a.euler(a.r.hips, -0.32f * sit, 0, 0);  // the front rises over the sitting haunches
+        a.euler(a.r.spine, -0.06f * sit, 0, 0);
+        a.euler(a.r.chest, -0.06f * sit - 0.05f * howl, 0, 0);
+        a.euler(a.r.neck, -0.55f * howl + 0.01f * quaver, 0, 0);
+        a.euler(a.r.head, -0.35f * howl, 0.03f * quaver, 0);
+        for (size_t i = 0; i < 2; ++i) a.leg(i, -0.32f * sit, 0.1f * sit, 0.2f * sit);
+        for (size_t i = 2; i < 4; ++i) a.leg(i, -0.6f * sit, 1.0f * sit, -0.5f * sit);
+        a.tail(-0.2f * sit, 0.1f * quaver, 0.6f);
+        a.wings(0.3f * howl, 0.2f * howl);
+        a.plantAll();
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Neutral, MouthExpr::Neutral}}, {0.4f * dur, {EyeExpr::Blink, MouthExpr::Oh}}, {0.85f * dur, {EyeExpr::Neutral, MouthExpr::Neutral}}};
+    clip.events = {{0.45f * dur, "release"}};
+    return clip;
+}
+
+// Snarl (the beast's "roar"): hackles up, the forequarters low, the head thrust forward and
+// shaking, the tail rigid.
+Clip beastSnarl(const Character& c) {
+    const float dur = 2.0f;
+    Clip clip = author(c, "roar", int(dur * 30), 30, false, [&](Author& a, float t) {
+        const float low = phrase({{0.0f, 0.0f}, {0.2f, 1.0f, Ease::Out}, {0.85f, 1.0f}, {1.0f, 0.0f}}, t);
+        const float roar = phrase({{0.18f, 0.0f}, {0.26f, 1.0f, Ease::Snap}, {0.8f, 0.8f, Ease::Linear}, {1.0f, 0.0f}}, t);
+        const float shake = roar * std::sin(t * dur * kTau * 9.0f);
+        a.tension = 0.4f + 0.5f * roar;
+        a.move(a.r.hips, {0, -0.06f * a.h * low, -0.08f * a.h * low + 0.06f * a.h * roar});
+        a.euler(a.r.hips, -0.05f * low, 0, 0);
+        a.euler(a.r.chest, 0.14f * low, 0, 0.02f * shake);
+        a.euler(a.r.neck, 0.1f * low - 0.12f * roar, 0.05f * shake, 0);
+        a.euler(a.r.head, -0.2f * roar + 0.03f * shake, 0.04f * shake, 0);
+        for (size_t i = 0; i < 2; ++i) a.leg(i, -0.15f * low, 0.55f * low, 0.25f * low, 0.12f * low);
+        for (size_t i = 2; i < 4; ++i) a.leg(i, 0.05f * low, 0.15f * low, 0, 0.08f * low);
+        a.tail(0.45f * roar, 0.05f * shake, 0.3f);
+        a.wings(0.2f + 0.5f * roar, 0.5f * roar);
+        a.plantAll();
+    });
+    clip.faceKeys = {{0.0f, {EyeExpr::Neutral, MouthExpr::Neutral}}, {0.2f * dur, {EyeExpr::Angry, MouthExpr::Shout}},
+                     {0.88f * dur, {EyeExpr::Angry, MouthExpr::Neutral}}};
+    clip.events = {{0.25f * dur, "roar"}};
+    return clip;
+}
+
+// Recoil of a body on four legs: shoved along the blow, it rolls and pitches with it, the
+// head whips after, the legs on the struck side splay to catch it.
+void beastRecoil(Author& a, Vec3 push, float k, float kh, float s, float stepLift) {
+    a.move(a.r.hips, push * (0.12f * a.h * k * s) + Vec3{0, -0.04f * a.h * k * s, 0});
+    a.euler(a.r.hips, 0.05f * push.z * k * s, 0.1f * push.x * k * s, -0.12f * push.x * k * s);
+    a.euler(a.r.spine, 0.08f * push.z * k * s, 0.12f * push.x * k * s, -0.1f * push.x * k * s);
+    a.euler(a.r.chest, 0.1f * push.z * k * s - 0.05f * k * s, 0.15f * push.x * k * s, -0.1f * push.x * k * s);
+    a.euler(a.r.neck, -0.15f * kh * s + 0.15f * push.z * kh * s, 0.35f * push.x * kh * s, 0);
+    a.euler(a.r.head, -0.2f * kh * s, 0.2f * push.x * kh * s, 0.2f * push.x * kh * s);
+    for (size_t i = 0; i < a.r.legs.size(); ++i) {
+        const float sd = a.r.legs[i].side;
+        a.leg(i, 0.2f * push.z * k * s * (i >= 2 ? 1.0f : -1.0f), 0.3f * k * s, -0.1f * k * s, std::max(0.0f, sd * push.x) * 0.35f * k * s);
+    }
+    a.tail(-0.3f * k * s, -push.x * 0.6f * k * s, 0.8f);
+    for (size_t i = 0; i < a.r.legs.size(); ++i) a.plant(i, i % 2 == 1 ? 1.0f - stepLift : 1.0f);
+}
+
+Clip beastHit(const Character& c, Vec3 push, float s) {
+    Clip clip = author(c, "hit", 24, 30, false, [&](Author& a, float t) {
+        const float k = phrase({{0.0f, 0.0f}, {0.12f, 1.0f, Ease::Snap}, {0.3f, 0.85f, Ease::Linear}, {1.0f, 0.0f}}, t);
+        const float kh = phrase({{0.0f, 0.0f}, {0.06f, 0.0f}, {0.2f, 1.0f, Ease::Snap}, {0.4f, 0.7f}, {1.0f, 0.0f, Ease::Back}}, t);
+        a.tension = phrase({{0.0f, 0.1f}, {0.25f, 0.2f}, {1.0f, 0.5f}}, t);
+        beastRecoil(a, push, k, kh, s, phrase({{0.0f, 0.0f}, {0.08f, 1.0f, Ease::Out}, {0.22f, 0.0f, Ease::In}}, t));
+    });
+    const float d = clip.duration();
+    clip.faceKeys = {{0.0f, {EyeExpr::Hurt, MouthExpr::Shout}}, {0.45f * d, {EyeExpr::Hurt, MouthExpr::Frown}},
+                     {0.8f * d, {EyeExpr::Angry, MouthExpr::Neutral}}};
+    clip.events = {{0.0f, "impact"}};
+    return clip;
+}
+
+// Death: the forelegs fold first and the chest drops, the haunches follow, and the body
+// rolls onto its side away from the blow before the ragdoll takes it.
+Clip beastDeath(const Character& c, Vec3 push) {
+    Clip clip = author(c, "death", 36, 30, false, [&](Author& a, float t) {
+        const float k = phrase({{0.0f, 0.0f}, {0.1f, 1.0f, Ease::Snap}, {0.3f, 0.6f}, {1.0f, 0.3f}}, t);
+        const float kh = phrase({{0.0f, 0.0f}, {0.05f, 0.0f}, {0.16f, 1.0f, Ease::Snap}, {1.0f, 0.5f}}, t);
+        const float fore = phrase({{0.08f, 0.0f}, {0.42f, 1.0f, Ease::In}, {1.0f, 1.0f}}, t);
+        const float back = phrase({{0.18f, 0.0f}, {0.6f, 1.0f, Ease::In}, {1.0f, 1.0f}}, t);
+        const float roll = phrase({{0.3f, 0.0f}, {1.0f, 1.0f, Ease::In}}, t);
+        const float side = push.x >= 0 ? 1.0f : -1.0f;
+        a.tension = 0.08f;
+        beastRecoil(a, push, k, kh, 1.1f, phrase({{0.0f, 0.0f}, {0.06f, 1.0f, Ease::Out}, {0.16f, 0.0f, Ease::In}}, t));
+        a.move(a.r.hips, {0, -0.3f * a.h * back, 0});
+        a.euler(a.r.hips, 0.12f * fore - 0.05f * back, 0, -side * 0.5f * roll);
+        a.euler(a.r.spine, 0.1f * fore, 0, -side * 0.2f * roll);
+        a.euler(a.r.chest, 0.12f * fore, 0, -side * 0.15f * roll);
+        a.euler(a.r.neck, 0.35f * fore, side * 0.2f * roll, 0);
+        a.euler(a.r.head, 0.25f * fore, 0, side * 0.3f * roll);
+        for (size_t i = 0; i < 2; ++i) a.leg(i, -0.4f * fore, 1.7f * fore, 0.5f * fore, 0.2f * roll);
+        for (size_t i = 2; i < 4; ++i) a.leg(i, -0.35f * back, 1.4f * back, -0.4f * back, 0.2f * roll);
+        a.tail(-0.45f * back, side * 0.3f * roll, 0.5f);
+        a.wings(-0.3f * back, -0.3f * back);
+        a.plantAll(smoothstep(0.1f, 0.25f, t) * (1.0f - roll));
+    });
+    const float d = clip.duration();
+    clip.faceKeys = {{0.0f, {EyeExpr::Hurt, MouthExpr::Shout}}, {0.25f * d, {EyeExpr::Hurt, MouthExpr::Open}},
+                     {0.6f * d, {EyeExpr::Blink, MouthExpr::Oh}}};
+    clip.events = {{0.0f, "impact"}, {0.5f * d, "ragdoll"}};
+    return clip;
+}
+
 }  // namespace
 
 Clip makeIdleClip(const Character& c) {
+    if (beastBody(c)) return beastIdle(c);
     const float fem = c.genome.femininity;
     Clip clip = author(c, "idle", 90, 30, true, [&](Author& a, float t) {
         float ph = kTau * t;
@@ -341,6 +670,7 @@ Clip makeIdleClip(const Character& c) {
 }
 
 Clip makeWalkClip(const Character& c) {
+    if (beastBody(c)) return beastWalk(c);
     const float fem = c.genome.femininity;
     Clip clip = author(c, "walk", 30, 30, true, [&](Author& a, float t) {
         float ph = kTau * t, s = std::sin(ph), co = std::cos(ph);
@@ -373,6 +703,7 @@ Clip makeWalkClip(const Character& c) {
 }
 
 Clip makeRunClip(const Character& c) {
+    if (beastBody(c)) return beastGallop(c);
     Clip clip = author(c, "run", 20, 30, true, [&](Author& a, float t) {
         float ph = kTau * t, s = std::sin(ph), co = std::cos(ph);
         a.tension = 0.6f;
@@ -406,6 +737,7 @@ Clip makeRunClip(const Character& c) {
 // Lunge punch with the right arm, guard with the left. Phrased as anticipation (weight
 // back, torso coiled), an explosive strike, a held contact and a loose recovery.
 Clip makeAttackClip(const Character& c) {
+    if (beastBody(c)) return beastBite(c);
     const float dur = 27.0f / 30.0f;
     Clip clip = author(c, "attack", 27, 30, false, [&](Author& a, float t) {
         float twist = phrase({{0.0f, 0.0f}, {0.28f, -0.62f, Ease::Out}, {0.40f, 0.6f, Ease::Snap}, {0.62f, 0.5f, Ease::Linear}, {1.0f, 0.0f}}, t);
@@ -447,6 +779,7 @@ Clip makeAttackClip(const Character& c) {
 
 // Combat dodge: crouch, side leap with a torso twist, land, recover.
 Clip makeDodgeClip(const Character& c) {
+    if (beastBody(c)) return beastDodge(c);
     Clip clip = author(c, "dodge", 30, 30, false, [&](Author& a, float t) {
         float crouch = phrase({{0.0f, 0.0f}, {0.15f, 1.0f, Ease::Out}, {0.25f, 0.2f, Ease::Snap}, {0.5f, 0.1f}, {0.62f, 1.0f, Ease::In}, {1.0f, 0.0f}}, t);
         float side = phrase({{0.0f, 0.0f}, {0.15f, -0.1f}, {0.55f, 1.0f, Ease::Out}, {1.0f, 1.0f}}, t);
@@ -515,6 +848,7 @@ void recoil(Author& a, Vec3 push, float k, float kh, float s, float stepLift) {
 Clip makeHitClip(const Character& c, Vec3 push, float strength) {
     push = flatDir(push);
     const float s = clamp(strength, 0.0f, 2.0f);
+    if (beastBody(c)) return beastHit(c, push, s);
     Clip clip = author(c, "hit", 24, 30, false, [&](Author& a, float t) {
         const float k = phrase({{0.0f, 0.0f}, {0.12f, 1.0f, Ease::Snap}, {0.3f, 0.85f, Ease::Linear}, {1.0f, 0.0f}}, t);
         const float kh = phrase({{0.0f, 0.0f}, {0.06f, 0.0f}, {0.2f, 1.0f, Ease::Snap}, {0.4f, 0.7f}, {1.0f, 0.0f, Ease::Back}}, t);
@@ -530,6 +864,7 @@ Clip makeHitClip(const Character& c, Vec3 push, float strength) {
 
 Clip makeDeathClip(const Character& c, Vec3 push) {
     push = flatDir(push);
+    if (beastBody(c)) return beastDeath(c, push);
     const bool fourLegs = c.rig.legs.size() > 2;
     Clip clip = author(c, "death", 30, 30, false, [&](Author& a, float t) {
         const float k = phrase({{0.0f, 0.0f}, {0.1f, 1.0f, Ease::Snap}, {0.3f, 0.7f}, {1.0f, 0.5f}}, t);
@@ -564,6 +899,7 @@ Clip makeDeathClip(const Character& c, Vec3 push) {
 // hands in front of the chest (trembling), then thrust both palms with a lunge and hold the
 // shape. A second pair of arms spreads wide while channelling and drives forward with the release.
 Clip makeCastClip(const Character& c) {
+    if (beastBody(c)) return beastHowl(c);
     const int n = 48;
     const float dur = (n - 1) / 30.0f;
     Clip clip = author(c, "cast", n, 30, false, [&](Author& a, float t) {
@@ -618,6 +954,7 @@ Clip makeCastClip(const Character& c) {
 // low stance with the chest thrown out, arms flung back and fists clenched, held with a
 // tremor and a heaving chest; the tail lifts and lashes.
 Clip makeRoarClip(const Character& c) {
+    if (beastBody(c)) return beastSnarl(c);
     const int n = 60;
     const float dur = (n - 1) / 30.0f;
     Clip clip = author(c, "roar", n, 30, false, [&](Author& a, float t) {
@@ -667,9 +1004,25 @@ Clip makeRoarClip(const Character& c) {
     return clip;
 }
 
+Clip makeTrotClip(const Character& c) {
+    if (beastBody(c)) return beastTrot(c);
+    Clip clip = makeRunClip(c);
+    clip.name = "trot";
+    return clip;
+}
+
+Clip makeSwipeClip(const Character& c) {
+    if (beastBody(c)) return beastSwipe(c);
+    Clip clip = makeAttackClip(c);
+    clip.name = "swipe";
+    return clip;
+}
+
 std::vector<Clip> makeAuthoredClips(const Character& c) {
-    return {makeIdleClip(c), makeWalkClip(c), makeRunClip(c), makeAttackClip(c), makeDodgeClip(c),
-            makeHitClip(c),  makeCastClip(c), makeRoarClip(c), makeDeathClip(c)};
+    std::vector<Clip> clips{makeIdleClip(c), makeWalkClip(c), makeRunClip(c), makeAttackClip(c), makeDodgeClip(c),
+                            makeHitClip(c),  makeCastClip(c), makeRoarClip(c), makeDeathClip(c)};
+    if (beastBody(c)) clips.push_back(makeTrotClip(c)), clips.push_back(makeSwipeClip(c));  // run is a gallop, attack a bite
+    return clips;
 }
 
 std::vector<Clip> makeDefaultClips(const Character& c, bool physical) {
