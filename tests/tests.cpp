@@ -215,7 +215,7 @@ int main() {
             CHECK(speciesFromString(toString(Species(sp))) == Species(sp), "nome do povo nao ida-e-volta");
         }
     // Each trait on a plain human, alone: wings (and folded), coils, hands, feet, beaks, crests, skins.
-    for (int k = 0; k < 24; ++k) {
+    for (int k = 0; k < 32; ++k) {
         Genome g = randomGenome(900 + uint64_t(k));
         BodyShape& b = g.body;
         switch (k) {
@@ -232,6 +232,14 @@ int main() {
             case 20: b.shell = true; break;
             case 21: b.skinKind = 4, b.shards = 12; break;
             case 22: b.skinKind = 5; break;
+            case 24: b.lowerBody = 3; break;
+            case 25: b.hands = 4; break;
+            case 26: g.face.eyeKind = 2, g.face.eyePairs = 1; break;
+            case 27: g.face.eyeKind = 3, g.face.eyePairs = 1; break;
+            case 28: g.face.maw = true; break;
+            case 29: b.bodyEyes = 20; break;
+            case 30: b.stance = 1, b.digitigrade = true; break;
+            case 31: b.orb = true; break;
             default: g.face.mandibles = true, g.face.antennae = 2, g.face.eyeKind = 1, b.ears = EarStyle::Fin; break;
         }
         const Character c = generateCharacter(g);
@@ -240,6 +248,22 @@ int main() {
         if (k == 5 || k == 6) CHECK(!c.rig.serpent.empty() && c.rig.legs.size() == 2, "corpo de serpente sem rig");
         if (k == 8) CHECK(c.rig.pincers.size() == 2 && c.rig.pincers[0] >= 0, "pinca sem osso");
         if (k == 19) CHECK(c.rig.tentacles.size() == 6, "tentaculos sem rig");
+        if (k == 24) CHECK(c.rig.serpent.size() == 3, "corpo de gosma sem rig");
+        if (k == 30) {  // on all fours: four legs, the trunk level along z, the head in front
+            const auto& bn = c.skeleton.bones;
+            auto P = [&](int b) { return bn[size_t(b)].restWorld; };
+            CHECK(c.rig.legs.size() == 4, "besta sem quatro patas (%zu)", c.rig.legs.size());
+            const float fore = P(c.rig.legs[0].tip).y, hind = P(c.rig.legs[2].tip).y;
+            const float chestZ = P(c.rig.chest).z, hipZ = P(c.rig.hips).z, headZ = P(c.rig.head).z;
+            CHECK(fore < 0.1f * c.height && hind < 0.1f * c.height, "patas fora do chao (%f %f)", fore, hind);
+            CHECK(chestZ > hipZ + 0.3f && headZ > chestZ && std::fabs(P(c.rig.chest).y - P(c.rig.hips).y) < 0.25f * c.height,
+                  "besta nao ficou de quatro (peito %f quadril %f cabeca %f)", chestZ, hipZ, headZ);
+        }
+        if (k >= 24 && k < 30) {  // the new traits add geometry to a plain human
+            Genome plain = g;
+            plain.body.lowerBody = 0, plain.body.hands = 0, plain.face.eyeKind = 0, plain.face.maw = false, plain.body.bodyEyes = 0;
+            CHECK(generateCharacter(plain).mesh.triangleCount() != c.mesh.triangleCount(), "traco %d sem efeito", k);
+        }
     }
     // ---- engine utilities ----
     {

@@ -42,6 +42,7 @@ enum class PupilStyle : uint8_t { Round, Slit, Count };
 enum class Species : uint8_t {
     Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Skeleton,
     Dragonborn, Saurian, Avian, Naga, Tortle, Insectoid, Fishfolk, Demon, Cephalid, Fae, Crystalborn, Emberkin, Wraith,
+    Cyclops, Talpid, Oculite, Slime, Rimemaw, Gloomhound, Gravitant,
     Count
 };
 // First trait people (the classic peoples come before it).
@@ -162,16 +163,18 @@ struct BodyShape {
     int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow), 2 reptile (long, flat, wide jaw)
     bool tailFur = false;       // bushy furred tail (hair material)
     bool claws = false;         // dark claws on fingers and toes
-    int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs
+    int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs, 3 also stripes (beasts)
     int bones = 0;              // exposed bones (undead): 1 ribs, 2 forearm, 4 shin, 8 jaw
     int boneSide = 1;           // +1 left, -1 right
     // ---- composable species traits (any people can wear any of them) ----
     int wings = 0;              // 0 none, 1 membrane (bat, dragon, demon), 2 feathered, 3 insect (two pairs of panes)
     float wingSize = 1.0f;      // span scale
     bool wingsFolded = false;   // rest pose folded along the back instead of half spread
-    int lowerBody = 0;          // 0 legs, 1 serpent (naga: a long scaled coil instead of legs), 2 wraith (a trailing wisp)
+    int lowerBody = 0;          // 0 legs, 1 serpent (naga: a long scaled coil instead of legs), 2 wraith (a trailing wisp),
+                                // 3 ooze (the body sags into a gelatinous mound)
     float serpentLength = 1.0f; // coil length scale
-    int hands = 0;              // 0 five fingers, 1 three clawed talons, 2 crab pincer, 3 tendrils (boneless fingers)
+    int hands = 0;              // 0 five fingers, 1 three clawed talons, 2 crab pincer, 3 tendrils (boneless fingers),
+                                // 4 digging spades (broad palms, five flat shovel claws)
     int feet = 0;               // 0 by the people, 1 bird talons (three toes forward, one back)
     int backTentacles = 0;      // tentacles from the shoulder blades (0..6), with spring physics
     float tentacleLength = 1.0f;
@@ -180,6 +183,9 @@ struct BodyShape {
     float crestSize = 1.0f;
     int shards = 0;             // crystal shards growing from shoulders and back (count)
     Vec3 crystalColor{0.55f, 0.80f, 0.95f};
+    int bodyEyes = 0;           // extra eyes open over the torso, arms and legs (count)
+    bool orb = false;           // a living world: the trunk swells into a great sphere the face looks out of, small limbs
+    int stance = 0;             // 0 upright, 1 beast: on all fours, the arms become forelegs and the head is held forward
     Anatomy anat;
 };
 
@@ -252,7 +258,8 @@ struct FaceStyle {
     bool mandibles = false;    // insect mouthparts: two curved pincers at the mouth corners
     int antennae = 0;          // 0 none, 1 segmented whips, 2 feathery (moth)
     float antennaLength = 1.0f;
-    int eyeKind = 0;           // 0 normal, 1 compound (faceted glossy insect eyes), 2 single cyclopean eye
+    int eyeKind = 0;           // 0 normal, 1 compound (faceted glossy insect eyes), 2 single cyclopean eye, 3 eyeless (skin over the sockets)
+    bool maw = false;          // a lipless mouth split from cheek to cheek, rows of teeth
     // Species head and face character.
     float headTop = 0.0f;      // -1 small, low cranium .. +1 big bulbous dome
     float chinPoint = 0.0f;    // 0 .. 1 the lower face narrows to a pointed chin

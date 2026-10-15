@@ -143,7 +143,7 @@ Vec3 Builder::collide(Vec3 p, float margin) const {
         }
         // Torso (sculpted surface).
         float t = torsoT(p.y);
-        if (t > -0.05f && t < 1.03f) {
+        if (t > -0.05f && t < 1.03f && !beast_) {  // (a beast's trunk is in the colliders)
             float zc = cZc_(t);
             Vec2 d{p.x, p.z - zc};
             float ang = std::atan2(d.y, d.x), th = ang;
@@ -302,7 +302,7 @@ Vec3 Builder::outsideHeadMesh(Vec3 p, float margin) const {
 // flesh rather than reading as stickers. Rows match paintEyes.
 void Builder::buildEyelids() {
     const FaceStyle& f = g.face;
-    if (f.eyePairs < 2 || bonesOnly_) return;
+    if (f.eyePairs < 2 || f.eyeKind != 0 || bonesOnly_) return;
     const float h = m.h, hw = g.body.headWidth;
     struct Row {
         float ey, ex, scale;
@@ -416,8 +416,8 @@ void Builder::buildFaceDecals() {
                          FaceLayout::kMouthS1, std::max(6, lod.headSeg / 2), 8, mc[0], mc[1], FaceLayout::kMouthCellW,
                          FaceLayout::kMouthCellH);
     parts[eyes].id = parts[mouth].id = headPartId_;
-    if (g.face.beak) parts[mouth].tris.clear();         // the beak covers the mouth
-    if (g.face.eyeKind == 1) parts[eyes].tris.clear();  // compound eyes are modelled
+    if (g.face.beak || g.face.maw) parts[mouth].tris.clear();  // the beak covers the mouth; a maw is modelled
+    if (g.face.eyeKind != 0) parts[eyes].tris.clear();        // compound, cyclopean and absent eyes are modelled
 
     // Skin layer: a copy of the front of the faceted head (and the nose) with UVs
     // into the skin cell, so stubble, sockets, weathering, scars and ink follow

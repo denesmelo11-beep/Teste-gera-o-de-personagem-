@@ -37,6 +37,14 @@ struct Marks {
     // Centaur: hind legs (hip, stifle, hock, fetlock) and the horse barrel.
     Vec3 hindHip[2], hindKnee[2], hindAnkle[2], hindBall[2];
     float barrelY = 0, barrelFront = 0, barrelBack = 0, barrelHalfW = 0, barrelHalfH = 0;
+    // Beast (on all fours): the trunk runs along z from the rump (t = 0) to the chest front
+    // (t = 1); its profile is Builder::beastRing.
+    float beastZR = 0, beastZF = 0;
+};
+
+// Cross-section of the beast trunk: centre height, half width, extent up and down.
+struct BeastRing {
+    float y, w, top, bot;
 };
 
 class Builder {
@@ -62,7 +70,10 @@ public:
     float warpTheta(float phi) const;
     float bustField(float t, float th) const;
     float gluteDepth(float t) const;
-    Vec3 torsoPoint(float t, float th) const;   // sculpted torso surface
+    Vec3 torsoPoint(float t, float th) const;   // sculpted torso surface (the beast trunk, th = pi/2 the belly)
+    bool beast_ = false;                        // on all fours: a horizontal trunk, four legs with paws
+    BeastRing beastRing(float t) const;
+    float beastZ(float t) const { return lerp(m.beastZR, m.beastZF, t); }
     Vec3 insideTorso(Vec3 p, float k) const;    // clamp a point inside the torso
     Vec3 outsideTorso(Vec3 p) const;            // push a point out onto the torso surface
     Vec3 torsoSurfaceToward(Vec3 p, float* theta = nullptr) const;  // torso surface on the ray from its axis through p
@@ -81,6 +92,7 @@ public:
 
 private:
     void computeMarks();
+    void computeBeastMarks();
     void buildSkeleton();
     void buildTorso();
     void buildArms();
@@ -100,7 +112,7 @@ private:
     void initHead();
     // traits.cpp: composable species traits
     void buildWings();
-    void buildSerpent();        // replaces the legs (lowerBody 1 coil, 2 wisp)
+    void buildSerpent();        // replaces the legs (lowerBody 1 coil, 2 wisp, 3 ooze)
     void buildBackTentacles();
     void buildShell();
     void buildShards();
@@ -111,6 +123,12 @@ private:
     void buildAntennae();
     void buildCompoundEyes();
     void buildCrest();
+    void buildTraitEyes();  // cyclopean eye, eyeless sockets
+    void buildMaw();
+    void buildBodyEyes();
+    void buildOrbBody();
+    void buildBeastBody();   // on all fours: trunk, neck and four legs ending in clawed paws
+    void fitBeastHeight();   // a beast's height: its back and head, as it stands
     // head.cpp
     void buildHead();
     void buildNose();
@@ -164,6 +182,7 @@ private:
 
     uint16_t headPartId_ = 0, bodyGroup_ = 0, armGroup_ = 0;
     Curve cHw_, cDf_, cDb_, cZc_;
+    Curve bTop_, bBot_, bHw_;  // beast trunk profile
     Curve hW_, hZc_, hDf_, hDb_, hNf_, hNb_;
 };
 
