@@ -276,6 +276,29 @@ void Builder::computeMarks() {
     if (b.orb && !b.centaur && !b.lowerBody && !beast_) m.headOrigin.z += 0.55f * h;  // the face set in the front of the sphere
     m.headPivot = m.headOrigin + Vec3{0, 0.14f * h, -0.10f * h};
     if (beast_) computeBeastMarks();
+    if (b.orb && !b.centaur && !b.lowerBody && !beast_) {
+        // The boulder: from the hips to the crown, broad, the face breaking its upper front.
+        const float bottom = m.crotchY + 0.30f * m.torsoLen, top = m.headOrigin.y + 0.92f * h;
+        const float ry = 0.5f * (top - bottom), cy = 0.5f * (top + bottom);
+        float rx = std::max(1.05f * ry, b.shoulderWidth * h + 0.1f * h), rz = 0.80f * ry;
+        const float faceY = m.headOrigin.y + 0.30f * h, faceZ = m.headOrigin.z + 0.50f * h;
+        const float dy = clamp((faceY - cy) / ry, -0.9f, 0.9f);
+        m.orbR = {rx, ry, rz};
+        m.orbC = {0, cy, faceZ - 0.06f * h - rz * std::sqrt(1.0f - dy * dy)};
+        // The arms break out of its flanks, held out from the body.
+        for (ArmMarks& a : m.arms) {
+            const float L1 = length(a.elbow - a.shoulder), L2 = length(a.wrist - a.elbow), L3 = length(a.handTip - a.wrist);
+            const float sy = lerp(cy, m.orbC.y + 0.25f * ry, a.pair ? 0.0f : 1.0f) - (a.pair ? 0.35f * ry : 0.0f);
+            const float e = (sy - cy) / ry;
+            a.shoulder = {a.side * 0.92f * rx * std::sqrt(std::max(0.2f, 1.0f - e * e)), sy, m.orbC.z};
+            a.clav = {a.side * 0.3f * rx, sy + 0.05f * h, m.orbC.z};
+            const float ar = (a.pair ? 40.0f : 30.0f) * kPi / 180.0f;
+            a.dir = normalize(Vec3{a.side * std::sin(ar), -std::cos(ar), 0.12f});
+            a.elbow = a.shoulder + a.dir * L1;
+            a.wrist = a.elbow + a.dir * L2;
+            a.handTip = a.wrist + a.dir * L3;
+        }
+    }
 }
 
 // On all fours, in units of the standing height H: high withers over massive forelegs,

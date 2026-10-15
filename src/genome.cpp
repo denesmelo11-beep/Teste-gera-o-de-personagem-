@@ -915,10 +915,12 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
         case Species::Gravitant: {  // living worlds: a great sphere of crust over a molten heart, the face set in it, stubby limbs
             b.boneMass *= 1.6f;
             height(fem ? 2.30f : 2.45f, fem ? 2.60f : 2.80f);
-            b.headsTall = r.range(5.6f, 6.0f);  // a big face for the sphere
-            b.legRatio = 0.32f;
+            b.headsTall = r.range(3.8f, 4.0f);  // a big face set in the boulder
+            b.legRatio = 0.28f;
             widths(1.50f, 1.50f, 1.40f, 1.20f, 1.55f);
-            b.armLength *= 0.85f; b.handSize *= 1.5f; b.footSize *= 1.3f; b.neckLength *= 0.3f; b.neckThick *= 1.6f;
+            b.arm *= 1.5f; b.thigh *= 1.2f; b.calf *= 1.4f;  // pillars of stone
+            b.armLength *= 1.05f; b.handSize *= 1.7f; b.footSize *= 1.3f; b.neckLength *= 0.3f; b.neckThick *= 1.6f;
+            f.maw = true;  // the wide stone jaw
             b.muscle = saturate(b.muscle + 0.3f); b.belly = 0.0f; b.bust = 0.0f;
             b.orb = true; b.skinKind = 5; b.ears = EarStyle::None;
             b.crystalColor = pickC({{1.0f, 0.55f, 0.15f}, {1.0f, 0.75f, 0.25f}, {0.95f, 0.35f, 0.12f}});

@@ -1602,51 +1602,120 @@ void Builder::buildBeastBody() {
 
 // ---------------------------------------------------------------- living world (orb body)
 
-// The trunk swallowed by a great sphere from the shins to above the crown: the face looks
-// out of its upper front, stubby arms and legs break from its sides and underside, and a
-// few stones circle it. Skinned up the spine so it leans and turns with the body.
+// A colossus of stone: a broad boulder from the hips to the crown swallows torso and
+// skull, the face set in its upper front; boulders crowd its shoulders and back, clusters
+// of rock armour its forearms, fists and shins, and a few stones circle it. Skinned up the
+// spine so it leans and turns with the body.
 void Builder::buildOrbBody() {
     if (!g.body.orb || bonesOnly_ || g.body.centaur || g.body.lowerBody || beast_) return;
     const float h = m.h;
     const RigInfo& r = ch.rig;
-    // From the hips to well over the crown; the head is carried forward (computeMarks) so
-    // the face breaks the front just above the equator while the chest stays inside.
-    const Vec3 face = headPoint(0.5f * kPi, 0.45f);
-    const float bottom = m.kneeY + 0.05f * h;
-    const float R = (face.y - bottom) / 1.3f, cy = bottom + R, top = cy + R;  // the face a little above the equator
-    const float dy = clamp(face.y - cy, -0.9f * R, 0.9f * R);
-    const float cz = face.z - 0.22f * h - std::sqrt(R * R - dy * dy);  // the face stands proud of the surface
-    const Vec3 c{0, cy, cz};
+    const Vec3 R = m.orbR;
+    Vec3 c = m.orbC;
+    {  // the face (down to the jaw) stands just proud of the boulder's front
+        const Vec3 face = headPoint(0.5f * kPi, 0.30f);
+        const float dy = clamp((face.y - c.y) / R.y, -0.9f, 0.9f);
+        c.z = std::min(c.z, face.z - 0.06f * h - R.z * std::sqrt(1.0f - dy * dy));
+    }
     const int hips = r.hips, spine = r.spine, chest = r.chest, neck = r.neck;
-    const float y0 = bottom, y1 = top;
+    const float y0 = c.y - R.y, y1 = c.y + R.y;
     auto wf = [=](float, float, Vec3 p) {
         const float t = saturate((p.y - y0) / (y1 - y0));
         return chainWeights({{0.10f, hips}, {0.40f, spine}, {0.70f, chest}, {0.95f, neck}}, t);
     };
-    ch.height = std::max(ch.height, top);
+    ch.height = std::max(ch.height, y1);
+    const uint64_t sd = g.seed;
+    const Vec3 rock = skin().color;
+    auto rockM = [=](float k) { return Mat{rock * k, MaterialClass::Skin}; };
     Part& p = newPart();
     p.id = bodyGroup_;
-    Ellipsoid e;
-    e.center = c;
-    e.axis = {0, 1, 0};
-    e.up = {0, 0, 1};
-    e.rAxis = R;
-    e.rU = e.rV = R * 1.02f;
-    e.lat = lod.torsoSeg >= 16 ? 14 : 10;
-    e.lon = lod.torsoSeg >= 16 ? 22 : 16;
-    emitEllipsoid(p, e, wf, [=, this](float t, float) { return Mat{skin().color * (0.85f + 0.2f * t), MaterialClass::Skin}; });
-    // Moons: stones orbiting the equator.
+    auto blob = [&](Part& pp, Vec3 cc, Vec3 axis, float ra, float ru, float rv, const std::function<SkinW(float, float, Vec3)>& w, float shade, int lat,
+                    int lon) {
+        Ellipsoid e;
+        e.center = cc;
+        e.axis = axis;
+        e.up = std::fabs(axis.y) > 0.9f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
+        e.rAxis = ra;
+        e.rU = ru;
+        e.rV = rv;
+        e.lat = lat;
+        e.lon = lon;
+        emitEllipsoid(pp, e, w, [=](float, float) { return rockM(shade); });
+    };
+    // The boulder trunk (exact skin colour: magma or crystal skin cracks it like the rest).
+    {
+        Ellipsoid e;
+        e.center = c;
+        e.axis = {0, 1, 0};
+        e.up = {0, 0, 1};
+        e.rAxis = R.y;
+        e.rU = R.x;
+        e.rV = R.z;
+        e.lat = lod.torsoSeg >= 16 ? 12 : 9;
+        e.lon = lod.torsoSeg >= 16 ? 20 : 14;
+        emitEllipsoid(p, e, wf, [this](float, float) { return skin(); });
+    }
+    auto surf = [&](float az, float el) {  // a point on the boulder: az 0 front, el from the equator
+        return c + Vec3{R.x * std::sin(az) * std::cos(el), R.y * std::sin(el), R.z * std::cos(az) * std::cos(el)};
+    };
+    // Boulders: a heavy brow over the face, then the shoulders, crown and back.
+    const Vec3 brow = surf(0.0f, std::asin(clamp((m.headOrigin.y + 0.78f * h - c.y) / R.y, -0.95f, 0.95f)));
+    blob(p, brow + Vec3{0, 0, -0.08f * h}, {1, 0, 0}, 0.62f * h, 0.24f * h, 0.20f * h, wf, 0.92f, 3, 7);
+    const int nb = lod.sparseRings ? 9 : 14;
+    for (int k = 0; k < nb; ++k) {
+        const float u = hash01(sd, 200 + uint64_t(k)), v = hash01(sd, 300 + uint64_t(k)), w = hash01(sd, 400 + uint64_t(k));
+        float az = (float(k) + 0.5f * u) / float(nb) * kTau;
+        float el = lerp(-0.15f, 1.15f, v);
+        if (std::fabs(std::remainder(az, kTau)) < 0.75f && el < 0.95f) az += 0.9f * (az < kPi ? 1.0f : -1.0f);  // keep clear of the face
+        const Vec3 q = surf(az, el), n = normalize(Vec3{(q.x - c.x) / (R.x * R.x), (q.y - c.y) / (R.y * R.y), (q.z - c.z) / (R.z * R.z)});
+        const float rr = R.y * (0.22f + 0.16f * w);
+        blob(p, q - n * (0.35f * rr), n, 0.75f * rr, rr, 0.9f * rr, wf, 0.82f + 0.2f * u, 3, 6);
+    }
+    // Rock armour on the arms (upper arm, forearm, a boulder fist) and the shins.
+    Part& ap = newPart();
+    ap.id = bodyGroup_;
+    for (size_t i = 0; i < m.arms.size(); ++i) {
+        const ArmMarks& am = m.arms[i];
+        const LimbRig& lr = r.arms[i];
+        const Vec3 out = normalize(Vec3{am.side, 0.25f, -0.15f});
+        const float ar = am.radius;
+        for (int k = 0; k < 4; ++k) {
+            const float f = 0.18f + 0.22f * float(k), hk = hash01(sd, 500 + uint64_t(i * 8 + size_t(k)));
+            const Vec3 q = lerp(am.elbow, am.wrist, f) + normalize(out + Vec3{0, 0, hk - 0.5f}) * (0.75f * ar);
+            const int bone = lr.lower;
+            blob(ap, q, normalize(am.wrist - am.elbow), (0.85f + 0.3f * hk) * ar, (1.0f + 0.3f * hk) * ar, 0.85f * ar,
+                 [=](float, float, Vec3) { return one(bone); }, 0.8f + 0.25f * hk, 3, 6);
+        }
+        {
+            const Vec3 q = lerp(am.shoulder, am.elbow, 0.65f) + out * (0.7f * ar);
+            const int bone = lr.upper;
+            blob(ap, q, normalize(am.elbow - am.shoulder), 1.1f * ar, 1.15f * ar, 0.9f * ar, [=](float, float, Vec3) { return one(bone); }, 0.9f, 3, 6);
+        }
+        {  // the fist: a knuckled boulder over the hand
+            const float Lh = length(am.handTip - am.wrist);
+            const int bone = lr.end;
+            blob(ap, lerp(am.wrist, am.handTip, 0.5f), am.dir, 0.62f * Lh, 0.55f * Lh, 0.48f * Lh, [=](float, float, Vec3) { return one(bone); }, 0.85f, 4,
+                 7);
+        }
+    }
+    for (int s = 0; s < 2; ++s) {
+        const LimbRig& lg = r.legs[size_t(s)];
+        const int bone = lg.lower;
+        const Vec3 q = lerp(m.knee[s], m.ankle[s], 0.35f) + Vec3{0, 0, 0.75f * g.body.calf * h};
+        blob(ap, q, normalize(m.ankle[s] - m.knee[s]), 0.9f * g.body.calf * h, 0.95f * g.body.calf * h, 0.6f * g.body.calf * h,
+             [=](float, float, Vec3) { return one(bone); }, 0.85f, 3, 6);
+    }
+    // Moons: stones circling the equator.
     Part& mp = newPart(true);
     mp.id = bodyGroup_;
-    const uint64_t sd = g.seed;
-    for (int k = 0; k < 5; ++k) {
-        const float a = kTau * (float(k) + 0.3f * hash01(sd, 70 + uint64_t(k))) / 5.0f;
-        const float rr = R * (1.35f + 0.25f * hash01(sd, 80 + uint64_t(k)));
+    for (int k = 0; k < 3; ++k) {
+        const float a = kTau * (float(k) + 0.3f * hash01(sd, 70 + uint64_t(k))) / 3.0f + 0.6f;
+        const float rr = R.x * (1.45f + 0.2f * hash01(sd, 80 + uint64_t(k)));
         Ellipsoid s;
-        s.center = c + Vec3{rr * std::cos(a), R * 0.25f * std::sin(2.0f * a + 1.0f), rr * std::sin(a)};
+        s.center = c + Vec3{rr * std::cos(a), R.y * (0.15f + 0.35f * std::sin(2.0f * a + 1.0f)), rr * 0.8f * std::sin(a)};
         s.axis = normalize(Vec3{hash01(sd, 90 + uint64_t(k)) - 0.5f, 1, 0.3f});
         s.up = {0, 0, 1};
-        s.rAxis = (0.18f + 0.18f * hash01(sd, 100 + uint64_t(k))) * h;
+        s.rAxis = (0.14f + 0.12f * hash01(sd, 100 + uint64_t(k))) * h;
         s.rU = s.rAxis * 1.2f;
         s.rV = s.rAxis * 0.9f;
         s.lat = 3;
