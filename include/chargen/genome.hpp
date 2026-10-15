@@ -32,11 +32,20 @@ bool isShortHair(HairStyle h);  // cut close to the head (cap + locks only)
 bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
 enum class Fringe : uint8_t { None, Curtain, SideSwept, Straight, Count };
 enum class FacialHair : uint8_t { None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops, Tendrils, Count };
-enum class EarStyle : uint8_t { Human, Elf, Count };
+enum class EarStyle : uint8_t { Human, Elf, Fin, None, Count };  // Fin: a ribbed membrane fan (fishfolk); None: ear holes only (avians, reptiles)
 enum class PupilStyle : uint8_t { Round, Slit, Count };
 // Peoples of the world. Each one reshapes the sampled body and face (proportions,
 // skin, ears, tusks, horns, muzzle, hooves, glowing eyes) and biases hair and beards.
-enum class Species : uint8_t { Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Skeleton, Count };
+// The second block are trait peoples, built from the composable traits in BodyShape and
+// FaceStyle (wings, beaks, serpent bodies, shells, mandibles...): each covers a family of
+// fantasy races (dragonborn and kobolds, aarakocra and arakkoa, naga and yuan-ti...).
+enum class Species : uint8_t {
+    Human, Dwarf, Gnome, Orc, Troll, Undead, NightElf, HighElf, Draenei, Tauren, Goblin, Worgen, Ogre, Centaur, Skeleton,
+    Dragonborn, Saurian, Avian, Naga, Tortle, Insectoid, Fishfolk, Demon, Cephalid, Fae, Crystalborn, Emberkin, Wraith,
+    Count
+};
+// First trait people (the classic peoples come before it).
+inline constexpr Species kFirstTraitSpecies = Species::Dragonborn;
 
 std::string_view toString(Sex s);
 std::string_view toString(AgeGroup a);
@@ -138,7 +147,8 @@ struct BodyShape {
     int spines = 0;             // dorsal spines along the spine (and the tail): count, 0 none
     float spineSize = 1.0f;
     int spineKind = 0;          // 0 swept-back spikes, 1 bony plates, 2 short knobs
-    int skinKind = 0;           // 0 flesh, 1 metallic (constructs, androids), 2 armoured carapace (hard faceted plates)
+    int skinKind = 0;           // 0 flesh, 1 metallic (constructs, androids), 2 armoured carapace (hard faceted plates),
+                                // 3 scales (fine cells, pale belly), 4 crystal (faceted shards), 5 magma (black crust, glowing seams)
     float carapace = 1.0f;      // carapace coverage 0..1 (plates spread from the limbs and back; >0.95 masks the face too)
     Vec3 carapaceColor{0.10f, 0.10f, 0.12f};
     int core = 0;               // a glowing orb set into the body: 0 none, 1 abdomen, 2 chest
@@ -148,12 +158,27 @@ struct BodyShape {
     bool centaur = false;       // human torso on a horse body (four legs)
     bool skeletal = false;      // nothing but bones (risen skeletons): always built at full decay
     bool digitigrade = false;   // walks on the toes: high hock behind, long metatarsal (draenei, worgen)
-    int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow)
+    int snout = 0;              // muzzle shape: 0 bovine (broad), 1 wolf (long, narrow), 2 reptile (long, flat, wide jaw)
     bool tailFur = false;       // bushy furred tail (hair material)
     bool claws = false;         // dark claws on fingers and toes
     int furPattern = 0;         // 0 none, 1 countershading (pale front, dark back), 2 also dark lower limbs
     int bones = 0;              // exposed bones (undead): 1 ribs, 2 forearm, 4 shin, 8 jaw
     int boneSide = 1;           // +1 left, -1 right
+    // ---- composable species traits (any people can wear any of them) ----
+    int wings = 0;              // 0 none, 1 membrane (bat, dragon, demon), 2 feathered, 3 insect (two pairs of panes)
+    float wingSize = 1.0f;      // span scale
+    bool wingsFolded = false;   // rest pose folded along the back instead of half spread
+    int lowerBody = 0;          // 0 legs, 1 serpent (naga: a long scaled coil instead of legs), 2 wraith (a trailing wisp)
+    float serpentLength = 1.0f; // coil length scale
+    int hands = 0;              // 0 five fingers, 1 three clawed talons, 2 crab pincer, 3 tendrils (boneless fingers)
+    int feet = 0;               // 0 by the people, 1 bird talons (three toes forward, one back)
+    int backTentacles = 0;      // tentacles from the shoulder blades (0..6), with spring physics
+    float tentacleLength = 1.0f;
+    bool shell = false;         // a turtle shell on the back with a plastron over the belly
+    int crest = 0;              // 0 none, 1 fin along the head midline, 2 feather crest, 3 bony neck frill, 4 cobra hood
+    float crestSize = 1.0f;
+    int shards = 0;             // crystal shards growing from shoulders and back (count)
+    Vec3 crystalColor{0.55f, 0.80f, 0.95f};
     Anatomy anat;
 };
 
@@ -220,6 +245,12 @@ struct FaceStyle {
     bool glowEyes = false;     // luminous eyes without pupils (elves, draenei, undead)
     bool darkNose = false;     // a dark, wet animal nose (worgen)
     float milky = 0.0f;        // clouded, dead eyes 0..1
+    // Trait features (beaks and mouthparts replace the nose and mouth they cover).
+    int beak = 0;              // 0 none, 1 hooked raptor, 2 long straight (heron, arakkoa), 3 short and stout (owl, turtle)
+    bool mandibles = false;    // insect mouthparts: two curved pincers at the mouth corners
+    int antennae = 0;          // 0 none, 1 segmented whips, 2 feathery (moth)
+    float antennaLength = 1.0f;
+    int eyeKind = 0;           // 0 normal, 1 compound (faceted glossy insect eyes), 2 single cyclopean eye
     // Species head and face character.
     float headTop = 0.0f;      // -1 small, low cranium .. +1 big bulbous dome
     float chinPoint = 0.0f;    // 0 .. 1 the lower face narrows to a pointed chin
@@ -243,6 +274,9 @@ struct Palette {
     Vec3 lips{0.75f, 0.45f, 0.42f};
     Vec3 underwear{0.85f, 0.82f, 0.76f};
     Vec3 horn{0.9f, 0.85f, 0.75f};
+    Vec3 wing{0.30f, 0.22f, 0.22f};    // membrane, feathers or insect panes
+    Vec3 beak{0.85f, 0.70f, 0.30f};    // beak, mandibles, talons
+    Vec3 belly{0.80f, 0.72f, 0.55f};   // scaled bellies and plastrons, sucker sides of tentacles
 };
 
 struct Genome {

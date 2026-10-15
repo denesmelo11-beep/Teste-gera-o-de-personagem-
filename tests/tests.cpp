@@ -176,6 +176,65 @@ int main() {
             go.decay = dec;
             validate(generateCharacter(g, go), 50 + uint64_t(t));
         }
+    // Trait peoples: every one, both sexes, alive, rotting and as bones, at every LOD; the
+    // trait rigs stay in the bind pose and animate without NaNs.
+    for (int sp = int(kFirstTraitSpecies); sp < int(Species::Count); ++sp)
+        for (int sx = 0; sx < 2; ++sx) {
+            GenomeOptions o;
+            o.species = Species(sp);
+            o.sex = sx ? Sex::Female : Sex::Male;
+            const uint64_t seed = 700 + uint64_t(sp) * 3 + uint64_t(sx);
+            const Genome g = randomGenome(seed, o);
+            for (float dec : {0.0f, 0.5f, 1.0f}) {
+                GenOptions go;
+                go.decay = dec;
+                go.lod = sx + int(dec * 1.5f) > 2 ? 2 : sx + int(dec * 1.5f);
+                validate(generateCharacter(g, go), seed);
+            }
+            Character c = generateCharacter(g);
+            std::vector<Mat4> global, skin;
+            std::vector<Vec3> pos, nrm;
+            poseMatrices(c.skeleton, restPose(c.skeleton), global, skin);
+            skinMesh(c.mesh, skin, pos, nrm);
+            float err = 0;
+            for (size_t i = 0; i < pos.size(); ++i) err = std::max(err, length(pos[i] - c.mesh.vertices[i].pos));
+            CHECK(err < 1e-4f, "bind pose drift %f (%s)", err, std::string(toString(Species(sp))).c_str());
+            for (const Clip& clip : makeDefaultClips(c)) {
+                poseMatrices(c.skeleton, sampleClip(clip, clip.duration() * 0.41f), global, skin);
+                skinMesh(c.mesh, skin, pos, nrm);
+                bool finite = true;
+                for (const Vec3& v : pos) finite &= std::isfinite(v.x + v.y + v.z);
+                CHECK(finite, "NaN anim %s (%s)", clip.name.c_str(), std::string(toString(Species(sp))).c_str());
+            }
+            CHECK(speciesFromString(toString(Species(sp))) == Species(sp), "nome do povo nao ida-e-volta");
+        }
+    // Each trait on a plain human, alone: wings (and folded), coils, hands, feet, beaks, crests, skins.
+    for (int k = 0; k < 24; ++k) {
+        Genome g = randomGenome(900 + uint64_t(k));
+        BodyShape& b = g.body;
+        switch (k) {
+            case 0: case 1: case 2: b.wings = k + 1; break;
+            case 3: b.wings = 1, b.wingsFolded = true; break;
+            case 4: b.wings = 2, b.wingsFolded = true; break;
+            case 5: case 6: b.lowerBody = k - 4; break;
+            case 7: case 8: case 9: b.hands = k - 6; break;
+            case 10: b.feet = 1; break;
+            case 11: b.feet = 1, b.digitigrade = true; break;
+            case 12: case 13: case 14: g.face.beak = k - 11; break;
+            case 15: case 16: case 17: case 18: b.crest = k - 14; break;
+            case 19: b.backTentacles = 6; break;
+            case 20: b.shell = true; break;
+            case 21: b.skinKind = 4, b.shards = 12; break;
+            case 22: b.skinKind = 5; break;
+            default: g.face.mandibles = true, g.face.antennae = 2, g.face.eyeKind = 1, b.ears = EarStyle::Fin; break;
+        }
+        const Character c = generateCharacter(g);
+        validate(c, 900 + uint64_t(k));
+        if (k <= 4) CHECK(c.rig.wings.size() == 2, "asas sem rig");
+        if (k == 5 || k == 6) CHECK(!c.rig.serpent.empty() && c.rig.legs.size() == 2, "corpo de serpente sem rig");
+        if (k == 8) CHECK(c.rig.pincers.size() == 2 && c.rig.pincers[0] >= 0, "pinca sem osso");
+        if (k == 19) CHECK(c.rig.tentacles.size() == 6, "tentaculos sem rig");
+    }
     // ---- engine utilities ----
     {
         CharacterKey k;

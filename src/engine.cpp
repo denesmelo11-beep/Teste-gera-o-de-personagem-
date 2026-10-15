@@ -75,9 +75,10 @@ AgeGroup groupOfAge(float age) {
 }
 
 constexpr std::string_view kZoneNames[] = {"head", "neck", "chest", "abdomen", "pelvis", "upper_arm",
-                                           "forearm", "hand", "thigh", "shin", "foot", "tail"};
+                                           "forearm", "hand", "thigh", "shin", "foot", "tail", "wing", "tentacle"};
 static_assert(std::size(kZoneNames) == size_t(HitZone::Count));
-constexpr float kZoneDamage[] = {2.0f, 1.6f, 1.0f, 1.1f, 0.9f, 0.7f, 0.6f, 0.45f, 0.8f, 0.6f, 0.45f, 0.4f};
+constexpr float kZoneDamage[] = {2.0f, 1.6f, 1.0f, 1.1f, 0.9f, 0.7f, 0.6f, 0.45f, 0.8f, 0.6f, 0.45f, 0.4f, 0.5f, 0.45f};
+static_assert(std::size(kZoneDamage) == size_t(HitZone::Count));
 constexpr std::string_view kStageNames[] = {"alive", "fresh", "rotting", "putrefied", "skeletal"};
 static_assert(std::size(kStageNames) == size_t(DecayStage::Count));
 
@@ -223,6 +224,10 @@ std::vector<HitVolume> hitVolumes(const Character& c) {
     for (const LimbRig& a : r.arms) set(a.upper, HitZone::UpperArm), set(a.lower, HitZone::Forearm), set(a.end, HitZone::Hand);
     for (const LimbRig& l : r.legs) set(l.upper, HitZone::Thigh), set(l.lower, HitZone::Shin), set(l.end, HitZone::Foot);
     for (int t : r.tail) set(t, HitZone::Tail);
+    for (int t : r.serpent) set(t, HitZone::Tail);
+    for (const LimbRig& w : r.wings) set(w.upper, HitZone::Wing), set(w.lower, HitZone::Wing), set(w.end, HitZone::Wing);
+    for (const auto& t : r.tentacles)
+        for (int b : t) set(b, HitZone::Tentacle);
     // Every other bone hands its vertices to its nearest volume-carrying ancestor
     // (fingers to the hand, bust to the chest, jaw to the head...).
     std::vector<int> owner(nb, -1);
@@ -688,7 +693,28 @@ std::string describe(const Genome& g) {
         fx.push_back(t);
     }
     if (b.horns) fx.push_back("horns");
-    if (b.muzzle > 0.3f) fx.push_back(b.snout == 1 ? "wolf muzzle" : "bovine snout");
+    if (b.muzzle > 0.3f) fx.push_back(b.snout == 1 ? "wolf muzzle" : b.snout == 2 ? "reptile snout" : "bovine snout");
+    {
+        static constexpr std::string_view kWings[] = {"", "membrane wings", "feathered wings", "insect wings"};
+        static constexpr std::string_view kLower[] = {"", "serpent coil", "wraith wisp"};
+        static constexpr std::string_view kHands[] = {"", "taloned hands", "crab pincers", "tendril hands"};
+        static constexpr std::string_view kCrest[] = {"", "head fin", "feather crest", "bony frill", "cobra hood"};
+        static constexpr std::string_view kBeak[] = {"", "raptor beak", "long beak", "short beak"};
+        static constexpr std::string_view kSkin[] = {"", "metal skin", "carapace", "scales", "crystal hide", "magma crust"};
+        if (b.wings > 0 && b.wings <= 3) fx.emplace_back(kWings[size_t(b.wings)]);
+        if (b.lowerBody > 0 && b.lowerBody <= 2) fx.emplace_back(kLower[size_t(b.lowerBody)]);
+        if (b.hands > 0 && b.hands <= 3) fx.emplace_back(kHands[size_t(b.hands)]);
+        if (b.feet == 1) fx.push_back("bird talons");
+        if (b.backTentacles > 0) fx.push_back("back tentacles");
+        if (b.shell) fx.push_back("turtle shell");
+        if (b.crest > 0 && b.crest <= 4) fx.emplace_back(kCrest[size_t(b.crest)]);
+        if (b.skinKind > 0 && b.skinKind <= 5) fx.emplace_back(kSkin[size_t(b.skinKind)]);
+        if (b.shards > 0) fx.push_back("crystal shards");
+        if (g.face.beak > 0 && g.face.beak <= 3) fx.emplace_back(kBeak[size_t(g.face.beak)]);
+        if (g.face.mandibles) fx.push_back("mandibles");
+        if (g.face.antennae) fx.push_back("antennae");
+        if (g.face.eyeKind == 1) fx.push_back("compound eyes");
+    }
     if (b.tail) {
         static constexpr std::string_view kTail[] = {"tail", "heavy reptile tail", "whip tail with a spade", "bushy tail",
                                                      "spiked club tail", "thin rat tail"};
@@ -778,6 +804,20 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.2f)) b.skinKind = r.rangeInt(1, 2), b.carapace = r.range(0.3f, 1.0f);
     if (r.chance(0.15f)) b.core = r.rangeInt(1, 2);
     if (r.chance(0.15f)) f.eyePairs = 2;
+    // Species traits.
+    if (r.chance(0.15f)) b.wings = r.rangeInt(1, 3), b.wingsFolded = r.chance(0.3f), b.wingSize = r.range(0.7f, 1.3f);
+    if (r.chance(0.10f)) b.lowerBody = r.rangeInt(1, 2), b.serpentLength = r.range(0.7f, 1.4f);
+    if (r.chance(0.15f)) b.hands = r.rangeInt(1, 3);
+    if (r.chance(0.10f)) b.feet = 1;
+    if (r.chance(0.10f)) b.backTentacles = r.rangeInt(1, 6), b.tentacleLength = r.range(0.6f, 1.4f);
+    if (r.chance(0.08f)) b.shell = true;
+    if (r.chance(0.12f)) b.crest = r.rangeInt(1, 4), b.crestSize = r.range(0.6f, 1.4f);
+    if (r.chance(0.10f)) b.skinKind = r.rangeInt(3, 5), b.shards = r.chance(0.5f) ? r.rangeInt(0, 16) : 0;
+    if (r.chance(0.12f)) f.beak = r.rangeInt(1, 3);
+    if (r.chance(0.08f)) f.mandibles = true;
+    if (r.chance(0.08f)) f.antennae = r.rangeInt(1, 2), f.antennaLength = r.range(0.6f, 1.5f);
+    if (r.chance(0.06f)) f.eyeKind = 1;
+    if (r.chance(0.08f)) b.ears = EarStyle(r.rangeInt(0, int(EarStyle::Count) - 1));
     if (r.chance(0.2f)) f.mouthStyle = r.rangeInt(0, 3);
     if (r.chance(0.3f)) g.hair = HairStyle(r.rangeInt(0, int(HairStyle::Count) - 1));
     if (r.chance(0.3f)) g.facialHair = FacialHair(r.rangeInt(0, int(FacialHair::Count) - 1));
