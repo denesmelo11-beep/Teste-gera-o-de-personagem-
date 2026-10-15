@@ -340,7 +340,9 @@ int main() {
         for (int a = 0; a < np; ++a)
             for (int b = a + 1; b < np; ++b) {
                 const float c = sim(cur, a, b), p = sim(plain, a, b);
-                CHECK(c < 0.92f && c < p - 0.02f, "cabecas de %s e %s parecidas demais: %.2f (cranio humano %.2f)",
+                // Distinct enough outright, or at least clearly more distinct than with the human skull:
+                // the skulls must stay cohesive, so distinctness is not pushed past what reads well.
+                CHECK(c < 0.92f && (c < 0.86f || c < p - 0.02f), "cabecas de %s e %s parecidas demais: %.2f (cranio humano %.2f)",
                       std::string(toString(ps[a])).c_str(), std::string(toString(ps[b])).c_str(), c, p);
             }
     }

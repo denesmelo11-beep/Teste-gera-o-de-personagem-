@@ -663,7 +663,7 @@ void paintSkin(CellPainter& cp, const Genome& g) {
         // Socket wells: a darker, tighter shadow round the eye that survives at game distance
         // (a dark well with a light point inside reads as an eye in two or three pixels).
         if (g.head.socket > 0.01f)
-            soft({sd * ex, ey + 0.006f}, {0.125f, f.eyePairs >= 2 ? 0.058f : 0.072f}, {0.42f, 0.36f, 0.40f}, 0.75f * g.head.socket, 0.6f);
+            soft({sd * ex, ey + 0.006f}, {0.125f, f.eyePairs >= 2 ? 0.058f : 0.072f}, {0.42f, 0.36f, 0.40f}, 0.75f * g.head.socket * (1.0f - 0.75f * saturate(g.body.muzzle)), 0.6f);
         soft({sd * 0.075f, ey + 0.012f}, {0.050f, 0.060f}, {0.78f, 0.68f, 0.70f}, 0.25f + 0.35f * f.eyeDepth);  // inner corner
         // Tired, puffy under-eyes.
         soft({sd * (ex + 0.005f), ey - 0.062f}, {0.085f, 0.024f}, {0.80f, 0.70f, 0.78f}, 0.55f * f.eyeBags);

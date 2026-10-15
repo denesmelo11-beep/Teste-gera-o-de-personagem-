@@ -73,14 +73,19 @@ dele. `Genome::head` traz os eixos do crânio, todos em zero para o humano:
 
 | campo | o que faz |
 |---|---|
-| `forehead` | a testa recua reta a partir da arcada (brutos, répteis, aves) |
+| `forehead` | a testa recua a partir da arcada (brutos, répteis) |
 | `occiput` | a nuca se alonga para trás (crânios longos: elfo noturno, cefálide, inseto) |
 | `temples` | têmporas pinçadas, a parte de cima do rosto afina (elfos, mortos, espectros) |
 | `zygoma` | maçãs do rosto abertas para os lados (orc, goblin, naga, demônio) |
 | `box` | planos quadrados e blocados (anão, ogro, cristalino) ou arredondados e afinando (alto-elfo, fada) |
-| `rostrum` | o meio do rosto avança em cunha: o bico nasce da ponta dela, não fica colado num rosto humano |
+| `rostrum` | o meio do rosto avança um pouco (prognatismo leve: orc, troll, naga) |
 | `flatTop` | abóbada baixa e achatada (tartaruga, naga, ogro) |
 | `socket` | sombra extra na órbita, para o olho ler como um poço escuro de longe |
+
+Os eixos são contidos de propósito: um crânio coeso vale mais que um crânio diferente a qualquer
+custo. O aviano tem crânio redondo e o bico engrossa na raiz, nascendo da cara. Nos povos de
+focinho, a ponte do nariz desce da testa até o focinho e a mandíbula continua ligada ao pescoço,
+então não há degrau nem buraco sob os olhos; a órbita e as maçãs não cavam sulco no focinho.
 
 E um **vocabulário de olhos** (`EyeLook`) pensado para 2 ou 3 pixels: o que lê de longe é contraste
 de valor (órbita escura com um ponto claro), não desenho.
