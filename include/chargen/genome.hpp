@@ -33,7 +33,7 @@ bool isTiedHair(HairStyle h);   // hair gathered into tails, braids or buns
 enum class Fringe : uint8_t { None, Curtain, SideSwept, Straight, Count };
 enum class FacialHair : uint8_t { None, Stubble, Mustache, Goatee, ShortBeard, FullBeard, LongBeard, BraidedBeard, MuttonChops, Tendrils, Count };
 enum class EarStyle : uint8_t { Human, Elf, Fin, None, Count };  // Fin: a ribbed membrane fan (fishfolk); None: ear holes only (avians, reptiles)
-enum class PupilStyle : uint8_t { Round, Slit, Count };
+enum class PupilStyle : uint8_t { Round, Slit, Bar, Count };  // Bar: a horizontal goat's pupil
 // Peoples of the world. Each one reshapes the sampled body and face (proportions,
 // skin, ears, tusks, horns, muzzle, hooves, glowing eyes) and biases hair and beards.
 // The second block are trait peoples, built from the composable traits in BodyShape and
@@ -267,6 +267,37 @@ struct FaceStyle {
     Vec3 tattooColor{0.16f, 0.22f, 0.32f};
 };
 
+// How the eyes read, chosen per people. At game distance an eye is two or three
+// pixels, so each look is built on value contrast (a dark socket and a light point)
+// rather than on drawn detail; the classic look is the expressive portrait eye.
+enum class EyeLook : uint8_t {
+    Classic,  // white sclera, big iris, lash line (humans and close kin; portraits)
+    Glow,     // the whole opening burns, no pupil (elves, draenei, the risen dead)
+    Beady,    // small and glinting: a dark iris in a sliver of yellowed white (goblins, trolls)
+    Sunken,   // set deep under the brow: a small bright iris in a shadowed socket (orcs, ogres)
+    Slit,     // the iris fills the opening around a slit pupil, no white (reptiles, wolves)
+    Bird,     // round, all iris, a big pupil and a bare ring of skin (birds, turtles)
+    Black,    // glossy dark eyes with a wet highlight, or a bar pupil (fish, octopus folk)
+    Hollow,   // rotted or empty sockets
+    Count
+};
+
+// Skull construction, shared by every people: each field reshapes the head mesh on its
+// landmarks, so a people's identity sits in the silhouette of the head (cranium, brow,
+// cheekbones, mid-face) and its features grow from the skull instead of being stuck on.
+// All zero is the human head. Kept apart from FaceStyle so older genome snapshots still load.
+struct HeadForm {
+    float forehead = 0.0f;  // 0 upright .. 1 sloping straight back from the brow ridge
+    float occiput = 0.0f;   // -0.5 short .. 1 the back of the skull drawn out (elongated crania)
+    float temples = 0.0f;   // 0 .. 1 pinched temples: the upper head narrows above the eyes
+    float zygoma = 0.0f;    // 0 .. 1 cheekbones flaring out sideways
+    float box = 0.0f;       // -1 rounded, tapering planes .. +1 squared, blocky planes
+    float rostrum = 0.0f;   // 0 .. 1 the mid-face drawn forward into a wedge (beaks grow from its tip)
+    float flatTop = 0.0f;   // 0 .. 1 a low, flattened vault (turtles, serpents, hulking brutes)
+    float socket = 0.0f;    // 0 .. 1 extra socket shadow, so the eyes read as dark wells at a distance
+    EyeLook eyeLook = EyeLook::Classic;
+};
+
 struct Palette {
     Vec3 skin{1.0f, 0.86f, 0.77f};
     Vec3 hair{0.25f, 0.2f, 0.18f};
@@ -301,6 +332,7 @@ struct Genome {
     float partSide = 1.0f;     // +1 / -1
     bool underwear = true;     // base mesh modesty layer (Skyrim-like)
     Palette palette;
+    HeadForm head;             // last: snapshots saved before it existed load with a human skull
 };
 
 struct GenomeOptions {

@@ -803,6 +803,78 @@ void applySpecies(Genome& g, Species sp, Rng r, const GenomeOptions& opt) {
     }
 }
 
+// Skull and eyes of each people (HeadForm). Identity lives in the head's silhouette:
+// every people differs from its neighbours on several of cranium, brow and forehead,
+// cheekbones, mid-face and the vault, all built by the same skull code so the world
+// stays one style. Eyes pick a look that reads at game distance. Drawn from its own
+// stream, so the rest of the genome (and every existing key) is unchanged.
+void applyHead(Genome& g, Species sp, Rng r) {
+    HeadForm& k = g.head;
+    FaceStyle& f = g.face;
+    const float masc = 1.0f - g.femininity;
+    // forehead, occiput, temples, zygoma, box, rostrum, flatTop, socket, look, head width
+    struct Form {
+        float fh, oc, tp, zy, bx, ro, ft, so;
+        EyeLook look;
+        float wd = 1.0f;
+    };
+    Form F{0.05f, 0.0f, 0.0f, 0.1f, 0.0f, 0.0f, 0.0f, 0.15f, EyeLook::Classic};
+    switch (sp) {
+        case Species::Human:       F = {0.05f, 0.0f, 0.0f, 0.10f, 0.0f, 0.0f, 0.0f, 0.15f, EyeLook::Classic}; break;
+        case Species::Dwarf:       F = {0.15f, -0.2f, 0.0f, 0.55f, 1.0f, 0.0f, 0.35f, 0.55f, EyeLook::Sunken, 1.12f}; break;
+        case Species::Gnome:       F = {0.0f, 0.45f, 0.0f, 0.15f, -0.6f, 0.0f, 0.0f, 0.10f, EyeLook::Classic}; break;
+        case Species::Orc:         F = {0.60f, 0.30f, 0.05f, 0.65f, 0.55f, 0.20f, 0.10f, 0.80f, EyeLook::Sunken, 1.08f}; break;
+        case Species::Troll:       F = {0.85f, 0.70f, 0.30f, 0.40f, -0.30f, 0.40f, 0.0f, 0.55f, EyeLook::Beady, 0.92f}; break;
+        case Species::Undead:      F = {0.20f, 0.35f, 0.70f, 0.80f, -0.30f, 0.0f, 0.0f, 1.00f, EyeLook::Glow, 0.94f}; break;
+        case Species::NightElf:    F = {0.55f, 1.00f, 0.30f, 0.55f, 0.30f, 0.0f, 0.0f, 0.60f, EyeLook::Glow, 0.95f}; break;
+        case Species::HighElf:     F = {0.0f, -0.20f, 0.25f, 0.30f, -0.80f, 0.0f, 0.0f, 0.30f, EyeLook::Glow, 0.90f}; break;
+        case Species::Draenei:     F = {0.45f, 0.60f, 0.20f, 0.30f, 0.10f, 0.0f, 0.0f, 0.50f, EyeLook::Glow}; break;
+        case Species::Tauren:      F = {0.40f, 0.0f, 0.0f, 0.30f, 0.50f, 0.0f, 0.50f, 0.40f, EyeLook::Black}; break;
+        case Species::Goblin:      F = {0.35f, 0.30f, 0.15f, 0.70f, -0.20f, 0.0f, 0.0f, 0.35f, EyeLook::Beady, 1.04f}; break;
+        case Species::Worgen:      F = {0.30f, 0.20f, 0.0f, 0.40f, 0.20f, 0.0f, 0.30f, 0.70f, EyeLook::Glow}; break;
+        case Species::Ogre:        F = {0.65f, -0.40f, 0.0f, 0.55f, 1.00f, 0.15f, 0.55f, 0.90f, EyeLook::Sunken, 1.12f}; break;
+        case Species::Centaur:     F = {0.20f, 0.40f, 0.10f, 0.30f, 0.40f, 0.0f, 0.0f, 0.25f, EyeLook::Classic, 0.96f}; break;
+        case Species::Skeleton:    F = {0.10f, 0.10f, 0.20f, 0.40f, 0.0f, 0.0f, 0.0f, 0.0f, EyeLook::Glow}; break;
+        case Species::Dragonborn:  F = {0.50f, 0.45f, 0.10f, 0.40f, 0.30f, 0.0f, 0.40f, 0.60f, EyeLook::Slit}; break;
+        case Species::Saurian:     F = {0.70f, 0.30f, 0.20f, 0.20f, 0.0f, 0.0f, 0.60f, 0.30f, EyeLook::Slit}; break;
+        case Species::Avian:       F = {0.35f, 0.55f, 0.0f, 0.10f, -0.60f, 0.50f, 0.0f, 0.20f, EyeLook::Bird, 0.92f}; break;
+        case Species::Naga:        F = {0.60f, 0.30f, 0.20f, 0.85f, 0.0f, 0.25f, 0.85f, 0.40f, EyeLook::Slit, 1.06f}; break;
+        case Species::Tortle:      F = {0.50f, 0.20f, 0.0f, 0.20f, 0.40f, 0.60f, 0.70f, 0.40f, EyeLook::Black, 1.08f}; break;
+        case Species::Insectoid:   F = {0.30f, 0.90f, 0.55f, 0.0f, -0.40f, 0.0f, 0.0f, 0.0f, EyeLook::Black, 0.90f}; break;
+        case Species::Fishfolk:    F = {0.30f, 0.0f, 0.30f, 0.40f, -0.20f, 0.25f, 0.50f, 0.20f, EyeLook::Black, 1.05f}; break;
+        case Species::Demon:       F = {0.50f, 0.25f, 0.55f, 0.85f, 0.30f, 0.0f, 0.0f, 0.60f, EyeLook::Slit}; break;
+        case Species::Cephalid:    F = {0.0f, 1.20f, 0.0f, 0.0f, -0.50f, 0.0f, 0.0f, 0.50f, EyeLook::Glow}; break;
+        case Species::Fae:         F = {0.0f, 0.70f, 0.30f, 0.20f, -0.90f, 0.0f, 0.0f, 0.20f, EyeLook::Glow, 0.92f}; break;
+        case Species::Crystalborn: F = {0.25f, -0.30f, 0.70f, 0.40f, 1.00f, 0.0f, 0.0f, 0.60f, EyeLook::Glow, 1.05f}; break;
+        case Species::Emberkin:    F = {0.55f, 0.10f, 0.20f, 0.65f, 0.60f, 0.0f, 0.45f, 0.80f, EyeLook::Glow, 1.06f}; break;
+        case Species::Wraith:      F = {0.20f, 0.70f, 1.00f, 0.85f, -0.40f, 0.0f, 0.0f, 1.00f, EyeLook::Glow, 0.88f}; break;
+        default: break;
+    }
+    // Each person varies around the people's skull; men a touch squarer.
+    auto vary = [&](float v, float spread) { return v * r.range(0.85f, 1.15f) + r.range(-spread, spread); };
+    k.forehead = saturate(vary(F.fh, 0.06f));
+    k.occiput = clamp(vary(F.oc, 0.08f), -0.5f, 1.3f);
+    k.temples = saturate(vary(F.tp, 0.05f));
+    k.zygoma = saturate(vary(F.zy, 0.06f) + 0.08f * masc);
+    k.box = clamp(vary(F.bx, 0.10f) + 0.20f * (masc - 0.5f), -1.0f, 1.0f);
+    k.rostrum = saturate(F.ro > 0 ? vary(F.ro, 0.04f) : 0.0f);
+    k.flatTop = saturate(F.ft > 0 ? vary(F.ft, 0.05f) : 0.0f);
+    k.socket = saturate(F.so * r.range(0.9f, 1.1f) + 0.25f * f.eyeDepth - 0.075f);
+    k.eyeLook = F.look;
+    g.body.headWidth *= F.wd;
+    // Glow is kept for the peoples whose eyes burn; the others see with real eyes, so a
+    // glowing gaze stays rare enough to mean something.
+    if (sp == Species::Fishfolk || sp == Species::Demon) f.glowEyes = false;
+    if (sp == Species::Demon) {  // a goat's barred pupil in a burning iris
+        f.pupil = PupilStyle::Bar;
+        g.palette.iris = r.chance(0.6f) ? Vec3{0.95f, 0.55f, 0.10f} : Vec3{0.90f, 0.22f, 0.10f};
+    }
+    if (sp == Species::Fishfolk) g.palette.iris = Vec3{0.30f, 0.55f, 0.50f};
+    if (F.look == EyeLook::Bird) f.eyeShape = 1;
+    if (sp == Species::HighElf) f.headTop = std::max(f.headTop, 0.55f), f.chinPoint = std::max(f.chinPoint, 0.5f);
+    if (sp == Species::NightElf) f.browRidge = std::max(f.browRidge, 0.9f);
+}
+
 }  // namespace
 
 Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
@@ -1239,6 +1311,7 @@ Genome randomGenome(uint64_t seed, const GenomeOptions& opt) {
     if (!opt.species && opt.mixedSpecies)
         sp = Species(root.fork(9).weighted({5.0f, 1.2f, 0.8f, 1.2f, 0.8f, 0.8f, 0.9f, 0.9f, 0.7f, 0.8f, 0.7f, 0.7f, 0.5f, 0.5f, 0.6f}));
     if (sp != Species::Human) applySpecies(g, sp, root.fork(10), opt);
+    applyHead(g, sp, root.fork(11));
     if (opt.armPairs) g.body.armPairs = std::clamp(*opt.armPairs, 1, 2);
     // Exaggerated proportions, once the people has rescaled them: keep the hips within
     // what the shoulders carry and the waist below both, or short peoples turn into

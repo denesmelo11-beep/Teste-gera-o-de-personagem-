@@ -65,6 +65,66 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![esqueleto](docs/folha_esqueleto.png) | ![corrida](docs/esqueleto_corrida.png) |
 
+### Cabeças e olhos por povo (`HeadForm`)
+
+A identidade de cada povo mora na **silhueta da cabeça**, não no detalhe pintado: todos os povos
+usam o mesmo código de crânio (mesma densidade de facetas, mesma luz), e cada um muda as proporções
+dele. `Genome::head` traz os eixos do crânio, todos em zero para o humano:
+
+| campo | o que faz |
+|---|---|
+| `forehead` | a testa recua reta a partir da arcada (brutos, répteis, aves) |
+| `occiput` | a nuca se alonga para trás (crânios longos: elfo noturno, cefálide, inseto) |
+| `temples` | têmporas pinçadas, a parte de cima do rosto afina (elfos, mortos, espectros) |
+| `zygoma` | maçãs do rosto abertas para os lados (orc, goblin, naga, demônio) |
+| `box` | planos quadrados e blocados (anão, ogro, cristalino) ou arredondados e afinando (alto-elfo, fada) |
+| `rostrum` | o meio do rosto avança em cunha: o bico nasce da ponta dela, não fica colado num rosto humano |
+| `flatTop` | abóbada baixa e achatada (tartaruga, naga, ogro) |
+| `socket` | sombra extra na órbita, para o olho ler como um poço escuro de longe |
+
+E um **vocabulário de olhos** (`EyeLook`) pensado para 2 ou 3 pixels: o que lê de longe é contraste
+de valor (órbita escura com um ponto claro), não desenho.
+
+| olhar | povos | como lê |
+|---|---|---|
+| `Classic` | humano, gnomo, centauro | esclera branca, íris grande (retratos, expressão) |
+| `Glow` | elfos, draenei, mortos-vivos, espectros, cristalinos | a abertura toda brilha |
+| `Beady` | goblin, troll | íris escura e miúda, um brilho forte |
+| `Sunken` | orc, ogro, anão | branco apagado na sombra da arcada, a íris acesa como faísca |
+| `Slit` | dragonato, sáurio, naga, demônio (pupila de bode) | a íris enche o olho, pupila em fenda |
+| `Bird` | aviano | redondo, só íris, pupila grande e anel de pele |
+| `Black` | tauren, tartaruga, peixe, inseto | escuro e brilhante, com reflexo molhado |
+| `Hollow` | ossadas e podres | órbita vazia |
+
+Cada pessoa varia em volta do crânio do seu povo. Tudo é sorteado num fluxo próprio, então as
+chaves `CG1` continuam gerando a mesma pessoa (cabelo, corpo, cores); só a cabeça muda para a forma
+do povo. Genomas salvos com `saveGenome` antes disso continuam carregando, com o crânio humano de
+antes.
+
+| Antes e depois (3/4, perfil e em resolução de jogo), cabeças raspadas para o crânio aparecer |
+|---|
+| ![antes e depois](docs/cabecas_antes_depois.png) |
+
+| Todos os povos (`chargen_viewer --skulls out.png`; `CHARGEN_SEX=f`, `CHARGEN_KEEPHAIR=1`) |
+|---|
+| ![cabeças dos povos](docs/cabecas_povos.png) |
+| ![cabeças dos povos, mulheres](docs/cabecas_povos_mulheres.png) |
+
+**Régua de silhueta.** `cg::headSilhouette` desenha a sombra chapada da cabeça (frente e perfil,
+32 px, em unidades de cabeça) e `cg::silhouetteSimilarity` compara duas (interseção sobre união).
+`chargen_cli silhouettes` mostra, para cada povo, o povo de cabeça mais parecida (`--plain` mede com o
+crânio humano de antes, `--all` imprime a matriz). Os testes reprovam se troll, morto-vivo, elfo
+noturno, alto-elfo, orc e ogro voltarem a dividir a mesma cabeça.
+
+| par | antes | depois |
+|---|---|---|
+| troll × morto-vivo | 0,87 | 0,74 |
+| elfo noturno × alto-elfo | 0,91 | 0,80 |
+| troll × elfo noturno | 0,84 | 0,72 |
+| orc × ogro | 0,95 | 0,86 |
+| morto-vivo × alto-elfo | 0,89 | 0,85 |
+| média do vizinho mais próximo (28 povos) | 0,89 | 0,85 |
+
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|
 | ![rostos dos povos](docs/povos_rostos.png) |

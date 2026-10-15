@@ -904,7 +904,8 @@ void Builder::buildBeak() {
     const float dep[] =   {0, 0.09f, 0.09f, 0.13f, 0.17f, 0.045f, 0.12f, 0.11f};
     const float droopK[] = {0, 0.12f, 0.18f, 0.12f, 0.28f, 0.02f, 0.2f, 0.12f};
     const float lowK[] =  {0, 0.72f, 0.88f, 0.88f, 0.55f, 0.95f, 0.88f, 0.9f};
-    const float L = len[kind] * h * r.range(0.88f, 1.15f), W = wid[kind] * h * r.range(0.9f, 1.1f);
+    // The skull's rostrum already carries the beak's root forward, so the keratin is shorter.
+    const float L = len[kind] * h * r.range(0.88f, 1.15f) * (1.0f - 0.15f * g.head.rostrum), W = wid[kind] * h * r.range(0.9f, 1.1f);
     const float D = dep[kind] * h * r.range(0.92f, 1.15f), hk = hook[kind] * r.range(0.8f, 1.2f), droop = droopK[kind] * r.range(0.8f, 1.25f);
     const float taperE = kind == 2 ? 0.7f : kind == 5 ? 0.25f : 0.85f;
     const bool twoTone = r.chance(0.45f);

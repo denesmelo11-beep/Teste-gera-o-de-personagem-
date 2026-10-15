@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <span>
 #include <type_traits>
@@ -192,15 +193,84 @@ std::vector<uint8_t> saveGenome(const Genome& g) {
 }
 
 std::optional<Genome> loadGenome(const std::vector<uint8_t>& bytes) {
-    const uint32_t n = sizeof(Genome);
-    if (bytes.size() != 8 + n + 4 || std::memcmp(bytes.data(), kGenomeMagic, 4) != 0) return std::nullopt;
-    uint32_t sz = 0, h = 0;
-    for (int i = 0; i < 4; ++i) sz |= uint32_t(bytes[size_t(4 + i)]) << (8 * i);
+    // Snapshots from before HeadForm existed are a prefix of the current layout: they load
+    // with the default (human) skull and classic eyes, exactly as they were drawn then.
+    constexpr uint32_t kPreHead = uint32_t(offsetof(Genome, head));
+    if (bytes.size() < 12 || std::memcmp(bytes.data(), kGenomeMagic, 4) != 0) return std::nullopt;
+    uint32_t n = 0, h = 0;
+    for (int i = 0; i < 4; ++i) n |= uint32_t(bytes[size_t(4 + i)]) << (8 * i);
+    if ((n != sizeof(Genome) && n != kPreHead) || bytes.size() != 8 + size_t(n) + 4) return std::nullopt;
     for (int i = 0; i < 4; ++i) h |= uint32_t(bytes[8 + n + size_t(i)]) << (8 * i);
-    if (sz != n || fnv1a(bytes.data() + 8, n) != h) return std::nullopt;
+    if (fnv1a(bytes.data() + 8, n) != h) return std::nullopt;
     Genome g;
     std::memcpy(&g, bytes.data() + 8, n);
     return g;
+}
+
+// ---------------------------------------------------------------- head silhouettes
+
+HeadSilhouette headSilhouette(const Character& c, int res) {
+    HeadSilhouette out;
+    out.res = res;
+    out.front.assign(size_t(res * res), 0);
+    out.side.assign(size_t(res * res), 0);
+    const int head = c.rig.head;
+    if (head < 0) return out;
+    const float h = c.height / c.genome.body.headsTall;
+    // The head's frame: the pivot sits 0.14 h above the chin and 0.10 h behind the face's
+    // origin (see the builder); the frame spans the head with room for snouts and ears.
+    const Vec3 o = c.skeleton.bones[size_t(head)].restWorld - Vec3{0, 0.14f * h, -0.10f * h};
+    const float y0 = -0.35f, y1 = 1.45f, x0 = -0.90f, x1 = 0.90f, z0 = -0.80f, z1 = 1.00f;
+    const Mesh& m = c.mesh;
+    auto onHead = [&](uint32_t i) {
+        const Vertex& v = m.vertices[i];
+        int best = 0;
+        for (int k = 1; k < 4; ++k)
+            if (v.weights[k] > v.weights[best]) best = k;
+        return v.joints[best] == head && v.weights[best] > 0.5f;
+    };
+    auto fill = [&](std::vector<uint8_t>& mask, Vec2 a, Vec2 b, Vec2 d) {
+        const float lo_x = std::min({a.x, b.x, d.x}), hi_x = std::max({a.x, b.x, d.x});
+        const float lo_y = std::min({a.y, b.y, d.y}), hi_y = std::max({a.y, b.y, d.y});
+        const float area = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
+        if (std::fabs(area) < 1e-9f) return;
+        for (int py = std::max(0, int(lo_y)); py <= std::min(res - 1, int(hi_y)); ++py)
+            for (int px = std::max(0, int(lo_x)); px <= std::min(res - 1, int(hi_x)); ++px) {
+                const Vec2 p{float(px) + 0.5f, float(py) + 0.5f};
+                const float w0 = ((b.x - p.x) * (d.y - p.y) - (b.y - p.y) * (d.x - p.x)) / area;
+                const float w1 = ((d.x - p.x) * (a.y - p.y) - (d.y - p.y) * (a.x - p.x)) / area;
+                if (w0 >= 0 && w1 >= 0 && w0 + w1 <= 1) mask[size_t(py * res + px)] = 1;
+            }
+    };
+    const float R = float(res);
+    for (const Submesh& sm : m.submeshes) {
+        if (sm.kind != SubmeshKind::Body) continue;
+        for (uint32_t t = sm.firstIndex; t + 2 < sm.firstIndex + sm.indexCount; t += 3) {
+            const uint32_t ia = m.indices[t], ib = m.indices[t + 1], ic = m.indices[t + 2];
+            if (!onHead(ia) || !onHead(ib) || !onHead(ic)) continue;
+            Vec3 q[3] = {m.vertices[ia].pos - o, m.vertices[ib].pos - o, m.vertices[ic].pos - o};
+            Vec2 fr[3], sd[3];
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 u = q[k] / h;
+                const float py = (y1 - u.y) / (y1 - y0) * R;
+                fr[k] = {(u.x - x0) / (x1 - x0) * R, py};
+                sd[k] = {(u.z - z0) / (z1 - z0) * R, py};
+            }
+            fill(out.front, fr[0], fr[1], fr[2]);
+            fill(out.side, sd[0], sd[1], sd[2]);
+        }
+    }
+    return out;
+}
+
+float silhouetteSimilarity(const HeadSilhouette& a, const HeadSilhouette& b) {
+    if (a.res != b.res) return 0.0f;
+    auto iou = [](const std::vector<uint8_t>& x, const std::vector<uint8_t>& y) {
+        int in = 0, un = 0;
+        for (size_t i = 0; i < x.size(); ++i) in += x[i] && y[i], un += x[i] || y[i];
+        return un ? float(in) / float(un) : 1.0f;
+    };
+    return 0.5f * (iou(a.front, b.front) + iou(a.side, b.side));
 }
 
 // ---------------------------------------------------------------- hit volumes
@@ -823,6 +893,14 @@ Genome fuzzGenome(uint64_t seed, GenOptions* opt) {
     if (r.chance(0.3f)) g.facialHair = FacialHair(r.rangeInt(0, int(FacialHair::Count) - 1));
     f.eyeSize *= r.range(0.8f, 1.2f), f.jaw = r.range(-1.0f, 1.0f), f.chin = r.range(-1.0f, 1.0f);
     f.noseLength *= r.range(0.7f, 1.3f), f.headTop = r.range(-1.0f, 1.0f);
+    {   // skull construction at its extremes (a stream of its own: the draws above keep their values)
+        Rng rk = r.fork(77);
+        HeadForm& k = g.head;
+        k.forehead = rk.range(0.0f, 1.0f), k.occiput = rk.range(-0.5f, 1.3f), k.temples = rk.range(0.0f, 1.0f);
+        k.zygoma = rk.range(0.0f, 1.0f), k.box = rk.range(-1.0f, 1.0f), k.flatTop = rk.range(0.0f, 1.0f);
+        k.rostrum = rk.chance(0.3f) ? rk.range(0.0f, 1.0f) : 0.0f, k.socket = rk.range(0.0f, 1.0f);
+        k.eyeLook = EyeLook(rk.rangeInt(0, int(EyeLook::Count) - 1));
+    }
     if (opt) {
         static constexpr float kDecay[] = {0.0f, 0.0f, 0.0f, 0.15f, 0.4f, 0.7f, 0.9f, 1.0f};
         opt->decay = kDecay[r.rangeInt(0, 7)];

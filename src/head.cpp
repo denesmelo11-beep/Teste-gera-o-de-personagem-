@@ -53,10 +53,28 @@ SuperRing Builder::headRing(float s) const {
                       : reptile ? g.body.muzzle * 0.62f * smoothstep(0.46f, 0.36f, s) * (0.45f + 0.55f * smoothstep(0.0f, 0.22f, s))
                                 : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
     const float narrow = wolf || reptile ? 0.30f : 0.22f;
+    // Skull construction (HeadForm): the same few landmarks for every people, so a beak,
+    // a brute's brow or an elongated cranium are built by the skull itself.
+    const HeadForm& k = g.head;
+    // (Cheekbones and temples are shaped on the face side only: see headPoint.)
+    // Square planes keep the jaw wide; rounded ones taper it.
+    wMul *= 1.0f + k.box * 0.12f * bump((s - 0.16f) / 0.18f);
+    // The forehead slopes straight back from the brow ridge, the vault riding lower.
+    const float slope = k.forehead * smoothstep(0.57f, 0.97f, s);
+    // A low, flattened vault: the crown comes down and the cranium widens a little.
+    const float flat = k.flatTop * smoothstep(0.62f, 1.0f, s);
+    wMul *= 1.0f + 0.12f * k.flatTop * bump((s - 0.80f) / 0.18f);
+    // Rostrum: the mid-face below the eyes drawn forward into a narrowing wedge (the base a
+    // beak grows from); the jaw under it recedes so the beak, not a chin, ends the face.
+    const float ro = k.rostrum * 0.46f * smoothstep(0.50f, 0.38f, s) * (0.55f + 0.45f * smoothstep(0.02f, 0.26f, s));
+    wMul *= 1.0f - 0.34f * k.rostrum * smoothstep(0.48f, 0.26f, s);
+    const float occ = k.occiput * 0.32f * bump((s - 0.70f) / 0.27f);
+    const float nF = hNf_(s) * (1.0f + 0.45f * k.box), nB = hNb_(s) * (1.0f + 0.35f * k.box);
     return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.44f, 0.32f, s) : smoothstep(0.5f, 0.3f, s))),
-            (hZc_(s) + chinFwd + 0.5f * muz) * h,
-            std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,
-            hNf_(s), hNb_(s)};
+            (hZc_(s) + chinFwd + 0.5f * muz + 0.5f * ro - 0.08f * slope - 0.5f * occ) * h,
+            std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz + 0.5f * ro - 0.20f * slope - 0.16f * flat, 0.01f) * h,
+            std::max(hDb_(s) + crownBack - 0.5f * muz - 0.5f * ro + 0.5f * occ - 0.10f * flat, 0.01f) * h,
+            std::max(nF, 1.4f), std::max(nB, 1.4f)};
 }
 
 // Forward relief of the face in head units; xn is the horizontal position in
@@ -105,6 +123,14 @@ Vec3 Builder::headPoint(float theta, float s) const {
     SuperRing r = headRing(s);
     Vec2 p = r.point(theta);
     float sn = std::sin(theta);
+    // Cheekbones flare and temples pinch on the front half of the head (the sides of the
+    // face), fading out towards the face's centre line and round the back of the skull.
+    const HeadForm& k = g.head;
+    if (k.zygoma > 0.0f || k.temples > 0.0f) {
+        const float side = smoothstep(-0.35f, 0.25f, sn) * (1.0f - 0.75f * sn * sn * sn * sn);
+        const float dx = (k.zygoma * 0.17f * bump((s - 0.43f) / 0.17f) - k.temples * 0.30f * bump((s - 0.69f) / 0.17f)) * side;
+        p.x *= 1.0f + dx;
+    }
     if (sn > 0) p.y += faceRelief(p.x / (m.h * g.body.headWidth), s) * m.h * smoothstep(0.0f, 0.6f, sn);
     return m.headOrigin + Vec3{p.x, s * m.h, p.y};
 }
@@ -194,7 +220,7 @@ void Builder::buildHead() {
     L.startPole = m.headOrigin + Vec3{0, -0.01f * h, hZc_(0) * h};
     L.tStart = 0;
     L.poleEnd = true;
-    L.endPole = m.headOrigin + Vec3{0, h, hZc_(1.0f) * h};
+    L.endPole = m.headOrigin + Vec3{0, h * (1.0f - 0.10f * g.head.flatTop), headRing(1.0f).zc};
     L.tEnd = 1;
     Part& hp = newPart();
     hp.smoothAlways = true;  // smooth in the smooth style; the faceted style flattens it like the body
