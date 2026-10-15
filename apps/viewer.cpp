@@ -721,6 +721,7 @@ cg::Genome withOverrides(cg::Genome g) {
     envI("CHARGEN_SKIN", g.body.skinKind);
     envI("CHARGEN_TENTACLES", g.body.backTentacles);
     if (std::getenv("CHARGEN_FOLD")) g.body.wingsFolded = true;
+    if (std::getenv("CHARGEN_PLAINHEAD")) g.head = cg::HeadForm{};  // the plain human skull (before HeadForm)
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
             if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);
@@ -1310,6 +1311,67 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
     return 0;
 }
 
+// Every people's head side by side (--skulls): three-quarter and profile in studio light,
+// and the same three-quarter view at game resolution (a few pixels per face, scaled up).
+// Hair and beards are off by default so the skull reads (CHARGEN_KEEPHAIR=1 keeps them);
+// CHARGEN_SEX=f draws women.
+int runSkulls(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int zoom = std::getenv("CHARGEN_SKULLZOOM") ? std::max(1, std::atoi(std::getenv("CHARGEN_SKULLZOOM"))) : 1;
+    const int n = int(cg::Species::Count), cols = 4, vw = 190 * zoom, vh = 210 * zoom, low = 6 * zoom;
+    const int cw = 3 * vw, ch = vh + 18, rows = (n + cols - 1) / cols;
+    Image sheet = GenImageColor(cols * cw, rows * ch, Color{14, 16, 20, 255});
+    const bool keepHair = std::getenv("CHARGEN_KEEPHAIR") != nullptr;
+    const char* sexEnv = std::getenv("CHARGEN_SEX");
+    for (int i = 0; i < n; ++i) {
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.species = cg::Species(i);
+        o.sex = sexEnv && sexEnv[0] == 'f' ? cg::Sex::Female : cg::Sex::Male;
+        o.age = cg::AgeGroup::Adult;
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i) * 7u, o);
+        if (!keepHair) {
+            g.hair = cg::HairStyle::Bald;
+            g.facialHair = cg::FacialHair::None;
+        }
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(withOverrides(g), gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
+        const float hh = a.ch.height / a.ch.genome.body.headsTall;
+        const cg::Vec3 tgt{head.x, head.y + 0.45f * hh, head.z + 0.15f * hh};
+        const float yaws[3] = {-0.55f, -1.5708f, -0.55f};  // the lit side (key light from -x)
+        const int cx = (i % cols) * cw, cy = (i / cols) * ch;
+        for (int v = 0; v < 3; ++v) {
+            const int rw = v == 2 ? vw / low : vw, rh = v == 2 ? vh / low : vh;
+            RenderTexture2D rt = LoadRenderTexture(rw, rh);
+            BeginTextureMode(rt);
+            ClearBackground(BLACK);
+            drawScene(s, makeCam(tgt, yaws[v], 0.06f, hh * (v == 2 ? 3.4f : 3.1f), 30.0f), rw, rh);
+            EndTextureMode();
+            Image img = grab(rt, 1);
+            if (v == 2) ImageResizeNN(&img, vw, vh);
+            ImageDraw(&sheet, img, {0, 0, float(vw), float(vh)}, {float(cx + v * vw), float(cy), float(vw), float(vh)}, WHITE);
+            UnloadImage(img);
+            UnloadRenderTexture(rt);
+        }
+        ImageDrawText(&sheet, std::string(cg::toString(g.species)).c_str(), cx + 6, cy + vh + 3, 10, Color{225, 225, 230, 255});
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 // Random natural population as close portraits (judging how distinct faces are).
 int runFaces(Scene& s, const std::string& path, uint64_t seed) {
     s.studio = true;
@@ -1355,7 +1417,7 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races, peoples, traits, decayOut, anatomy, studiesOut;
+    std::string shots, studio, population, heads, skulls, faces, cuts, races, peoples, traits, decayOut, anatomy, studiesOut;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -1365,6 +1427,7 @@ int main(int argc, char** argv) {
         else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
         else if (a == "--population" && i + 1 < argc) population = argv[++i];
         else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
+        else if (a == "--skulls" && i + 1 < argc) skulls = argv[++i];
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
         else if (a == "--peoples" && i + 1 < argc) peoples = argv[++i];
@@ -1456,6 +1519,12 @@ int main(int argc, char** argv) {
     }
     if (!cuts.empty()) {
         int rc = runCuts(s, cuts, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!skulls.empty()) {
+        int rc = runSkulls(s, skulls, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;

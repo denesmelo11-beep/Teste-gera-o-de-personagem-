@@ -23,6 +23,15 @@ void Builder::initHead() {
     hNb_ = Curve{{0, 2.0f}, {0.4f, 2.2f}, {1.0f, 2.1f}};
 }
 
+// Forward push of the muzzle at height s, in head units (0 for flat-faced peoples).
+float Builder::muzzleDepth(float s) const {
+    const float M = g.body.muzzle;
+    if (M <= 0.0f) return 0.0f;
+    if (g.body.snout == 1) return M * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s));
+    if (g.body.snout == 2) return M * 0.62f * smoothstep(0.46f, 0.36f, s) * (0.45f + 0.55f * smoothstep(0.0f, 0.22f, s));
+    return M * 0.46f * smoothstep(0.50f, 0.38f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+}
+
 SuperRing Builder::headRing(float s) const {
     const float h = m.h;
     const FaceStyle& f = g.face;
@@ -49,14 +58,30 @@ SuperRing Builder::headRing(float s) const {
     // Wolf: a long, narrow snout from a stop just under the eyes; the lower jaw shorter.
     // Reptile: a long, flat snout from just under the eyes, the jaw nearly as long as it.
     const bool wolf = g.body.snout == 1, reptile = g.body.snout == 2;
-    const float muz = wolf      ? g.body.muzzle * 0.72f * smoothstep(0.445f, 0.355f, s) * (0.35f + 0.65f * smoothstep(0.02f, 0.24f, s))
-                      : reptile ? g.body.muzzle * 0.62f * smoothstep(0.46f, 0.36f, s) * (0.45f + 0.55f * smoothstep(0.0f, 0.22f, s))
-                                : g.body.muzzle * 0.46f * smoothstep(0.53f, 0.40f, s) * (0.50f + 0.50f * smoothstep(0.0f, 0.18f, s));
+    const float muz = muzzleDepth(s);
     const float narrow = wolf || reptile ? 0.30f : 0.22f;
-    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.44f, 0.32f, s) : smoothstep(0.5f, 0.3f, s))),
-            (hZc_(s) + chinFwd + 0.5f * muz) * h,
-            std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz, 0.01f) * h, std::max(hDb_(s) + crownBack - 0.5f * muz, 0.01f) * h,
-            hNf_(s), hNb_(s)};
+    // Skull construction (HeadForm): the same few landmarks for every people, so a beak,
+    // a brute's brow or an elongated cranium are built by the skull itself.
+    const HeadForm& k = g.head;
+    // (Cheekbones and temples are shaped on the face side only: see headPoint.)
+    // Square planes keep the jaw wide; rounded ones taper it.
+    wMul *= 1.0f + k.box * 0.12f * bump((s - 0.16f) / 0.18f);
+    // The forehead slopes straight back from the brow ridge, the vault riding lower.
+    const float slope = k.forehead * smoothstep(0.57f, 0.97f, s);
+    // A low, flattened vault: the crown comes down and the cranium widens a little.
+    const float flat = k.flatTop * smoothstep(0.62f, 1.0f, s);
+    wMul *= 1.0f + 0.12f * k.flatTop * bump((s - 0.80f) / 0.18f);
+    // Rostrum: the mid-face below the eyes drawn forward into a narrowing wedge (the base a
+    // beak grows from); the jaw under it recedes so the beak, not a chin, ends the face.
+    const float ro = k.rostrum * 0.46f * smoothstep(0.50f, 0.38f, s) * (0.55f + 0.45f * smoothstep(0.02f, 0.26f, s));
+    wMul *= 1.0f - 0.34f * k.rostrum * smoothstep(0.48f, 0.26f, s);
+    const float occ = k.occiput * 0.22f * bump((s - 0.70f) / 0.27f);
+    const float nF = hNf_(s) * (1.0f + 0.45f * k.box), nB = hNb_(s) * (1.0f + 0.35f * k.box);
+    return {std::max(hW_(s), 0.01f) * h * g.body.headWidth * wMul * (1.0f - narrow * g.body.muzzle * (wolf ? smoothstep(0.50f, 0.28f, s) : smoothstep(0.60f, 0.26f, s))),
+            (hZc_(s) + chinFwd + 0.5f * muz + 0.5f * ro - 0.04f * slope - 0.5f * occ) * h,
+            std::max(hDf_(s) + chinDrop * 0.5f + full + 0.5f * muz + 0.5f * ro - 0.14f * slope - 0.16f * flat, 0.01f) * h,
+            std::max(hDb_(s) + crownBack + 0.2f * muz - 0.5f * ro + 0.5f * occ - 0.10f * flat, 0.01f) * h,
+            std::max(nF, 1.4f), std::max(nB, 1.4f)};
 }
 
 // Forward relief of the face in head units; xn is the horizontal position in
@@ -71,9 +96,12 @@ float Builder::faceRelief(float xn, float s) const {
     // sockets: the main pair higher under a higher brow, a smaller pair below it set a
     // little wider, a bony ridge between them and the cheekbones pushed down.
     const bool four = f.eyePairs >= 2;
-    const float browS = four ? 0.600f : 0.56f, eyeS = four ? 0.506f : 0.468f, cheekS = four ? 0.330f : 0.375f;
+    const float lift = eyeLift(g);
+    const float browS = (four ? 0.600f : 0.56f) + lift, eyeS = (four ? 0.506f : 0.468f) + lift, cheekS = four ? 0.330f : 0.375f;
     r += (0.006f + 0.026f * f.browRidge + 0.008f * f.eyeDepth) * bump((s - browS) / 0.045f) * bump(xn / 0.36f);
-    r -= (0.008f + 0.020f * f.eyeDepth) * bump((s - eyeS) / (four ? 0.045f : 0.055f)) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
+    // On a snout the socket groove would cut a trench across the muzzle: keep it shallow.
+    const float snoutK = 1.0f - 0.8f * saturate(muzzleDepth(s) / 0.12f);
+    r -= (0.008f + 0.020f * f.eyeDepth) * snoutK * bump((s - eyeS) / (four ? 0.045f : 0.055f)) * bump((ax - 0.165f * f.eyeSpacing) / 0.115f);
     if (four) {
         // The lower pair sits in a socket as deep as the upper one, under a lid-and-brow
         // ridge of its own, with a lower-lid pad beneath: each eye is framed in bone.
@@ -83,8 +111,8 @@ float Builder::faceRelief(float xn, float s) const {
         r += 0.006f * bump((s - 0.350f) / 0.022f) * bump((ax - ex2) / 0.085f);
     }
     // Cheekbones and the hollow beneath them.
-    r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * bump((s - cheekS) / 0.05f) * bump((ax - 0.235f) / 0.09f);
-    r -= 0.016f * f.cheekHollow * bump((s - 0.27f) / 0.06f) * bump((ax - 0.22f) / 0.08f);
+    r += (0.010f + 0.016f * std::max(0.0f, f.cheek)) * snoutK * bump((s - cheekS) / 0.05f) * bump((ax - 0.235f) / 0.09f);
+    r -= 0.016f * f.cheekHollow * snoutK * bump((s - 0.27f) / 0.06f) * bump((ax - 0.22f) / 0.08f);
     // Lips, the dip below them, and the chin.
     const float mw = f.mouthWidth;
     r += (0.003f + 0.004f * f.lipFullness) * bump((s - 0.239f) / 0.024f) * bump(xn / (0.075f * mw));
@@ -105,7 +133,27 @@ Vec3 Builder::headPoint(float theta, float s) const {
     SuperRing r = headRing(s);
     Vec2 p = r.point(theta);
     float sn = std::sin(theta);
-    if (sn > 0) p.y += faceRelief(p.x / (m.h * g.body.headWidth), s) * m.h * smoothstep(0.0f, 0.6f, sn);
+    // Cheekbones flare and temples pinch on the front half of the head (the sides of the
+    // face), fading out towards the face's centre line and round the back of the skull.
+    const HeadForm& k = g.head;
+    if (k.zygoma > 0.0f || k.temples > 0.0f) {
+        const float side = smoothstep(-0.35f, 0.25f, sn) * (1.0f - 0.75f * sn * sn * sn * sn);
+        const float dx = (k.zygoma * 0.17f * bump((s - 0.37f) / 0.13f) - k.temples * 0.30f * bump((s - 0.73f) / 0.15f)) * side;
+        p.x *= 1.0f + dx;
+    }
+    if (sn > 0) {
+        const float xn = p.x / (m.h * g.body.headWidth);
+        p.y += faceRelief(xn, s) * m.h * smoothstep(0.0f, 0.6f, sn);
+        // Snouted heads: the bridge of the nose runs from the brow down onto the snout,
+        // so the muzzle grows out of the skull instead of starting at a step under the eyes.
+        if (g.body.muzzle > 0.0f) {
+            const bool wolf = g.body.snout == 1, reptile = g.body.snout == 2;
+            const float sb = wolf ? 0.355f : reptile ? 0.36f : 0.40f, wB = wolf || reptile ? 0.20f : 0.27f;
+            const float ramp = smoothstep(0.64f, sb, s);
+            const float bridge = std::max(0.0f, 0.85f * muzzleDepth(sb) * ramp * std::sqrt(ramp) - muzzleDepth(s));
+            p.y += bridge * m.h * bump(xn / wB) * smoothstep(0.2f, 0.8f, sn);
+        }
+    }
     return m.headOrigin + Vec3{p.x, s * m.h, p.y};
 }
 
@@ -194,7 +242,7 @@ void Builder::buildHead() {
     L.startPole = m.headOrigin + Vec3{0, -0.01f * h, hZc_(0) * h};
     L.tStart = 0;
     L.poleEnd = true;
-    L.endPole = m.headOrigin + Vec3{0, h, hZc_(1.0f) * h};
+    L.endPole = m.headOrigin + Vec3{0, h * (1.0f - 0.04f * g.head.flatTop), headRing(1.0f).zc};
     L.tEnd = 1;
     Part& hp = newPart();
     hp.smoothAlways = true;  // smooth in the smooth style; the faceted style flattens it like the body
@@ -307,7 +355,7 @@ void Builder::buildEyelids() {
     struct Row {
         float ey, ex, scale;
     };
-    const Row rows[] = {{0.506f, 0.180f * f.eyeSpacing, 0.86f}, {0.392f, 0.200f * f.eyeSpacing, 0.78f}};
+    const Row rows[] = {{0.506f + eyeLift(g), 0.180f * f.eyeSpacing, 0.86f}, {0.392f + eyeLift(g), 0.200f * f.eyeSpacing, 0.78f}};
     Part& p = newPart();
     const int head = ch.rig.head;
     const Mat lid{g.palette.skin * 0.92f, MaterialClass::Skin};
@@ -397,7 +445,8 @@ void Builder::buildFaceDecals() {
         auto ok = [&](uint32_t a, uint32_t b, uint32_t c) {
             const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
             const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
-            return std::fabs(n.z) > 0.45f && onHead[a] && onHead[b] && onHead[c];
+            // The eyes keep steeper quads: on a snouted skull they sit where the face turns.
+            return std::fabs(n.z) > (kind == SubmeshKind::FaceEyes ? 0.15f : 0.45f) && onHead[a] && onHead[b] && onHead[c];
         };
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i) {
@@ -410,7 +459,7 @@ void Builder::buildFaceDecals() {
     auto ec = FaceLayout::eyeCell(EyeExpr::Neutral);
     auto mc = FaceLayout::mouthCell(MouthExpr::Neutral);
     // Dense enough to follow the nose bridge and the sockets.
-    size_t eyes = patch(SubmeshKind::FaceEyes, FaceLayout::kEyeX0, FaceLayout::kEyeX1, FaceLayout::kEyeS0, FaceLayout::kEyeS1,
+    size_t eyes = patch(SubmeshKind::FaceEyes, FaceLayout::kEyeX0, FaceLayout::kEyeX1, FaceLayout::kEyeS0 + eyeLift(g), FaceLayout::kEyeS1 + eyeLift(g),
                         lod.headSeg, std::max(4, lod.headSeg / 3), ec[0], ec[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH);
     size_t mouth = patch(SubmeshKind::FaceMouth, FaceLayout::kMouthX0, FaceLayout::kMouthX1, FaceLayout::kMouthS0,
                          FaceLayout::kMouthS1, std::max(6, lod.headSeg / 2), 8, mc[0], mc[1], FaceLayout::kMouthCellW,

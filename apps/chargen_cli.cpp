@@ -87,6 +87,7 @@ void usage() {
         "  portraits --seed N --count K [--yaw 0.35] [--zoom 4.6] [--out portraits.png]  (variedade de rostos)\n"
         "  atlas   --seed N [--out atlas.png]                      (atlas facial 2D)\n"
         "  stats   [--count 300]                                   (tempo e contagem de triangulos)\n"
+        "  silhouettes [--seeds 6] [--res 32] [--limit 0.8] [--plain] [--all]  (sombra da cabeca: povo mais parecido)\n"
         "  info    --seed N | --key CG1-...                         (chave, descricao, metricas, tracos, hitboxes)\n"
         "  family  --seed N [--children 4] [--species S]           (pais, filhos herdando, e o pai envelhecendo)\n"
         "  corpse  --seed N [--days 30]                            (linha do tempo da decomposicao)\n"
@@ -306,6 +307,60 @@ int cmdStats(const Args& a) {
         std::printf("LOD%d: %.0f tris em media, %.2f ms/personagem (inclui atlas facial)\n", lod, double(tris[lod]) / count,
                     ms[lod] / count);
     std::printf("LOD0 min/max tris: %zu / %zu\n", minT, maxT);
+    return 0;
+}
+
+// Head silhouettes per people: the flat shadow of each head (front and side, 32 px, no
+// hair) compared between every pair of peoples, averaged over several people of each.
+// Prints each people's closest neighbour; --plain builds the plain human skull for every
+// people (how heads were built before HeadForm), --all prints the whole matrix.
+int cmdSilhouettes(const Args& a) {
+    const int seeds = int(a.num("seeds", 6)), res = int(a.num("res", 32)), n = int(Species::Count);
+    const float limit = a.flt("limit", 0.80f);
+    std::vector<std::vector<HeadSilhouette>> sil(static_cast<size_t>(n));
+    for (int s = 0; s < n; ++s)
+        for (int i = 0; i < seeds; ++i) {
+            GenomeOptions o;
+            o.species = Species(s);
+            o.sex = i % 2 ? Sex::Female : Sex::Male;
+            o.age = AgeGroup::Adult;
+            Genome g = randomGenome(uint64_t(1000 + 37 * i), o);
+            g.hair = HairStyle::Bald;
+            g.facialHair = FacialHair::None;
+            if (a.flag("plain")) g.head = HeadForm{};
+            GenOptions go;
+            go.lod = 2;
+            sil[size_t(s)].push_back(headSilhouette(generateCharacter(g, go), res));
+        }
+    auto sim = [&](int x, int y) {
+        float t = 0;
+        int k = 0;
+        for (int i = 0; i < seeds; ++i)
+            for (int j = 0; j < seeds; ++j)
+                if (x != y || i != j) t += silhouetteSimilarity(sil[size_t(x)][size_t(i)], sil[size_t(y)][size_t(j)]), ++k;
+        return k ? t / float(k) : 1.0f;
+    };
+    std::vector<float> M(size_t(n * n));
+    for (int x = 0; x < n; ++x)
+        for (int y = x; y < n; ++y) M[size_t(x * n + y)] = M[size_t(y * n + x)] = sim(x, y);
+    int over = 0;
+    float sum = 0;
+    for (int x = 0; x < n; ++x) {
+        int best = -1;
+        for (int y = 0; y < n; ++y)
+            if (y != x && (best < 0 || M[size_t(x * n + y)] > M[size_t(x * n + best)])) best = y;
+        const float v = M[size_t(x * n + best)];
+        sum += v;
+        over += v > limit;
+        std::printf("%-12s proprio %.2f  mais parecido: %-12s %.2f%s\n", std::string(toString(Species(x))).c_str(), M[size_t(x * n + x)],
+                    std::string(toString(Species(best))).c_str(), v, v > limit ? "  <- acima do limite" : "");
+    }
+    std::printf("media do vizinho mais proximo: %.3f; %d povos acima de %.2f\n", sum / float(n), over, limit);
+    if (a.flag("all"))
+        for (int x = 0; x < n; ++x) {
+            for (int y = 0; y < n; ++y) std::printf(" %.2f", M[size_t(x * n + y)]);
+            std::printf("  %s\n", std::string(toString(Species(x))).c_str());
+        }
     return 0;
 }
 
@@ -664,6 +719,7 @@ int main(int argc, char** argv) {
     if (a.cmd == "sheet") return cmdSheet(a);
     if (a.cmd == "portraits") return cmdPortraits(a);
     if (a.cmd == "stats") return cmdStats(a);
+    if (a.cmd == "silhouettes") return cmdSilhouettes(a);
     if (a.cmd == "info") return cmdInfo(a);
     if (a.cmd == "family") return cmdFamily(a);
     if (a.cmd == "corpse") return cmdCorpse(a);

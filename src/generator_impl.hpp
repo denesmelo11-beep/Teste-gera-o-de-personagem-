@@ -79,6 +79,7 @@ public:
     Vec3 torsoSurfaceToward(Vec3 p, float* theta = nullptr) const;  // torso surface on the ray from its axis through p
 
     // Head (head.cpp). x in head units (unscaled by headWidth), s from chin.
+    float muzzleDepth(float s) const;            // head units
     SuperRing headRing(float s) const;           // metres, relative to headOrigin
     float faceRelief(float xn, float s) const;   // sculpted features (nose, brow, cheeks, lips), head units
     float headWarp(float phi) const;             // denser angles at the face centre

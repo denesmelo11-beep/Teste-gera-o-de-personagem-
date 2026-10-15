@@ -694,13 +694,19 @@ void Animator::buildRagdoll() {
         ctr = ctr / float(std::max<size_t>(1, childNodes_[i].size()));
         seg_[i] = ctr * 0.5f;
         const Vec3 a = bones[i].restWorld, b = a + ctr;
-        float s = 0;
+        float s = 0, far = 0;
         for (const Vec3& v : verts[i]) {
             const Vec3 ab = b - a;
             const float t = dot(ab, ab) > 1e-8f ? saturate(dot(v - a, ab) / dot(ab, ab)) : 0.0f;
-            s += length(v - (a + ab * t));
+            const float d = length(v - (a + ab * t));
+            s += d;
+            far = std::max(far, d);
         }
-        if (!verts[i].empty()) rad[i] = clamp(0.85f * s / float(verts[i].size()), 0.015f * H, 0.14f * H);
+        // The skull rests on its widest point: long or domed crania (HeadForm) would sink
+        // into the ground on the mean radius, taking the scalp's hair roots with them.
+        float r = 0.85f * s / float(std::max<size_t>(1, verts[i].size()));
+        if (int(i) == c_.rig.head) r = std::max(r, 0.62f * far);
+        if (!verts[i].empty()) rad[i] = clamp(r, 0.015f * H, 0.14f * H);
     }
     for (Node& nd : nodes_) {
         nd.radius = rad[size_t(nd.bone)] * (nd.tip ? 0.8f : 1.0f);

@@ -202,19 +202,23 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
     const EyeParams P = eyeParams(expr);
     const EyeShape S = eyeShapeFor(g);
     float W = S.W, Hh = S.Hh;
-    float ey = 0.462f, exOff = 0.188f * f.eyeSpacing;
+    const float lift = eyeLift(g);
+    float ey = 0.462f + lift, exOff = 0.188f * f.eyeSpacing;
     // A second pair (four-eyed peoples) sits below and a little wider, smaller and
     // without brows; the main pair moves up to make room.
     struct Row {
         float ey, ex, scale;
         bool main;
     };
-    std::vector<Row> rows{{0.462f, 0.188f * f.eyeSpacing, 1.0f, true}};
-    if (f.eyePairs >= 2) rows = {{0.506f, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f, 0.200f * f.eyeSpacing, 0.78f, false}};
+    std::vector<Row> rows{{0.462f + lift, 0.188f * f.eyeSpacing, 1.0f, true}};
+    if (f.eyePairs >= 2) rows = {{0.506f + lift, 0.180f * f.eyeSpacing, 0.86f, true}, {0.392f + lift, 0.200f * f.eyeSpacing, 0.78f, false}};
     const Vec3 lash = lerp(pal.brow * 0.4f, Vec3{0.08f, 0.05f, 0.05f}, 0.6f);
     const Vec3 skinDark = pal.skin * Vec3{0.70f, 0.56f, 0.54f};
     const float lidDrop = saturate(f.restLid + 0.18f * f.ageLines + (f.eyeShape == 5 ? 0.22f : 0.0f) + P.lidDrop);
-    const float lw = f.lashWeight;
+    // The people's eye look (the older glow / hollow flags still win).
+    const EyeLook look = f.glowEyes ? EyeLook::Glow : f.hollowEyes ? EyeLook::Hollow : g.head.eyeLook;
+    const bool irisFill = look == EyeLook::Slit || look == EyeLook::Bird || look == EyeLook::Black;  // no white shows
+    const float lw = irisFill ? 0.0f : f.lashWeight;
 
     // Reference style: the upper lid is a heavy, nearly straight line rising from
     // the inner corner to the outer one; the inner end of the eye is squared, the
@@ -299,33 +303,52 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                     gc = lerp(gc, f.glow * 0.45f, 0.6f * sh);
                     return Vec4(gc, 1);
                 }
-                return Vec4(lerp(sclera, sclera * Vec3{0.72f, 0.74f, 0.84f}, sh), 1);
+                if (irisFill) {  // the iris is the whole opening: dark under the lid, luminous below, a dark rim
+                    const float v = saturate(0.5f - 0.5f * l.y / Hh), rim = saturate(length(Vec2{l.x / W, (l.y + 0.1f * Hh) / (0.95f * Hh)}));
+                    if (look == EyeLook::Black) {
+                        const Vec3 deep{0.035f, 0.035f, 0.045f};
+                        return Vec4(lerp(deep, pal.iris * 0.35f, 0.55f * smoothstep(0.70f, 1.0f, rim)), 1);
+                    }
+                    Vec3 col = lerp(pal.iris * 0.45f, min3(pal.iris * 1.25f + Vec3{0.05f, 0.05f, 0.05f}, Vec3{1, 1, 1}), smoothstep(0.15f, 0.85f, v));
+                    col = lerp(col, pal.iris * 0.25f, 0.85f * smoothstep(0.78f, 1.0f, rim));
+                    return Vec4(lerp(col, col * 0.45f, 0.7f * sh), 1);
+                }
+                // Sunken eyes sit in the brow's shadow: the white is dimmed, the iris carries the light.
+                const Vec3 sc = look == EyeLook::Sunken ? sclera * Vec3{0.58f, 0.55f, 0.55f} : sclera;
+                return Vec4(lerp(sc, sc * Vec3{0.72f, 0.74f, 0.84f}, sh), 1);
             }, lo, hi);
             // Iris: huge and slightly taller than wide, set towards the nose so the white
             // shows on the outer side; dark under the lash, luminous at the bottom.
             // Iris taller than the opening (cropped by both lids), ~60% of the eye wide.
-            const float irR = 0.56f * W * S.iris * f.irisSize * P.irisScale, irH = 1.04f * irR;
+            const float lookIris = look == EyeLook::Beady ? 0.62f : look == EyeLook::Sunken ? 0.70f : irisFill ? 1.25f : 1.0f;
+            const float irR = 0.56f * W * S.iris * f.irisSize * P.irisScale * lookIris, irH = 1.04f * irR;
             const Vec2 ir{irR, irH};
             const Vec2 ic{-0.01f * W, 0.5f * (Hh - Hh * S.lowK) - 0.10f * Hh};
             const bool blind = f.scarType == 5 && (side > 0) == (g.seed % 2 == 0);
             const Vec2 icF = toFace(ic);
             const Vec2 ilo = icF - Vec2{irH * 1.2f, irH * 1.2f}, ihi = icF + Vec2{irH * 1.2f, irH * 1.2f};
-            if (!f.glowEyes) cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir)); },
+            if (!f.glowEyes && !irisFill) cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), ic, ir)); },
                     [&](Vec2 p) {
                         Vec2 l = toLocal(p) - ic;
                         float k = length(Vec2{l.x / ir.x, l.y / ir.y});
                         float v = saturate(0.5f - 0.5f * l.y / ir.y);  // 0 top .. 1 bottom
                         const Vec3 irc = lerp(blind ? lerp(pal.iris, Vec3{0.80f, 0.84f, 0.86f}, 0.78f) : pal.iris, Vec3{0.74f, 0.76f, 0.76f}, f.milky);
                         Vec3 col = lerp(irc * 0.22f, irc * 0.95f, smoothstep(0.16f, 0.60f, v));
+                        if (look == EyeLook::Beady) col = col * 0.45f;  // a dark bead
+                        if (look == EyeLook::Sunken) col = min3(col * 1.35f + Vec3{0.06f, 0.05f, 0.03f}, Vec3{1, 1, 1});  // a spark in the shadow
                         col = lerp(col, irc * 1.45f + Vec3{0.06f, 0.06f, 0.06f}, smoothstep(0.62f, 0.95f, v) * 0.8f);
                         col = lerp(col, irc * 0.30f, smoothstep(0.86f, 1.0f, k) * 0.8f);  // rim
                         if (blind) col = lerp(col, Vec3{0.86f, 0.88f, 0.90f}, 0.5f);
                         return Vec4(min3(col, Vec3{1, 1, 1}), 1);
                     }, ilo, ihi);
-            Sdf pupil = g.face.pupil == PupilStyle::Slit
-                            ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{0.12f * ir.x, 0.72f * ir.y}); })
-                            : Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.10f * ir.y}, Vec2{0.26f * ir.x, 0.30f * ir.y}); });
-            if (!blind && !f.glowEyes) cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.10f, 0.55f * (1.0f - f.milky)), ilo, ihi);
+            const bool slit = g.face.pupil == PupilStyle::Slit;
+            Sdf pupil = g.face.pupil == PupilStyle::Bar ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.06f * ir.y}, Vec2{0.78f * ir.x, 0.15f * ir.y}); })
+                        : look == EyeLook::Bird ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.04f * ir.y}, Vec2{0.40f * ir.x, 0.42f * ir.y}); })
+                        : slit             ? Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic, Vec2{0.12f * ir.x, 0.80f * ir.y}); })
+                                           : Sdf([=](Vec2 p) { return sdEllipse(toLocal(p), ic + Vec2{0, 0.10f * ir.y}, Vec2{0.26f * ir.x, 0.30f * ir.y}); });
+            const float pupilA = irisFill ? 0.95f : look == EyeLook::Beady ? 0.85f : 0.55f;
+            if (!blind && !f.glowEyes && look != EyeLook::Black)
+                cp.fill([&](Vec2 p) { return std::max(openSdf(p), pupil(p)); }, Vec4(pal.iris * 0.06f, pupilA * (1.0f - f.milky)), ilo, ihi);
             if (f.hollowEyes)  // rotted away: the opening is a dark socket
                 cp.fill(openSdf, [&](Vec2 p) {
                     const Vec2 l = toLocal(p);
@@ -333,17 +356,26 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                     return Vec4(lerp(Vec3{0.04f, 0.03f, 0.03f}, Vec3{0.20f, 0.10f, 0.09f}, k), 1.0f);
                 }, lo, hi);
             // Highlights: a crisp spot up in the iris and a soft glint at the bottom.
+            // Small looks get a relatively bigger catchlight: at a distance it is the eye.
+            const float hlK = look == EyeLook::Beady || look == EyeLook::Sunken ? 1.6f : look == EyeLook::Black ? 1.5f : 1.0f;
             const Vec2 hl = ic + Vec2{-0.28f * ir.x, 0.22f * ir.y};
             if (!f.hollowEyes)
-                cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.16f * ir.x, 0.12f * ir.y})); },
+                cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl, Vec2{0.16f * hlK * ir.x, 0.12f * hlK * ir.y})); },
                         Vec4(1, 1, 1, 0.90f * (1.0f - 0.7f * f.milky)), ilo, ihi);
             // Soft vertical glint in the lower iris (as in the reference).
             const Vec2 hl2 = ic + Vec2{0.08f * ir.x, -0.40f * ir.y};
-            if (!f.glowEyes && !f.hollowEyes)
+            if (!f.glowEyes && !f.hollowEyes && look != EyeLook::Beady)
                 cp.fill([&](Vec2 p) { return std::max(openSdf(p), sdEllipse(toLocal(p), hl2, Vec2{0.12f * ir.x, 0.26f * ir.y})); },
                         Vec4(lerp(pal.iris, Vec3{1, 1, 1}, 0.5f), 0.35f), ilo, ihi);
             // Upper lash: a heavy band along the lid, thin at the inner corner, thick
             // outside, wrapping down a little past the outer corner.
+            if (look == EyeLook::Bird) {  // the bare ring of skin round a bird's eye
+                Stroke ring = curveStroke([&](float t) {
+                    const float a = kTau * t;
+                    return Vec2{1.18f * W * std::cos(a), 0.5f * (Hh - Hh * S.lowK) + 1.25f * Hh * std::sin(a) * 0.9f};
+                }, [](float) { return 0.0055f; }, 28);
+                strokeLocal(ring, Vec4(lerp(pal.skin, pal.beak, 0.5f) * 1.1f, 0.85f));
+            }
             const float lt0 = 0.0048f + 0.0018f * lw, lt1 = 0.0095f + 0.0050f * lw;
             Stroke up = curveStroke([&](float x01) {
                 float x = lerp(-1.0f * W, 1.0f * W, x01);
@@ -355,13 +387,13 @@ void paintEyes(CellPainter& cp, const Genome& g, EyeExpr expr) {
                 const float yb = yLo(W);
                 const float wing = 0.010f + 0.012f * lw;
                 Stroke wg{{end, end + Vec2{wing, 0.25f * wing}}, {0.85f * lt1, 0.0008f}};
-                strokeLocal(wg, Vec4(lash, 1));
+                if (!irisFill) strokeLocal(wg, Vec4(lash, 1));
                 up.pts.push_back(Vec2{W + 0.001f, lerp(end.y, yb, 0.30f)});
                 up.w.push_back(0.45f * lt1);
                 up.pts.push_back(Vec2{W - 0.003f, lerp(end.y, yb, 0.55f)});
                 up.w.push_back(0.0008f);
             }
-            strokeLocal(up, Vec4(lash, 1));
+            strokeLocal(up, Vec4(irisFill ? pal.skin * 0.30f : lash, 1));
             // Lid crease: a soft warm shadow above the lash (depth without a drawn line).
             Stroke crease = curveStroke([&](float t) {
                 float x = lerp(-0.85f * W, 0.95f * W, t);
@@ -621,14 +653,18 @@ void paintSkin(CellPainter& cp, const Genome& g) {
         st.bounds(lo, hi);
         cp.fill(st, Vec4(mul * 0.5f, a), lo, hi);
     };
-    const float ex = (f.eyePairs >= 2 ? 0.180f : 0.188f) * f.eyeSpacing, ey = f.eyePairs >= 2 ? 0.506f : 0.462f;
+    const float ex = (f.eyePairs >= 2 ? 0.180f : 0.188f) * f.eyeSpacing, ey = (f.eyePairs >= 2 ? 0.506f : 0.462f) + eyeLift(g);
     const float sx = (g.seed % 2 == 0) ? 1.0f : -1.0f;  // the side scars and marks favour
 
     // Eye sockets: shade under the brow ridge and around the eye, deeper for deep-set eyes.
     if (f.eyePairs >= 2)  // the lower, smaller pair (the main one is shaded below, moved up)
-        for (float sd : {1.0f, -1.0f}) soft({sd * 0.200f * f.eyeSpacing, 0.398f}, {0.095f, 0.050f}, {0.78f, 0.68f, 0.72f}, 0.40f + 0.50f * f.eyeDepth, 0.8f);
+        for (float sd : {1.0f, -1.0f}) soft({sd * 0.200f * f.eyeSpacing, 0.398f + eyeLift(g)}, {0.095f, 0.050f}, {0.78f, 0.68f, 0.72f}, 0.40f + 0.50f * f.eyeDepth, 0.8f);
     for (float sd : {1.0f, -1.0f}) {
         soft({sd * ex, ey + 0.020f}, {0.150f, f.eyePairs >= 2 ? 0.070f : 0.090f}, {0.80f, 0.70f, 0.74f}, 0.30f + 0.55f * f.eyeDepth, 0.8f);
+        // Socket wells: a darker, tighter shadow round the eye that survives at game distance
+        // (a dark well with a light point inside reads as an eye in two or three pixels).
+        if (g.head.socket > 0.01f)
+            soft({sd * ex, ey + 0.006f}, {0.125f, f.eyePairs >= 2 ? 0.058f : 0.072f}, {0.42f, 0.36f, 0.40f}, 0.75f * g.head.socket, 0.6f);
         soft({sd * 0.075f, ey + 0.012f}, {0.050f, 0.060f}, {0.78f, 0.68f, 0.70f}, 0.25f + 0.35f * f.eyeDepth);  // inner corner
         // Tired, puffy under-eyes.
         soft({sd * (ex + 0.005f), ey - 0.062f}, {0.085f, 0.024f}, {0.80f, 0.70f, 0.78f}, 0.55f * f.eyeBags);
@@ -822,7 +858,7 @@ Image paintFaceAtlas(const Genome& g) {
     auto eyeJob = [&](int i) {
         auto c = FaceLayout::eyeCell(EyeExpr(i));
         CellPainter cp(px, W, c[0], c[1], FaceLayout::kEyeCellW, FaceLayout::kEyeCellH, FaceLayout::kEyeX0,
-                       FaceLayout::kEyeX1, FaceLayout::kEyeS0, FaceLayout::kEyeS1);
+                       FaceLayout::kEyeX1, FaceLayout::kEyeS0 + eyeLift(g), FaceLayout::kEyeS1 + eyeLift(g));
         paintEyes(cp, g, EyeExpr(i));
     };
     auto mouthJob = [&](int i) {

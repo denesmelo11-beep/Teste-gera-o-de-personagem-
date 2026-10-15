@@ -1,5 +1,8 @@
 // Sanity tests: determinism, mesh validity, skinning, winding, export.
 #include <cmath>
+#include <cstddef>
+#include <iterator>
+#include <string>
 #include <cstdio>
 
 #include "chargen/animation.hpp"
@@ -290,6 +293,58 @@ int main() {
         CHECK(b32 && *b32 == bytes, "base32 nao ida-e-volta");
         bytes[20] ^= 0x5A;
         CHECK(!loadGenome(bytes), "genoma corrompido aceito");
+        // A snapshot saved before HeadForm existed (the same bytes up to it) still loads,
+        // with the plain human skull it was drawn with.
+        {
+            const uint32_t n = uint32_t(offsetof(Genome, head));
+            std::vector<uint8_t> old(bytes.begin(), bytes.begin() + 4);
+            for (int i = 0; i < 4; ++i) old.push_back(uint8_t(n >> (8 * i)));
+            const auto* raw = reinterpret_cast<const uint8_t*>(&g);
+            old.insert(old.end(), raw, raw + n);
+            uint32_t h = 2166136261u;
+            for (uint32_t i = 0; i < n; ++i) h = (h ^ raw[i]) * 16777619u;
+            for (int i = 0; i < 4; ++i) old.push_back(uint8_t(h >> (8 * i)));
+            auto g3 = loadGenome(old);
+            CHECK(g3 && g3->seed == g.seed && g3->body.height == g.body.height && g3->head.forehead == 0.0f &&
+                      g3->head.eyeLook == EyeLook::Classic, "genoma antigo (sem HeadForm) nao carregou");
+        }
+    }
+    // Head silhouettes: the peoples the critique found sharing one face (troll, undead,
+    // night elf, high elf) now differ in the shadow of the skull, and every pair of them
+    // is clearly further apart than with the plain human skull.
+    {
+        const Species ps[] = {Species::Troll, Species::Undead, Species::NightElf, Species::HighElf, Species::Orc, Species::Ogre};
+        const int np = int(std::size(ps)), ns = 3;
+        std::vector<HeadSilhouette> cur, plain;
+        for (Species sp : ps)
+            for (int i = 0; i < ns; ++i) {
+                GenomeOptions o;
+                o.species = sp;
+                o.sex = i % 2 ? Sex::Female : Sex::Male;
+                o.age = AgeGroup::Adult;
+                Genome g = randomGenome(uint64_t(500 + 31 * i), o);
+                g.hair = HairStyle::Bald;
+                g.facialHair = FacialHair::None;
+                GenOptions go;
+                go.lod = 2;
+                cur.push_back(headSilhouette(generateCharacter(g, go)));
+                g.head = HeadForm{};
+                plain.push_back(headSilhouette(generateCharacter(g, go)));
+            }
+        auto sim = [&](const std::vector<HeadSilhouette>& v, int a, int b) {
+            float t = 0;
+            for (int i = 0; i < ns; ++i)
+                for (int j = 0; j < ns; ++j) t += silhouetteSimilarity(v[size_t(a * ns + i)], v[size_t(b * ns + j)]);
+            return t / float(ns * ns);
+        };
+        for (int a = 0; a < np; ++a)
+            for (int b = a + 1; b < np; ++b) {
+                const float c = sim(cur, a, b), p = sim(plain, a, b);
+                // Distinct enough outright, or at least clearly more distinct than with the human skull:
+                // the skulls must stay cohesive, so distinctness is not pushed past what reads well.
+                CHECK(c < 0.92f && (c < 0.86f || c < p - 0.02f), "cabecas de %s e %s parecidas demais: %.2f (cranio humano %.2f)",
+                      std::string(toString(ps[a])).c_str(), std::string(toString(ps[b])).c_str(), c, p);
+            }
     }
     {
         Character c = generateCharacter(randomGenome(11));
