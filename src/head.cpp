@@ -444,7 +444,8 @@ void Builder::buildFaceDecals() {
         auto ok = [&](uint32_t a, uint32_t b, uint32_t c) {
             const Vec3 A = p.pos[a], B = p.pos[b], C = p.pos[c];
             const Vec3 n = normalize(cross(B - A, C - A), {0, 0, 1});
-            return std::fabs(n.z) > 0.45f && onHead[a] && onHead[b] && onHead[c];
+            // Eyes on a snout sit on the steep sides of the face: keep them, or they vanish.
+            return std::fabs(n.z) > (kind == SubmeshKind::FaceEyes ? 0.15f : 0.45f) && onHead[a] && onHead[b] && onHead[c];
         };
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i) {

@@ -973,8 +973,10 @@ void Builder::buildBeak() {
                      : kind == 1 || kind == 4 ? lerp(bc, Vec3{0.9f, 0.75f, 0.3f}, 0.4f)
                      : lerp(g.palette.skin, bc, 0.3f) * 0.85f;
     // Face centre line, where the beak meets it.
-    const float zf = headPoint(0.5f * kPi, 0.33f).z;
-    const Vec3 c0 = Vec3{0, headPoint(0.5f * kPi, 0.33f).y, zf - 0.08f * h};
+    // Set low on the face, well below the eyes, so the eyes read above it.
+    const float sBeak = 0.25f;
+    const float zf = headPoint(0.5f * kPi, sBeak).z;
+    const Vec3 c0 = Vec3{0, headPoint(0.5f * kPi, sBeak).y, zf - 0.08f * h};
     Part& p = newPart();
     p.id = headPartId_;
     auto weight = [=](float, float, Vec3) { return one(head); };
@@ -1002,7 +1004,7 @@ void Builder::buildBeak() {
             const float taper = std::pow(1.0f - t, taperE);
             // The root swells into the face so the beak grows out of the skull, not off it.
             const float root = 1.0f - smoothstep(0.0f, 0.45f, t);
-            float w = widM * taper * (1.0f + 0.45f * root), dd = depth * (0.35f + 0.65f * taper) * (1.0f + (upper ? 0.9f : 0.3f) * root);
+            float w = widM * taper * (1.0f + 0.45f * root), dd = depth * (0.35f + 0.65f * taper) * (1.0f + (upper ? 0.6f : 0.3f) * root);
             if (kind == 5) w = widM * (1.0f - 0.25f * t) * (1.0f + 0.3f * root);  // a broad, round-ended bill
             // Upper: a rounded ridge on top, flat underneath; lower: the reverse.
             SuperRing sr = upper ? SuperRing{w, 0, dd, 0.25f * dd, 1.6f, 3.0f} : SuperRing{w, 0, 0.25f * dd, dd, 3.0f, 1.6f};
