@@ -139,13 +139,17 @@ noturno, alto-elfo, orc e ogro voltarem a dividir a mesma cabeça.
 |---|
 | ![rostos](docs/rostos.png) |
 
-| Os 37 cortes (`--cuts`) | Expressões |
+| Os 49 cortes (`--cuts`) | Expressões |
 |---|---|
 | ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
 
 | Barbas (`--heads`): nenhuma, barba rala, bigode, cavanhaque, curta, cheia, longa, trançada |
 |---|
 | ![barbas](docs/cabelos_barbas.png) |
+
+| Marcas (`CHARGEN_ART`, `CHARGEN_TATTOO`, `CHARGEN_PIERCE`, `CHARGEN_FURMARKS`): faixas tribais, pintura de guerra, manga de runas, cicatrizes, costelas pintadas, runas brilhantes; máscara pintada nos olhos, lágrimas, argolas e piercings; pelagem malhada, faixa no dorso, membros listrados |
+|---|
+| ![marcas](docs/marcas.png) |
 
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
@@ -542,7 +546,11 @@ pares (os de baixo em contraponto).
 ### Cabelo e física
 - Catálogo pensado para um mundo medieval sombrio: rente, raspado, repartido, para trás, bagunçado,
   tonsura de monge, corte tigela, tranças de guerreiro, trança-coroa, tranças, coques, rabos de
-  cavalo, dreads, cachos longos, muito longo e outros (37 no total, com pesos por sexo, idade e persona).
+  cavalo, dreads, cachos longos, muito longo e outros (49 no total, com pesos por sexo, idade, persona e povo).
+- Cortes de guerreiro e de povo: crista penteada para trás sobre laterais raspadas (moicano de orc e
+  troll, terminando num rabicho), crista trançada nórdica, rabo alto com laterais raspadas, topete,
+  trancinhas rente ao couro (cornrows), meia cabeça raspada, juba selvagem, franja longa sobre um
+  olho, tranças finas com contas de metal, maria-chiquinha, coques duplos e mechas em tufos.
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
 - Cortes curtos, topo dos longos e presos: **mechas facetadas** (cunhas com crista e ponta) deitadas
   sobre uma calota fina, sobrepostas como telhas e penteadas por um campo de direção próprio de

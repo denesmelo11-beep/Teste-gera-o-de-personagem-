@@ -838,6 +838,27 @@ void paintSkin(CellPainter& cp, const Genome& g) {
                     }
                 }
                 break;
+            case 4:  // chin lines: curving strokes from the lower lip down over the chin
+                for (float sd : {1.0f, -1.0f})
+                    for (int k = 0; k < 3; ++k) {
+                        const float o = 0.022f * float(k);
+                        line({{sd * (0.010f + o), 0.165f}, {sd * (0.030f + 1.3f * o), 0.110f}, {sd * (0.040f + 1.6f * o), 0.045f}},
+                             {0.0040f, 0.0045f, 0.0020f}, rel, a);
+                    }
+                line({{0.0f, 0.150f}, {0.0f, 0.040f}}, {0.0050f, 0.0030f}, rel, a);
+                break;
+            case 5:  // eye band: a painted mask from temple to temple across the eyes
+                cp.fill([=](Vec2 p) {
+                    const float yc = 0.455f + 0.04f * p.x * p.x / 0.09f;  // rises a little towards the temples
+                    return std::max(std::fabs(p.y - yc) - (0.060f - 0.020f * std::fabs(p.x) / 0.32f), std::fabs(p.x) - 0.32f);
+                }, Vec4(rel * 0.5f, 0.9f), {-0.34f, 0.38f}, {0.34f, 0.56f});
+                break;
+            case 6:  // tear lines: two dark streaks running down from under the eyes
+                for (float sd : {1.0f, -1.0f}) {
+                    line({{sd * 0.175f, 0.405f}, {sd * 0.182f, 0.310f}, {sd * 0.192f, 0.200f}}, {0.0090f, 0.0075f, 0.0020f}, rel, a);
+                    if (g.seed % 2) line({{sd * 0.215f, 0.400f}, {sd * 0.226f, 0.320f}}, {0.0065f, 0.0015f}, rel, a);
+                }
+                break;
             default: {  // sigil: a ring with a dot and a stem
                 cp.fill([=](Vec2 p) { return std::fabs(length(p - Vec2{0.0f, 0.690f}) - 0.032f) - 0.0045f; }, Vec4(rel * 0.5f, a),
                         {-0.05f, 0.64f}, {0.05f, 0.74f});

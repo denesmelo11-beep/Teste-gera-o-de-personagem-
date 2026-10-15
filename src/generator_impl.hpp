@@ -40,6 +40,8 @@ struct Marks {
     // Beast (on all fours): the trunk runs along z from the rump (t = 0) to the chest front
     // (t = 1); its profile is Builder::beastRing.
     float beastZR = 0, beastZF = 0;
+    // Living world (orb): the boulder trunk that swallows torso and skull, the face set in it.
+    Vec3 orbC{}, orbR{};
 };
 
 // Cross-section of the beast trunk: centre height, half width, extent up and down.
@@ -103,6 +105,8 @@ private:
     void buildFeet();
     void buildDigitigradeFeet();
     void buildBones();
+    void buildBodyArt();
+    void buildPiercings();  // ear hoops, brow studs, a lip ring and muzzle whiskers  // tattoos, paint and scars on the body; markings in a coat
     void applyFur();
     void buildFurTufts();
     void buildTail();
