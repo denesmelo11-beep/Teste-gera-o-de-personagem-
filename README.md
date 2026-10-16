@@ -10,6 +10,29 @@ O núcleo não tem dependências externas (só a biblioteca padrão de C++20; o 
 exportador glTF e um renderizador de preview em software foram escritos aqui). O visualizador usa
 Raylib 5.5 (opcional).
 
+## Vitrine
+
+![grupo](docs/vitrine/grupo.png)
+
+| Em movimento: cada um repete a sua ação (rugido, magia, golpe, esquiva, patada) |
+|---|
+| ![grupo em ação](docs/vitrine/grupo_acao.gif) |
+
+| Duelo: golpes, esquiva, magia, reações físicas e a queda em ragdoll | Roleta: cada vaga sorteia uma pessoa nova de qualquer povo |
+|---|---|
+| ![duelo](docs/vitrine/duelo.gif) | ![roleta](docs/vitrine/roleta.gif) |
+
+| Bestiário: feras quadrúpedes, colosso de pedra, gigante de quatro braços, horror de quitina, centauro, espectro, limo e esqueleto |
+|---|
+| ![bestiário](docs/vitrine/bestiario.png) |
+| ![bestiário em ação](docs/vitrine/bestiario_acao.gif) |
+
+| Expressões: o mesmo rosto 2D (olhos e boca) passando por alegria, susto, raiva, tristeza, confiança, dor e fala |
+|---|
+| ![expressões](docs/vitrine/expressoes.gif) |
+
+Tudo isso sai de `tools/vitrine/montar.sh` (cenas em texto, ver [Cenas](#cenas-de-vitrine---scene)).
+
 | Folha de modelo (`chargen_viewer --studio`) | Anatomia em planos |
 |---|---|
 | ![folha](docs/folha_modelo.png) | ![anatomia](docs/anatomia.png) |
@@ -65,6 +88,72 @@ Raylib 5.5 (opcional).
 |---|---|
 | ![esqueleto](docs/folha_esqueleto.png) | ![corrida](docs/esqueleto_corrida.png) |
 
+### Cabeças e olhos por povo (`HeadForm`)
+
+A identidade de cada povo mora na **silhueta da cabeça**, não no detalhe pintado: todos os povos
+usam o mesmo código de crânio (mesma densidade de facetas, mesma luz), e cada um muda as proporções
+dele. `Genome::head` traz os eixos do crânio, todos em zero para o humano:
+
+| campo | o que faz |
+|---|---|
+| `forehead` | a testa recua a partir da arcada (brutos, répteis) |
+| `occiput` | a nuca se alonga para trás (crânios longos: elfo noturno, cefálide, inseto) |
+| `temples` | têmporas pinçadas, a parte de cima do rosto afina (elfos, mortos, espectros) |
+| `zygoma` | maçãs do rosto abertas para os lados (orc, goblin, naga, demônio) |
+| `box` | planos quadrados e blocados (anão, ogro, cristalino) ou arredondados e afinando (alto-elfo, fada) |
+| `rostrum` | o meio do rosto avança um pouco (prognatismo leve: orc, troll, naga) |
+| `flatTop` | abóbada baixa e achatada (tartaruga, naga, ogro) |
+| `socket` | sombra extra na órbita, para o olho ler como um poço escuro de longe |
+
+Os eixos são contidos de propósito: um crânio coeso vale mais que um crânio diferente a qualquer
+custo. O aviano tem crânio redondo e o bico engrossa na raiz, nascendo da cara. Nos povos de
+focinho, a ponte do nariz desce da testa até o focinho e a mandíbula continua ligada ao pescoço,
+então não há degrau nem buraco sob os olhos; a órbita e as maçãs não cavam sulco no focinho. Os
+olhos sobem junto com o focinho (`eyeLift`): ficam no crânio, acima de onde o focinho começa.
+
+E um **vocabulário de olhos** (`EyeLook`) pensado para 2 ou 3 pixels: o que lê de longe é contraste
+de valor (órbita escura com um ponto claro), não desenho.
+
+| olhar | povos | como lê |
+|---|---|---|
+| `Classic` | humano, gnomo, centauro | esclera branca, íris grande (retratos, expressão) |
+| `Glow` | elfos, draenei, mortos-vivos, espectros, cristalinos | a abertura toda brilha |
+| `Beady` | goblin, troll | íris escura e miúda, um brilho forte |
+| `Sunken` | orc, ogro, anão | branco apagado na sombra da arcada, a íris acesa como faísca |
+| `Slit` | dragonato, sáurio, naga, demônio (pupila de bode) | a íris enche o olho, pupila em fenda |
+| `Bird` | aviano | redondo, só íris, pupila grande e anel de pele |
+| `Black` | tauren, tartaruga, peixe, inseto | escuro e brilhante, com reflexo molhado |
+| `Hollow` | ossadas e podres | órbita vazia |
+
+Cada pessoa varia em volta do crânio do seu povo. Tudo é sorteado num fluxo próprio, então as
+chaves `CG1` continuam gerando a mesma pessoa (cabelo, corpo, cores); só a cabeça muda para a forma
+do povo. Genomas salvos com `saveGenome` antes disso continuam carregando, com o crânio humano de
+antes.
+
+| Antes e depois (3/4, perfil e em resolução de jogo), cabeças raspadas para o crânio aparecer |
+|---|
+| ![antes e depois](docs/cabecas_antes_depois.png) |
+
+| Todos os povos (`chargen_viewer --skulls out.png`; `CHARGEN_SEX=f`, `CHARGEN_KEEPHAIR=1`) |
+|---|
+| ![cabeças dos povos](docs/cabecas_povos.png) |
+| ![cabeças dos povos, mulheres](docs/cabecas_povos_mulheres.png) |
+
+**Régua de silhueta.** `cg::headSilhouette` desenha a sombra chapada da cabeça (frente e perfil,
+32 px, em unidades de cabeça) e `cg::silhouetteSimilarity` compara duas (interseção sobre união).
+`chargen_cli silhouettes` mostra, para cada povo, o povo de cabeça mais parecida (`--plain` mede com o
+crânio humano de antes, `--all` imprime a matriz). Os testes reprovam se troll, morto-vivo, elfo
+noturno, alto-elfo, orc e ogro voltarem a dividir a mesma cabeça.
+
+| par | antes | depois |
+|---|---|---|
+| troll × morto-vivo | 0,87 | 0,74 |
+| elfo noturno × alto-elfo | 0,91 | 0,80 |
+| troll × elfo noturno | 0,84 | 0,72 |
+| orc × ogro | 0,95 | 0,86 |
+| morto-vivo × alto-elfo | 0,89 | 0,85 |
+| média do vizinho mais próximo (35 povos) | 0,89 | 0,85 |
+
 | Rostos dos povos (`--heads` com `CHARGEN_SPECIES=all`) |
 |---|
 | ![rostos dos povos](docs/povos_rostos.png) |
@@ -73,7 +162,7 @@ Raylib 5.5 (opcional).
 |---|
 | ![rostos](docs/rostos.png) |
 
-| Os 37 cortes (`--cuts`) | Expressões |
+| Os 49 cortes (`--cuts`) | Expressões |
 |---|---|
 | ![cortes](docs/cortes.png) | ![expressoes](docs/expressoes.png) |
 
@@ -81,8 +170,124 @@ Raylib 5.5 (opcional).
 |---|
 | ![barbas](docs/cabelos_barbas.png) |
 
+| Marcas (`CHARGEN_ART`, `CHARGEN_TATTOO`, `CHARGEN_PIERCE`, `CHARGEN_FURMARKS`): faixas tribais, pintura de guerra, manga de runas, cicatrizes, costelas pintadas, runas brilhantes; máscara pintada nos olhos, lágrimas, argolas e piercings; pelagem malhada, faixa no dorso, membros listrados |
+|---|
+| ![marcas](docs/marcas.png) |
+
 ![física](docs/fisica_corrida.png)
 ![esquiva](docs/fisica_esquiva.png)
+
+## Animação procedural com física (`chargen/motion.hpp`)
+
+Os clipes são escritos como **frases de movimento**: antecipação (o peso vai para trás, o tronco
+enrola), ação explosiva, contato segurado, *follow-through* e recuperação solta, com poses-chave
+fortes. Por cima disso, `cg::Animator` faz o corpo se mover com física:
+
+- **Músculos-mola**: cada junta persegue o clipe com uma mola amortecida em vez de copiá-lo. Juntas
+  proximais são rígidas, as distais mais soltas, então o movimento quebra junta após junta e os
+  membros passam do ponto e assentam. A frequência escala com o tamanho como um pêndulo: o ogro
+  balança pesado e lento, o gnomo estala. Cada clipe tem uma curva de **tensão** (golpe rígido,
+  recuperação solta).
+- **Inércia**: a aceleração de cada junta balança o segmento pendurado nela (a cabeça chicoteia
+  quando o peito para, os braços atrasam na virada) e o corpo inclina na aceleração e nas curvas.
+- **Impactos**: `hit(direção, força, ponto)` injeta momento angular na cadeia a partir do ponto
+  atingido, cambaleia o quadril e soma uma reação direcional por cima de qualquer ação.
+- **IK**: pés no chão (qualquer função de altura), presos durante o apoio, inclinados na rampa, com
+  o quadril descendo quando uma perna não alcança; olhar com coluna e cabeça; alcançar com qualquer
+  braço. Duas ou quatro pernas, dois ou quatro braços.
+- **Ragdoll**: corpo de partículas Verlet (uma por junta e ponta de membro, pelve e caixa torácica
+  rígidas), limites anatômicos do rig, colisão consigo mesmo, atrito com o chão e um tônus muscular
+  que se apaga — a morte desaba em vez de cair como tábua. Cabelo e cauda continuam nas molas e
+  descansam no chão. O corpo dorme quando para.
+- **Eventos** para jogo e som: `contact`, `release`, `roar`, `footL`/`footR`, `land`, `impact`, `ragdoll`.
+
+Novas ações: `hit` (recuo pela direção do golpe), `death`, `cast` (magia: junta no quadril, canaliza
+tremendo diante do peito, empurra as palmas — o segundo par de braços abre e acompanha) e `roar`
+(grito de guerra: inspira, afunda numa base larga com o peito para fora e os braços flexionados).
+Para engines que só tocam clipes, `makeDefaultClips` passa todos pelo modelo muscular
+(`bakePhysical`, loops continuam sem emenda) e a morte é um ragdoll simulado e gravado
+(`bakeDeathClip`); `makeAuthoredClips` devolve as poses como desenhadas. Custo: ~0,08 ms por
+personagem por quadro.
+
+```cpp
+cg::Animator anim(personagem);
+anim.setBase(idle);
+anim.play(ataque, 0.15f);
+// a cada quadro:
+anim.update(dt, posicaoNoMundo, rotacaoNoMundo);   // inclui cabelo, cauda e busto
+cg::poseMatrices(personagem.skeleton, anim.pose(), global, skin);
+anim.hit(direcaoDoGolpe, 1.0f, pontoAtingido);
+anim.die(direcaoDoGolpe);
+```
+
+| Frases de movimento e ragdoll (`chargen_cli motion`) | Corpos variados: 4 braços, centauro, worgen com cauda |
+|---|---|
+| ![combo](docs/anim_combo.gif) | ![corpos](docs/anim_corpos.gif) |
+| **Peso pela escala**: gnomo, humano e ogro no mesmo ataque e na mesma sequência de golpes | **Andar e correr em círculo**: inclinação na curva, pés presos no apoio, cabelo e cauda |
+| ![peso](docs/anim_peso.gif) | ![corrida](docs/anim_corrida.gif) |
+
+**Traços de espécie**: a cauda da naga desliza rente ao chão e ondula ao andar, as asas
+abrem no rugido e no ataque e, na morte, caem pesadas e se deitam no chão em vez de
+sustentar o corpo; a névoa do espectro flutua. Ossos sem carne (as pernas que a naga
+mantém no esqueleto) ficam fora dos músculos, do IK e do ragdoll.
+
+![especies](docs/anim_especies.gif)
+
+**Quatro braços**: o par de baixo tem pose própria. Em repouso fica pendurado ao lado
+do quadril com os antebraços à frente; no ataque guarda a barriga e solta um gancho
+atrasado; na magia alimenta o feitiço com as palmas baixas; no rugido contrai os punhos
+na frente do quadril.
+
+![quatro braços](docs/anim_quatro_bracos.gif)
+
+**Feras quadrúpedes** (corpo de besta, como o Gloomhound) têm clipes próprios. O passo
+apoia três patas por vez, o trote move as diagonais juntas e o galope alterna as
+patas com um tempo de voo. A mordida avança o tronco pelos ombros e fecha a boca no
+contato. A patada (`swipe`) empina a frente e rasga com a pata dianteira. O uivo
+(`cast`) ergue o focinho, o rosnado (`roar`) abaixa a frente e o golpe faz o tronco
+recuar. Na morte, as patas da frente cedem antes das de trás e o corpo tomba de lado.
+`makeTrotClip` e `makeSwipeClip` existem para todos os corpos; quem não é fera recebe a
+corrida e o ataque.
+
+![feras](docs/anim_feras.gif)
+
+**Chifres e bicos** saem de uma base de pele afundada no crânio (no bico, uma cúpula de
+pele nua como a cera de uma ave de rapina). Há dez formatos de chifre (`hornKind`): para
+trás, carneiro, reto, bovino, saca-rolhas, gancho para frente, galhada, coroa de
+espinhos, chifre único na testa e rente ao crânio. Cada personagem também varia na
+curvatura, no comprimento, na espessura, na seção oval, nos anéis e, às vezes, tem um
+chifre quebrado. Há sete bicos (`beak`): rapina, longo, curto, papagaio, pato, calau com
+casco e corvo. `chargen_cli portraits --horns K --beak K --bald` força o formato.
+
+![chifres](docs/chifres.png)
+![bicos](docs/bicos.png)
+
+![poses](docs/anim_frases.png)
+
+## Usar no jogo
+
+A biblioteca não tem dependências além da biblioteca padrão de C++20. Dentro de outro projeto
+CMake só ela é compilada (o CLI, os testes e o visualizador ficam de fora; `-DCHARGEN_BUILD_TOOLS=ON`
+liga os dois primeiros):
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(chargen
+  GIT_REPOSITORY https://github.com/denesmelo11-beep/Teste-gera-o-de-personagem-.git
+  GIT_TAG v1.0.0)
+FetchContent_MakeAvailable(chargen)          # ou: add_subdirectory(externo/chargen)
+target_link_libraries(meu_jogo PRIVATE chargen::chargen)
+```
+
+```cpp
+#include "chargen/engine.hpp"
+
+cg::CharacterKey k;
+k.seed = semente;
+k.options.species = cg::Species::Orc;
+cg::Character npc = cg::generateFromKey(k);      // malha, esqueleto, rig, rosto
+std::string chave = cg::encodeKey(k);            // salva o NPC em 32 caracteres
+```
 
 ## Compilar
 
@@ -113,15 +318,44 @@ chargen_viewer --decay morte.png --seed 12              # estágios de decomposi
 chargen_viewer --decaylevel 0.7 ...                     # qualquer modo com os personagens mortos nesse estágio
 chargen_viewer --anatomy caudas.png --seed 2            # tipos de cauda, cristas dorsais, presas para fora/dentro
 chargen_viewer --studies estudos.png --seed 1           # estudos (CHARGEN_STUDYFACES=1 retratos; CHARGEN_STUDIES="a b" subconjunto)
+chargen_viewer --peoples povos_tracos.png --seed 5      # os 20 povos de traços, homem e mulher (CHARGEN_FROM=cyclops: a partir de um povo)
+chargen_viewer --traits tracos.png --seed 3             # 32 painéis, um traço de perto cada (CHARGEN_TRAITS="0 4 9" subconjunto)
 # variáveis de ambiente úteis: CHARGEN_HEADRAND=m|f (retratos aleatórios por sexo), CHARGEN_HEADYAW,
 # CHARGEN_HEADZOOM, CHARGEN_CUTS="19 20" (só alguns cortes, maiores), CHARGEN_NOSKIN=1 (sem camada de pele),
 # CHARGEN_SPECIES=dwarf|...|all (retratos e folha de modelo de um povo)
 # CHARGEN_TAIL=0..5, CHARGEN_SPINES="contagem tipo tamanho", CHARGEN_TUSKCURVE=-1..1, CHARGEN_HAIR=nome,
+# CHARGEN_WINGS=0..3, CHARGEN_FOLD=1, CHARGEN_LOWER=0..3, CHARGEN_HANDS=0..4, CHARGEN_FEET=0..1, CHARGEN_BEAK=0..3,
+# CHARGEN_CREST=0..4, CHARGEN_SKIN=0..5, CHARGEN_TENTACLES=0..6 (forçam traços de espécie em qualquer modo)
 # CHARGEN_DEF / CHARGEN_MUSCLE=0..1 (forçam variáveis); CHARGEN_CHECK=1|2 conta (e lista) dobras e arestas abertas nos ombros
 # estilo da malha: padrão = low-poly facetado; --crease = suave com vincos; --smooth = totalmente suave
 ```
 
-Teclas: `N` novos personagens · `1-5` idle/walk/run/attack/dodge · `R` correr em círculo ·
+### Cenas de vitrine (`--scene`)
+
+`chargen_viewer --scene cena.txt` encena personagens num arquivo de texto, sem recompilar: fundo
+pintado, luz, câmera (com órbita), quem está onde e o que cada um faz e quando. O movimento passa
+pelo `cg::Animator` (músculos, IK dos pés, cabelo e cauda, golpes físicos e ragdoll).
+
+```text
+res 960 540                 # resolução interna       scale 2   (ampliação sem filtro)
+backdrop papel.png          # ou: sky r g b r g b     fill r g b r g b   light x y z   shadow r g b a
+camera 0 1.4 0  0.0 0.03 12 28                       # alvo, yaw, pitch, distância, fov   (orbit rad/s)
+labels 110 96 80            # nome do povo sob os pés
+shot 2.0 saida/grupo.png    # foto no tempo 2,0 s     frames 4 25 saida/quadros 4   (GIF que fecha o ciclo)
+actor orc -1.75 0.1 0.35 sex=m seed=2 age=adult repeat=4 cues="0.9:roar 2.5:attack"
+actor orc|troll|naga 0 0 0 reroll=1.6 phase=0.3     # sorteia outra pessoa da lista a cada 1,6 s
+actor study:centaur_warlord 2.9 -1 -0.6 cues="1.2:hit:front 3:die:back:1.8"
+actor human 0 0 0 headat=1.6 cues="0:emo:Joy 0.8:emo:Rage"   # retratos alinhados pela cabeça
+```
+
+Chaves de `actor`: `sex`, `seed`, `age`, `persona`, `archetype`, `arms=4`, os traços (`wings`, `lower`,
+`hands`, `feet`, `beak`, `crest`, `skin`, `tentacles`, `art`, `tattoo`, `furmarks`, `tail`, `horns`,
+`hair`, `fold`, `muscle`), `base` (clipe para onde volta), `repeat`, `reroll`, `phase`, `headat` e
+`cues` com qualquer clipe, `base:clipe`, `hit:lado[:força]`, `die:lado[:força]`, `emo:Rage|off` e
+`revive`. `tools/vitrine/montar.sh` gera os fundos (`fundos.py`), roda as cenas e monta os GIFs
+(ffmpeg + gifsicle): `xvfb-run -a tools/vitrine/montar.sh build/chargen_viewer pasta_de_saida`.
+
+Teclas: `N` novos personagens · `1-9` idle/walk/run/attack/dodge/hit/cast/roar/death · `R` correr em círculo ·
 `E` expressões · `W` vento · `L` baixa resolução · `Espaço` pausa · arrastar = câmera.
 Headless funciona com `xvfb-run -a chargen_viewer --shots out`.
 
@@ -139,7 +373,9 @@ chargen_cli info      --seed 9 --species troll --sex male     # chave, descriç�
 chargen_cli info      --key CG1-1400000000001ZR1ZZZZY1000000000F
 chargen_cli family    --seed 7 --species dwarf --children 3   # pais, filhos herdando, o pai envelhecendo
 chargen_cli corpse    --days 30                               # linha do tempo da decomposição e regenerações
-chargen_cli stress    --count 2000                            # fuzz: genomas extremos + validação + tempos
+chargen_cli stress    --count 2000                            # fuzz: genomas extremos + validação + tempos (+ animação/ragdoll)
+chargen_cli motion    --actors "orc,ogre@4,study:centaur_warlord" --script "idle:1,attack,hit:front,cast,roar,death:back"
+                      [--fps 25] [--samescale] [--stiffness 1] [--overlap 1] [--out motion.gif|.png]
 ```
 
 ## Para a engine do RPG (`chargen/engine.hpp`)
@@ -249,6 +485,50 @@ costuras (mortos-vivos), tentáculos faciais (draenei) e pesos próprios de cort
 - Paleta sombria: matizes fantásticos (verdes, azuis, lilases) são dessaturados e escurecidos.
 `GenomeOptions::species` escolhe um povo; `mixedSpecies` sorteia a população do mundo inteiro.
 
+### Traços de espécie (`src/traits.cpp`)
+Peças anatômicas compostas livremente no genoma (`BodyShape` e `FaceStyle`), para chegar a quase
+qualquer raça de fantasia sem um caso especial por povo. Cada uma tem ossos, pesos e limites no
+mesmo esqueleto, então as animações e a física existentes as movem:
+- **Asas** (`wings`): membrana de morcego/dragão, penas ou inseto; abertas ou dobradas nas costas;
+  ossos `wing/wingarm/wingfore/winghand.L/R` em `rig.wings`.
+- **Corpo inferior** (`lowerBody`): cauda de serpente enrolada (ossos `coil0..7` em `rig.serpent`,
+  ponta com física), rastro espectral (`wisp0..3`) ou monte de gosma com poça (`ooze0..2`). Os ossos de perna continuam existindo, então
+  clipes e retargeting não quebram.
+- **Corpo de besta** (`stance = 1`): um quadrúpede de verdade, não um humano curvado. Tronco
+  horizontal (garupa redonda, lombo recolhido, cernelha alta sobre um peito fundo), pescoço curto e
+  grosso levando a cabeça baixa à frente, patas dianteiras maciças (escápula, úmero, antebraço,
+  quartela) e traseiras digitígradas (joelho à frente, jarrete atrás), todas terminando em patas
+  largas com almofada, quatro dedos e garras (ou cascos). As quatro patas são `rig.legs[0..3]`
+  (dianteiras do peito, traseiras do quadril), então o trote em diagonal já funciona; os ossos de
+  braço ficam recolhidos no peito para soquetes. Cauda, espinhos, tufos, asas, tentáculos, cristais,
+  esqueleto e decomposição seguem o tronco deitado. `furPattern = 3` pinta listras de tigre.
+  Funciona em qualquer povo (um worgen de quatro vira lobo atroz).
+- **Corpo-planeta** (`orb`): o tronco engolido por uma esfera dos joelhos até acima da cabeça, o
+  rosto saindo da frente, braços e pernas curtos, pedras orbitando.
+- **Mãos** (`hands`): garras de três dedos, pinça de caranguejo (osso `pincer` com dobradiça,
+  `rig.pincers`), tentáculos no lugar dos dedos, pás de escavar. **Pés** (`feet`): garras de ave.
+- **Costas**: tentáculos com física (`backTentacles`, `rig.tentacles`), casco de tartaruga com
+  plastrão (`shell`), lascas de cristal (`shards`).
+- **Cabeça**: bico de rapina, longo ou curto (`beak`), mandíbulas, antenas finas ou plumosas com
+  física (`rig.antennae`), olhos compostos, focinho réptil (`snout = 2`), orelhas-barbatana e sem
+  orelha, cristas (barbatana, penas, gola óssea, capuz de naja), olho ciclope, rosto sem olhos
+  (`eyeKind` 2 e 3) e bocarra de orelha a orelha com fileiras de dentes (`maw`).
+- **Pele** (`skinKind`): escamas, cristal facetado com veios luminosos e crosta de magma com
+  fissuras incandescentes, recortadas na malha ao longo das bordas das placas; olhos abertos pelo
+  tronco e membros (`bodyEyes`), presos aos ossos da pele onde nascem.
+
+Vinte povos usam esses traços: dragonborn, saurian (lagartos e kobolds), avian, naga, tortle,
+insectoid, fishfolk, demon, cephalid, fae, crystalborn, emberkin, wraith, cyclops (gigantes de um
+olho), talpid (toupeiras escavadoras), oculite (vigias cobertos de olhos), slime (gosma viva),
+rimemaw (caçadores do gelo de bocarra), gloomhound (caçadores cegos de quatro patas) e gravitant
+(mundos vivos). Eles ficam fora de
+`mixedSpecies` (as chaves antigas geram os mesmos personagens); peça-os por `GenomeOptions::species`
+ou ligue qualquer traço em qualquer povo. Hitboxes novas: `wing` e `tentacle`.
+A cobertura de formas usada como referência está em [docs/especies.md](docs/especies.md).
+
+![Povos de traços](docs/povos_tracos.png)
+![Traços de perto](docs/tracos.png)
+
 ### Tom
 Sério e sombrio: fundo de estúdio ardósia-azulado, sombras profundas e frias, gradação que tira a
 saturação ("sem cores de bala"), peles castigadas em vez de porcelana, tons fantásticos apagados,
@@ -339,7 +619,11 @@ pares (os de baixo em contraponto).
 ### Cabelo e física
 - Catálogo pensado para um mundo medieval sombrio: rente, raspado, repartido, para trás, bagunçado,
   tonsura de monge, corte tigela, tranças de guerreiro, trança-coroa, tranças, coques, rabos de
-  cavalo, dreads, cachos longos, muito longo e outros (37 no total, com pesos por sexo, idade e persona).
+  cavalo, dreads, cachos longos, muito longo e outros (49 no total, com pesos por sexo, idade, persona e povo).
+- Cortes de guerreiro e de povo: crista penteada para trás sobre laterais raspadas (moicano de orc e
+  troll, terminando num rabicho), crista trançada nórdica, rabo alto com laterais raspadas, topete,
+  trancinhas rente ao couro (cornrows), meia cabeça raspada, juba selvagem, franja longa sobre um
+  olho, tranças finas com contas de metal, maria-chiquinha, coques duplos e mechas em tufos.
 - Topo do crânio com volume (calota); cortes curtos esculpidos por campos de volume.
 - Cortes curtos, topo dos longos e presos: **mechas facetadas** (cunhas com crista e ponta) deitadas
   sobre uma calota fina, sobrepostas como telhas e penteadas por um campo de direção próprio de
@@ -391,6 +675,7 @@ src/              genome.cpp (população, personas, anatomia, paletas)
                   builder.*  (lofts, recortes, normais com vinco, cavidade, solda, pesos)
                   generator.cpp (tronco/pescoço, pelve-coxas, braços, mãos, pés, roupa íntima, caudas, cristas dorsais, colisores)
                   head.cpp (cabeça, nariz, decals, camada de pele) · hair.cpp (calota, massas, franjas, barbas, orelhas)
+                  traits.cpp (asas, serpente, pinças, tentáculos, casco, bicos, antenas, cristas)
                   bones.cpp (esqueleto real, decomposição, buracos na carne, esqueletos)
                   face.cpp (atlas facial) · physics.cpp · animation.cpp · gltf.cpp · render.cpp
                   engine.cpp (chaves, métricas, hitboxes, sockets, malha compacta, decomposição, LOD, famílias, validação, fuzz)

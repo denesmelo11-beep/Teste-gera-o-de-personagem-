@@ -1,0 +1,13 @@
+# Duelo: golpes, esquiva, magia, reacoes fisicas e a queda em ragdoll.
+res 960 540
+scale 1
+backdrop papel.png
+fill 0.62 0.60 0.58  0.50 0.44 0.36
+light -0.5 0.75 0.45
+shadow 90 70 50 60
+camera 0 1.0 0  0.3 0.07 5.2 30
+orbit -0.08
+warmup 0.8
+frames 7.6 25 saida/duelo_quadros
+actor orc        -0.62 0  1.5708 sex=m seed=2 age=adult cues="0.2:roar 1.75:hit:front 2.4:attack 4.45:hit:front:1.4 5.25:attack 6.05:die:front:1.8"
+actor dragonborn  0.62 0 -1.5708 sex=m seed=6 age=adult wings=1 cues="1.4:attack 2.6:dodge 3.4:cast 5.25:dodge 5.7:attack"

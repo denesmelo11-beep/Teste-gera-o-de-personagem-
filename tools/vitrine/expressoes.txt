@@ -1,0 +1,14 @@
+# Retratos: o mesmo rosto 2D passando por emocoes, em povos diferentes.
+res 960 400
+scale 1
+backdrop papel.png
+fill 0.62 0.60 0.58  0.50 0.44 0.36
+light -0.4 0.7 0.6
+shadow 0 0 0 0
+camera 0 1.66 0  0.0 0.03 1.55 30
+warmup 1.0
+frames 5.6 20 saida/expressoes_quadros
+actor human -0.72 0 0.3 sex=f seed=21 age=adult headat=1.6 repeat=5.6 phase=0.0 cues="0:emo:Joy 0.8:emo:Shock 1.6:emo:Rage 2.4:emo:Sorrow 3.2:emo:Confident 4.0:emo:Pain 4.8:emo:Talk"
+actor orc -0.22 0 0.12 sex=m seed=2 age=adult headat=1.6 repeat=5.6 phase=0.8 cues="0:emo:Joy 0.8:emo:Shock 1.6:emo:Rage 2.4:emo:Sorrow 3.2:emo:Confident 4.0:emo:Pain 4.8:emo:Talk"
+actor goblin 0.22 0 -0.12 sex=m seed=5 age=adult headat=1.6 repeat=5.6 phase=1.6 cues="0:emo:Joy 0.8:emo:Shock 1.6:emo:Rage 2.4:emo:Sorrow 3.2:emo:Confident 4.0:emo:Pain 4.8:emo:Talk"
+actor draenei 0.66 0 -0.3 sex=f seed=7 age=adult headat=1.6 repeat=5.6 phase=2.4 cues="0:emo:Joy 0.8:emo:Shock 1.6:emo:Rage 2.4:emo:Sorrow 3.2:emo:Confident 4.0:emo:Pain 4.8:emo:Talk"

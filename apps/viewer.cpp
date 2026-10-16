@@ -9,18 +9,22 @@
 //
 // Interactive:  chargen_viewer [--seed N] [--count K] [--res 480]
 // Headless:     chargen_viewer --shots out_dir   (renders a set of PNGs and exits)
+// Showcase:     chargen_viewer --scene cena.txt  (staged stills and GIF frames, see runScene)
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "chargen/animation.hpp"
 #include "chargen/character.hpp"
+#include "chargen/motion.hpp"
 #include "chargen/physics.hpp"
 #include "chargen/studies.hpp"
 #include "raylib.h"
@@ -174,6 +178,7 @@ struct Actor {
     int clip = 0;
     float time = 0;
     cg::SecondaryMotion* sim = nullptr;
+    cg::Animator* anim = nullptr;  // showcase scenes: physics-driven motion instead of sim
     Mesh body{}, decal{}, skinL{};
     Model bodyModel{}, decalModel{}, skinModel{};
     Texture2D atlas{};
@@ -276,7 +281,11 @@ void unload(Actor& a) {
     UnloadTexture(a.atlas);
     delete a.sim;
     a.sim = nullptr;
+    delete a.anim;
+    a.anim = nullptr;
 }
+
+void uploadPose(Actor& a, const cg::Pose& pose);
 
 // Advance animation + locomotion + physics by dt and upload skinned vertices.
 void update(Actor& a, float dt) {
@@ -291,6 +300,11 @@ void update(Actor& a, float dt) {
     cg::Pose pose = a.posed ? a.fixed : cg::sampleClip(clip, t);
     a.sim->step(pose, a.worldPos, yawQuat(a.yaw), dt);
     if (!a.faceOverride) a.face = cg::sampleFace(clip, t);
+    uploadPose(a, pose);
+}
+
+// Skin the mesh in `pose` at the actor's place and upload body, face and skin-layer vertices.
+void uploadPose(Actor& a, const cg::Pose& pose) {
     cg::poseMatrices(a.ch.skeleton, pose, a.global, a.skin);
     cg::skinMesh(a.ch.mesh, a.skin, a.pos, a.nrm);
     const cg::Quat q = yawQuat(a.yaw);
@@ -329,6 +343,11 @@ struct Scene {
     Color skyTop{52, 62, 78, 255}, skyBottom{128, 132, 136, 255};
     bool studio = false, faceted = false;  // studio: neutral grey backdrop, no arena
     int locFaceted = -1;
+    // Showcase scenes: a painted backdrop instead of the sky and arena, their own fill light.
+    Texture2D backdrop{};
+    bool hasBackdrop = false;
+    float skyFill[3] = {0.45f, 0.52f, 0.66f}, groundFill[3] = {0.36f, 0.32f, 0.26f};
+    Color shadow{30, 30, 40, 70};
 };
 
 // Model-sheet stance: arms lowered from the bind A-pose to ~25 degrees, soft elbows.
@@ -367,27 +386,36 @@ void spawn(Scene& s, uint64_t seed, int count, const cg::GenomeOptions& opt, flo
 }
 
 void drawScene(Scene& s, const Camera3D& cam, int w, int h) {
-    if (s.studio) DrawRectangleGradientV(0, 0, w, h, Color{40, 47, 58, 255}, Color{22, 27, 35, 255});
+    if (s.hasBackdrop)
+        DrawTexturePro(s.backdrop, {0, 0, float(s.backdrop.width), float(s.backdrop.height)}, {0, 0, float(w), float(h)}, {0, 0}, 0, WHITE);
+    else if (s.studio) DrawRectangleGradientV(0, 0, w, h, Color{40, 47, 58, 255}, Color{22, 27, 35, 255});
     else DrawRectangleGradientV(0, 0, w, h, s.skyTop, s.skyBottom);
     BeginMode3D(cam);
-    if (!s.studio) DrawModel(s.plane, {0, 0, 0}, 1.0f, WHITE);
+    if (!s.studio && !s.hasBackdrop) DrawModel(s.plane, {0, 0, 0}, 1.0f, WHITE);
     // Soft blob shadows (after the ground so they blend over it).
     BeginBlendMode(BLEND_ALPHA);
     rlDisableDepthMask();
     for (const Actor& a : s.actors) {
-        float r = a.ch.height * 0.17f;
-        DrawModelEx(s.disc, {a.worldPos.x, 0.004f, a.worldPos.z}, {0, 1, 0}, 0, {r * 1.2f, 1, r}, Color{30, 30, 40, 70});
-        DrawModelEx(s.disc, {a.worldPos.x, 0.005f, a.worldPos.z}, {0, 1, 0}, 0, {r * 0.7f, 1, r * 0.6f}, Color{30, 30, 40, 50});
+        if (std::fabs(a.worldPos.y) > 0.01f || s.shadow.a == 0) continue;  // lifted (portrait rows): no ground under it
+        // Under the body, not the root: a ragdoll slides away from where it stood and a beast's
+        // trunk runs far behind its hips.
+        cg::Vec3 c = a.worldPos;
+        if (a.anim) c = a.anim->bodyCenter(), c.y = 0;
+        const bool beast = a.ch.rig.legs.size() > 2;
+        float r = a.ch.height * (beast ? 0.24f : 0.17f);
+        const float ry = a.anim ? a.yaw : 0.0f;
+        const Color c1{s.shadow.r, s.shadow.g, s.shadow.b, s.shadow.a}, c2{s.shadow.r, s.shadow.g, s.shadow.b, (unsigned char)(s.shadow.a * 5 / 7)};
+        DrawModelEx(s.disc, {c.x, 0.004f, c.z}, {0, 1, 0}, ry * RAD2DEG, {r * (beast ? 0.8f : 1.2f), 1, r * (beast ? 1.5f : 1.0f)}, c1);
+        DrawModelEx(s.disc, {c.x, 0.005f, c.z}, {0, 1, 0}, ry * RAD2DEG, {r * 0.7f, 1, r * 0.6f * (beast ? 1.6f : 1.0f)}, c2);
     }
     rlEnableDepthMask();
     EndBlendMode();
     float lp[3] = {s.light.x, s.light.y, s.light.z};
     float vp[3] = {cam.position.x, cam.position.y, cam.position.z};
-    float sky[3] = {0.45f, 0.52f, 0.66f}, gnd[3] = {0.36f, 0.32f, 0.26f};
     SetShaderValue(s.body, s.locLight, lp, SHADER_UNIFORM_VEC3);
     SetShaderValue(s.body, s.locView, vp, SHADER_UNIFORM_VEC3);
-    SetShaderValue(s.body, s.locSky, sky, SHADER_UNIFORM_VEC3);
-    SetShaderValue(s.body, s.locGround, gnd, SHADER_UNIFORM_VEC3);
+    SetShaderValue(s.body, s.locSky, s.skyFill, SHADER_UNIFORM_VEC3);
+    SetShaderValue(s.body, s.locGround, s.groundFill, SHADER_UNIFORM_VEC3);
     int fc = s.faceted ? 1 : 0;
     SetShaderValue(s.body, s.locFaceted, &fc, SHADER_UNIFORM_INT);
     SetShaderValue(s.decal, s.locLightD, lp, SHADER_UNIFORM_VEC3);
@@ -468,7 +496,7 @@ int runCuts(Scene& s, const std::string& path, uint64_t seed) {
         o.age = cg::AgeGroup::Adult;
         const cg::HairStyle hsI = cg::HairStyle(i);
         bool masc = (cg::isShortHair(hsI) && hsI != cg::HairStyle::Pixie) || hsI == cg::HairStyle::ManBun || hsI == cg::HairStyle::Topknot ||
-                    hsI == cg::HairStyle::Mullet || hsI == cg::HairStyle::Locs;
+                    hsI == cg::HairStyle::Mullet || hsI == cg::HairStyle::Locs || hsI == cg::HairStyle::WildMane || hsI == cg::HairStyle::WarriorTail;
         o.sex = masc ? cg::Sex::Male : cg::Sex::Female;
         if (i == int(cg::HairStyle::Bald)) o.age = cg::AgeGroup::Elder;
         s.actors.emplace_back();
@@ -709,6 +737,25 @@ cg::Genome withOverrides(cg::Genome g) {
     if (const char* pr = std::getenv("CHARGEN_PAIRS")) g.body.armPairs = std::atoi(pr);
     if (const char* ep = std::getenv("CHARGEN_EYEPAIRS")) g.face.eyePairs = std::atoi(ep);
     if (const char* ge = std::getenv("CHARGEN_GLOW")) g.face.glowEyes = std::atoi(ge) != 0;
+    // Species traits (debug): CHARGEN_WINGS=0..3, CHARGEN_LOWER=0..2, CHARGEN_HANDS=0..3, CHARGEN_FEET=0..1,
+    // CHARGEN_BEAK=0..3, CHARGEN_CREST=0..4, CHARGEN_SKIN=0..5, CHARGEN_TENTACLES=0..6, CHARGEN_FOLD=1
+    auto envI = [](const char* k, int& v) { if (const char* e = std::getenv(k)) v = std::atoi(e); };
+    envI("CHARGEN_WINGS", g.body.wings);
+    envI("CHARGEN_LOWER", g.body.lowerBody);
+    envI("CHARGEN_HANDS", g.body.hands);
+    envI("CHARGEN_FEET", g.body.feet);
+    envI("CHARGEN_BEAK", g.face.beak);
+    envI("CHARGEN_CREST", g.body.crest);
+    envI("CHARGEN_SKIN", g.body.skinKind);
+    envI("CHARGEN_TENTACLES", g.body.backTentacles);
+    envI("CHARGEN_ART", g.body.bodyArt);
+    envI("CHARGEN_FURMARKS", g.body.furMarks);
+    envI("CHARGEN_TATTOO", g.face.tattoo);
+    envI("CHARGEN_PIERCE", g.face.piercings);
+    if (const char* w = std::getenv("CHARGEN_WHISKERS")) g.face.whiskers = std::atoi(w) != 0;
+    if (std::getenv("CHARGEN_ARTCOLOR")) g.body.bodyArtColor = g.body.bodyArt == 6 ? cg::Vec3{0.45f, 0.95f, 0.35f} : g.body.bodyArtColor;
+    if (std::getenv("CHARGEN_FOLD")) g.body.wingsFolded = true;
+    if (std::getenv("CHARGEN_PLAINHEAD")) g.head = cg::HeadForm{};  // the plain human skull (before HeadForm)
     if (const char* hs = std::getenv("CHARGEN_HAIR"))  // hair style by name
         for (int i = 0; i < int(cg::HairStyle::Count); ++i)
             if (cg::toString(cg::HairStyle(i)) == hs) g.hair = cg::HairStyle(i);
@@ -761,8 +808,21 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
         float pitch = 0.02f;
         if (const char* pp = std::getenv("CHARGEN_PITCH")) pitch = float(std::atof(pp));
         // Long bodies (centaurs) are framed by their length as well as their height.
-        const float span = a.ch.genome.body.centaur ? 1.45f : 1.0f;
-        const float zc = a.ch.genome.body.centaur ? -0.55f * H / a.ch.genome.body.headsTall * 2.0f : 0.0f;
+        float span = a.ch.genome.body.centaur ? 1.45f : 1.0f;
+        float zc = a.ch.genome.body.centaur ? -0.55f * H / a.ch.genome.body.headsTall * 2.0f : 0.0f;
+        if (a.ch.genome.body.stance == 1 && !a.ch.genome.body.centaur) {  // on all fours: framed by its length
+            float z0 = 1e9f, z1 = -1e9f;
+            for (const cg::Vertex& vx : a.ch.mesh.vertices) z0 = std::min(z0, vx.pos.z), z1 = std::max(z1, vx.pos.z);
+            span = std::max(1.0f, 1.15f * (z1 - z0) / H);
+            zc = 0.5f * (z0 + z1);
+        } else {  // broad bodies (the boulder of a gravitant) are framed by their width
+            std::vector<float> ax;  // a high percentile, so small floating bits (moons) do not count
+            for (const cg::Vertex& vx : a.ch.mesh.vertices) ax.push_back(std::fabs(vx.pos.x));
+            if (!ax.empty()) {
+                std::nth_element(ax.begin(), ax.begin() + long(ax.size() * 97 / 100), ax.end());
+                span = std::max(span, 2.0f * ax[ax.size() * 97 / 100] / (0.55f * H));
+            }
+        }
         Camera3D cam = makeCam({0, H * fy, zc}, yaws[v % 4], pitch, H * 3.0f * span / zoom, 21.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
@@ -784,9 +844,10 @@ int runStudio(Scene& s, const std::string& path, uint64_t seed) {
 // Population sheet: a row of natural characters (mixed sex, age, persona) and a row
 // of the stylised presets, front view in studio light.
 // Every people of the world, male and female side by side (each pair framed to its own height).
-int runRaces(Scene& s, const std::string& path, uint64_t seed) {
+// first..last picks the peoples: the classic ones (default) or the trait peoples (--peoples).
+int runRaces(Scene& s, const std::string& path, uint64_t seed, int first = 0, int last = int(cg::kFirstTraitSpecies)) {
     s.studio = true;
-    const int n = int(cg::Species::Count), cols = 4, pw = 420, ph = 500;
+    const int n = last - first, cols = 4, pw = 420, ph = 500;
     const int rows = (n + cols - 1) / cols;
     Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
     const char* yawEnv = std::getenv("CHARGEN_RACEYAW");
@@ -794,20 +855,26 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
     for (int i = 0; i < n; ++i) {
         for (auto& a : s.actors) unload(a);
         s.actors.clear();
-        float Hmax = 0;
+        float Hmax = 0, half = 0, z0 = 0, z1 = 0;  // half: widest reach from the body's axis (wings); z0..z1 its length
         for (int sx = 0; sx < 2; ++sx) {
             cg::GenomeOptions o;
-            o.species = cg::Species(i);
+            o.species = cg::Species(first + i);
             o.sex = sx == 0 ? cg::Sex::Male : cg::Sex::Female;
             o.age = cg::AgeGroup::Adult;
             s.actors.emplace_back();
             Actor& a = s.actors.back();
-            a.ch = cg::generateCharacter(cg::randomGenome(seed + uint64_t(i * 7 + sx), o), gGen);
+            a.ch = cg::generateCharacter(withOverrides(cg::randomGenome(seed + uint64_t((first + i) * 7 + sx), o)), gGen);
             Hmax = std::max(Hmax, a.ch.height);
+            const bool beast = a.ch.genome.body.stance == 1 && !a.ch.genome.body.centaur;
+            for (const cg::Vertex& v : a.ch.mesh.vertices) {
+                half = std::max(half, std::fabs(v.pos.x));
+                if (beast) z0 = std::min(z0, v.pos.z), z1 = std::max(z1, v.pos.z);
+            }
         }
+        const float spacing = std::max({0.24f * Hmax, 0.92f * half, 0.45f * (z1 - z0)});
         for (int sx = 0; sx < 2; ++sx) {
             Actor& a = s.actors[size_t(sx)];
-            a.worldPos = {(sx == 0 ? -0.24f : 0.24f) * Hmax, 0, 0};
+            a.worldPos = {(sx == 0 ? -spacing : spacing), 0, 0};
             a.clips = cg::makeDefaultClips(a.ch);
             a.sim = new cg::SecondaryMotion(a.ch);
             a.posed = true;
@@ -816,8 +883,8 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
             a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
             for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
         }
-        const float H = Hmax * 1.06f;
-        Camera3D cam = makeCam({0, H * 0.5f, 0}, yaw, 0.03f, H * 2.55f, 26.0f);
+        const float H = Hmax * 1.06f, W = 2.0f * (spacing + half) + 0.8f * (z1 - z0);  // (beasts are long)
+        Camera3D cam = makeCam({0, H * 0.5f, 0.5f * (z0 + z1)}, yaw, 0.03f, std::max(H * 2.55f, W * 2.35f), 26.0f);
         RenderTexture2D prt = LoadRenderTexture(pw, ph);
         BeginTextureMode(prt);
         ClearBackground(BLACK);
@@ -825,7 +892,7 @@ int runRaces(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         char buf[96];
-        std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(i))).c_str(), s.actors[0].ch.height,
+        std::snprintf(buf, sizeof buf, "%s  %.2fm / %.2fm", std::string(cg::toString(cg::Species(first + i))).c_str(), s.actors[0].ch.height,
                       s.actors[1].ch.height);
         ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
@@ -908,6 +975,132 @@ int runAnatomy(Scene& s, const std::string& path, uint64_t seed) {
         EndTextureMode();
         Image img = grab(prt, 1);
         ImageDrawText(&img, P.label, 8, ph - 18, 12, Color{225, 225, 230, 255});
+        ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
+        UnloadImage(img);
+        UnloadRenderTexture(prt);
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
+// Species traits up close (--traits): wings from behind, heads, hands, feet and the
+// lower bodies, each panel one trait on a people that wears it.
+int runTraits(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    enum View { Body, Back, Head, HeadSide, Hand, Feet, Wide, Side };
+    struct Panel {
+        cg::Species sp;
+        cg::Sex sex;
+        View view;
+        const char* label;
+        std::function<void(cg::Genome&)> tweak;
+    };
+    auto none = [](cg::Genome&) {};
+    std::vector<Panel> panels = {
+        {cg::Species::Demon, cg::Sex::Male, Back, "asas de membrana", [](cg::Genome& g) { g.body.wings = 1; g.body.wingsFolded = false; }},
+        {cg::Species::Avian, cg::Sex::Female, Back, "asas de penas", [](cg::Genome& g) { g.body.wings = 2; g.body.wingsFolded = false; }},
+        {cg::Species::Fae, cg::Sex::Female, Back, "asas de inseto", none},
+        {cg::Species::Dragonborn, cg::Sex::Male, Back, "asas dobradas", [](cg::Genome& g) { g.body.wings = 1; g.body.wingsFolded = true; }},
+        {cg::Species::Avian, cg::Sex::Male, HeadSide, "bico de rapina", [](cg::Genome& g) { g.face.beak = 1; }},
+        {cg::Species::Avian, cg::Sex::Female, HeadSide, "bico longo", [](cg::Genome& g) { g.face.beak = 2; }},
+        {cg::Species::Tortle, cg::Sex::Male, HeadSide, "bico curto (tartaruga)", none},
+        {cg::Species::Dragonborn, cg::Sex::Male, HeadSide, "focinho reptil", [](cg::Genome& g) { g.body.wings = 0; }},
+        {cg::Species::Insectoid, cg::Sex::Male, Head, "mandibulas, antenas, olhos compostos", none},
+        {cg::Species::Fishfolk, cg::Sex::Male, Head, "barbatanas: crista e orelhas", none},
+        {cg::Species::Saurian, cg::Sex::Male, HeadSide, "gola ossea", [](cg::Genome& g) { g.body.crest = 3; }},
+        {cg::Species::Naga, cg::Sex::Male, Head, "capuz de naja", [](cg::Genome& g) { g.body.crest = 4; g.body.armPairs = 1; }},
+        {cg::Species::Cephalid, cg::Sex::Male, Head, "tentaculos faciais", none},
+        {cg::Species::Fae, cg::Sex::Female, Head, "antenas plumosas", [](cg::Genome& g) { g.face.antennae = 2; }},
+        {cg::Species::Avian, cg::Sex::Male, Hand, "maos de garra (3 dedos)", [](cg::Genome& g) { g.body.hands = 1; g.body.wings = 0; }},
+        {cg::Species::Insectoid, cg::Sex::Male, Hand, "pinca de caranguejo", [](cg::Genome& g) { g.body.hands = 2; g.body.armPairs = 1; g.body.wings = 0; }},
+        {cg::Species::Cephalid, cg::Sex::Female, Hand, "maos de tentaculos", [](cg::Genome& g) { g.body.hands = 3; }},
+        {cg::Species::Avian, cg::Sex::Male, Feet, "pes de ave (garras)", [](cg::Genome& g) { g.body.wings = 0; }},
+        {cg::Species::Naga, cg::Sex::Female, Wide, "corpo de serpente", [](cg::Genome& g) { g.body.crest = 0; g.body.armPairs = 1; }},
+        {cg::Species::Wraith, cg::Sex::Male, Body, "espectro", none},
+        {cg::Species::Tortle, cg::Sex::Female, Back, "casco de tartaruga", none},
+        {cg::Species::Cephalid, cg::Sex::Male, Back, "tentaculos nas costas", [](cg::Genome& g) { g.body.backTentacles = 4; }},
+        {cg::Species::Crystalborn, cg::Sex::Male, Body, "pele de cristal + lascas", none},
+        {cg::Species::Emberkin, cg::Sex::Male, Body, "crosta de magma", none},
+        {cg::Species::Cyclops, cg::Sex::Male, Head, "olho ciclope", [](cg::Genome& g) { g.facialHair = cg::FacialHair::None; }},
+        {cg::Species::Talpid, cg::Sex::Male, HeadSide, "sem olhos + focinho de toupeira", [](cg::Genome& g) { g.face.eyeKind = 3; }},
+        {cg::Species::Rimemaw, cg::Sex::Male, Head, "bocarra", none},
+        {cg::Species::Talpid, cg::Sex::Female, Hand, "maos de pa (escavar)", none},
+        {cg::Species::Oculite, cg::Sex::Male, Body, "olhos pelo corpo", none},
+        {cg::Species::Slime, cg::Sex::Female, Body, "corpo de gosma", none},
+        {cg::Species::Gloomhound, cg::Sex::Male, Side, "corpo de besta (quatro patas)", none},
+        {cg::Species::Gravitant, cg::Sex::Male, Body, "corpo-planeta", none},
+    };
+    if (const char* only = std::getenv("CHARGEN_TRAITS")) {  // indices: "0 3 7"
+        std::vector<Panel> sub;
+        int idx = 0, n2 = 0;
+        for (const char* q = only; std::sscanf(q, "%d%n", &idx, &n2) == 1; q += n2)
+            if (idx >= 0 && idx < int(panels.size())) sub.push_back(panels[size_t(idx)]);
+        panels = sub;
+    }
+    const int n = int(panels.size()), cols = std::min(n, 4), rows = (n + cols - 1) / cols, pw = 400, ph = 440;
+    Image sheet = GenImageColor(cols * pw, rows * ph, BLACK);
+    for (int i = 0; i < n; ++i) {
+        const Panel& P = panels[size_t(i)];
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.species = P.sp;
+        o.sex = P.sex;
+        o.age = cg::AgeGroup::Adult;
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i) * 31, o);
+        P.tweak(g);
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(withOverrides(g), gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        const float H = a.ch.height;
+        float half = 0;
+        for (const cg::Vertex& v : a.ch.mesh.vertices) half = std::max(half, std::fabs(v.pos.x));
+        const auto& bones = a.ch.skeleton.bones;
+        const cg::Vec3 hp = bones[size_t(a.ch.rig.head)].restWorld;
+        const float hh = H - hp.y;
+        Camera3D cam;
+        switch (P.view) {
+            case Back: cam = makeCam({0, H * 0.55f, 0}, 2.75f, 0.10f, std::max(H * 2.5f, 2.0f * half * 2.4f), 26.0f); break;
+            case Head: cam = makeCam({0, hp.y + 0.45f * hh, 0.05f * hh}, 0.45f, 0.05f, hh * 9.0f, 21.0f); break;
+            case HeadSide: cam = makeCam({0, hp.y + 0.35f * hh, 0.25f * hh}, 1.05f, 0.05f, hh * 8.5f, 21.0f); break;
+            case Hand: {
+                const cg::Vec3 w = bones[size_t(a.ch.rig.arms[0].end)].restWorld;
+                cam = makeCam({w.x, w.y - 0.05f * H, w.z}, 0.75f, 0.10f, H * 0.95f, 21.0f);
+                break;
+            }
+            case Feet: {
+                const cg::Vec3 f = bones[size_t(a.ch.rig.legs[0].end)].restWorld;
+                cam = makeCam({0, f.y * 0.6f, f.z + 0.05f * H}, 0.65f, 0.25f, H * 1.05f, 21.0f);
+                break;
+            }
+            case Wide: cam = makeCam({0, H * 0.42f, -0.35f * H}, 0.85f, 0.18f, H * 3.2f, 26.0f); break;
+            case Side: {  // a long body (on all fours): framed on its bounds, from the side
+                float z0 = 1e9f, z1 = -1e9f;
+                for (const cg::Vertex& v : a.ch.mesh.vertices) z0 = std::min(z0, v.pos.z), z1 = std::max(z1, v.pos.z);
+                cam = makeCam({0, H * 0.5f, 0.5f * (z0 + z1)}, 1.20f, 0.12f, std::max(H, z1 - z0) * 2.3f, 26.0f);
+                break;
+            }
+            default: cam = makeCam({0, H * 0.5f, 0}, 0.45f, 0.03f, H * 2.6f, 23.0f); break;
+        }
+        RenderTexture2D prt = LoadRenderTexture(pw, ph);
+        BeginTextureMode(prt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, pw, ph);
+        EndTextureMode();
+        Image img = grab(prt, 1);
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "%s  (%s)", P.label, std::string(cg::toString(P.sp)).c_str());
+        ImageDrawText(&img, buf, 8, ph - 18, 12, Color{225, 225, 230, 255});
         ImageDraw(&sheet, img, {0, 0, float(pw), float(ph)}, {float((i % cols) * pw), float((i / cols) * ph), float(pw), float(ph)}, WHITE);
         UnloadImage(img);
         UnloadRenderTexture(prt);
@@ -1159,6 +1352,67 @@ int runHeads(Scene& s, const std::string& path, uint64_t seed) {
     return 0;
 }
 
+// Every people's head side by side (--skulls): three-quarter and profile in studio light,
+// and the same three-quarter view at game resolution (a few pixels per face, scaled up).
+// Hair and beards are off by default so the skull reads (CHARGEN_KEEPHAIR=1 keeps them);
+// CHARGEN_SEX=f draws women.
+int runSkulls(Scene& s, const std::string& path, uint64_t seed) {
+    s.studio = true;
+    const int zoom = std::getenv("CHARGEN_SKULLZOOM") ? std::max(1, std::atoi(std::getenv("CHARGEN_SKULLZOOM"))) : 1;
+    const int n = int(cg::Species::Count), cols = 4, vw = 190 * zoom, vh = 210 * zoom, low = 6 * zoom;
+    const int cw = 3 * vw, ch = vh + 18, rows = (n + cols - 1) / cols;
+    Image sheet = GenImageColor(cols * cw, rows * ch, Color{14, 16, 20, 255});
+    const bool keepHair = std::getenv("CHARGEN_KEEPHAIR") != nullptr;
+    const char* sexEnv = std::getenv("CHARGEN_SEX");
+    for (int i = 0; i < n; ++i) {
+        for (auto& a : s.actors) unload(a);
+        s.actors.clear();
+        cg::GenomeOptions o;
+        o.species = cg::Species(i);
+        o.sex = sexEnv && sexEnv[0] == 'f' ? cg::Sex::Female : cg::Sex::Male;
+        o.age = cg::AgeGroup::Adult;
+        cg::Genome g = cg::randomGenome(seed + uint64_t(i) * 7u, o);
+        if (!keepHair) {
+            g.hair = cg::HairStyle::Bald;
+            g.facialHair = cg::FacialHair::None;
+        }
+        s.actors.emplace_back();
+        Actor& a = s.actors.back();
+        a.ch = cg::generateCharacter(withOverrides(g), gGen);
+        a.clips = cg::makeDefaultClips(a.ch);
+        a.sim = new cg::SecondaryMotion(a.ch);
+        a.posed = true;
+        a.fixed = showcasePose(a.ch);
+        buildMeshes(a, s.body, s.decal);
+        a.sim->reset(a.fixed, a.worldPos, cg::Quat{});
+        for (int k = 0; k < 60; ++k) update(a, 1.0f / 60.0f);
+        cg::Vec3 head = a.global[size_t(a.ch.rig.head)].point({0, 0, 0});
+        const float hh = a.ch.height / a.ch.genome.body.headsTall;
+        const cg::Vec3 tgt{head.x, head.y + 0.45f * hh, head.z + 0.15f * hh};
+        const float yaws[3] = {-0.55f, -1.5708f, -0.55f};  // the lit side (key light from -x)
+        const int cx = (i % cols) * cw, cy = (i / cols) * ch;
+        for (int v = 0; v < 3; ++v) {
+            const int rw = v == 2 ? vw / low : vw, rh = v == 2 ? vh / low : vh;
+            RenderTexture2D rt = LoadRenderTexture(rw, rh);
+            BeginTextureMode(rt);
+            ClearBackground(BLACK);
+            drawScene(s, makeCam(tgt, yaws[v], 0.06f, hh * (v == 2 ? 3.4f : 3.1f), 30.0f), rw, rh);
+            EndTextureMode();
+            Image img = grab(rt, 1);
+            if (v == 2) ImageResizeNN(&img, vw, vh);
+            ImageDraw(&sheet, img, {0, 0, float(vw), float(vh)}, {float(cx + v * vw), float(cy), float(vw), float(vh)}, WHITE);
+            UnloadImage(img);
+            UnloadRenderTexture(rt);
+        }
+        ImageDrawText(&sheet, std::string(cg::toString(g.species)).c_str(), cx + 6, cy + vh + 3, 10, Color{225, 225, 230, 255});
+    }
+    ExportImage(sheet, path.c_str());
+    UnloadImage(sheet);
+    std::printf("%s\n", path.c_str());
+    s.studio = false;
+    return 0;
+}
+
 // Random natural population as close portraits (judging how distinct faces are).
 int runFaces(Scene& s, const std::string& path, uint64_t seed) {
     s.studio = true;
@@ -1203,8 +1457,333 @@ int runFaces(Scene& s, const std::string& path, uint64_t seed) {
 
 }  // namespace
 
+// ---- Showcase scenes (--scene file.txt) ----
+// A small text format so stills and animated sequences can be staged without recompiling:
+//
+//   res 960 540            internal resolution        scale 2         nearest-neighbour upscale
+//   backdrop paper.png     painted background (else:  sky r g b  r g b  gradient)
+//   fill r g b  r g b      sky / ground fill light    light x y z     key light direction
+//   shadow r g b a         blob shadow colour (a 0 = none)
+//   labels r g b           write each one's people under its feet
+//   camera tx ty tz yaw pitch dist fov                orbit rad/s     (slow turn around the target)
+//   shot T out.png         a still at scene time T    frames SECS FPS dir [START]  numbered PNG frames
+//                          (START: skip a first cycle so a repeating scene loops seamlessly)
+//   warmup S               simulate S seconds before time 0 (hair and cloth settle)
+//   actor PEOPLE x z yaw key=value...
+//
+// PEOPLE is a people name, study:name, or a list (orc|troll|dwarf) used by reroll. Keys: sex=m|f,
+// seed, age, persona, archetype, arms=4, y (lift: portrait rows), wings, lower, hands, feet, beak,
+// crest, skin, tentacles, art, tattoo, furmarks, tail, horns, hair (style name), fold=1, muscle,
+// headat=H (raise or sink the body so the head sits at height H: rows of portraits),
+// base (looping clip it returns to, default idle), repeat=P (cues restart every P seconds),
+// reroll=P (a new person from the list every P seconds), phase=S (shifts both clocks: staggered slots), cues="0.5:attack 1.2:hit:front 2:die:back"
+// with actions: any clip name, base:clip, hit:dir[:strength], die:dir[:strength], emo:Rage|off, revive.
+struct Cue {
+    float t = 0;
+    std::string act, arg;
+    float k = 1;  // strength of hit / die
+};
+
+struct Cast {
+    std::vector<std::string> pool;
+    std::map<std::string, std::string> kv;
+    float x = 0, y = 0, z = 0, yaw = 0, repeat = 0, reroll = 0, phase = 0;
+    std::vector<Cue> cues;
+    int roll = 0;
+    float last = -1e9f;  // local cue time of the previous frame
+};
+
+std::vector<std::string> splitOn(const std::string& s, char sep) {
+    std::vector<std::string> v;
+    std::string cur;
+    for (char ch : s) {
+        if (ch == sep) {
+            if (!cur.empty()) v.push_back(cur);
+            cur.clear();
+        } else cur += ch;
+    }
+    if (!cur.empty()) v.push_back(cur);
+    return v;
+}
+
+int clipIndex(const Actor& a, const std::string& name) {
+    for (size_t i = 0; i < a.clips.size(); ++i)
+        if (a.clips[i].name == name) return int(i);
+    // Bodies without a clip of their own get the nearest one (as makeTrotClip / makeSwipeClip do).
+    if (name == "trot") return clipIndex(a, "run");
+    if (name == "swipe" || name == "bite") return clipIndex(a, "attack");
+    return 0;
+}
+
+cg::Vec3 blowDir(float yaw, const std::string& from) {
+    cg::Vec3 d{0, 0, -1};  // from the front: the blow travels backwards
+    if (from == "back") d = {0, 0, 1};
+    else if (from == "left") d = {-1, 0, 0};
+    else if (from == "right") d = {1, 0, 0};
+    return cg::rotate(yawQuat(yaw), d);
+}
+
+void castActor(Scene& s, Actor& a, Cast& c) {
+    unload(a);
+    a = Actor{};
+    const std::string tok = c.pool[size_t(c.roll) % c.pool.size()];
+    auto get = [&](const char* k) -> const std::string* {
+        auto it = c.kv.find(k);
+        return it == c.kv.end() ? nullptr : &it->second;
+    };
+    const uint64_t seed = (get("seed") ? std::strtoull(get("seed")->c_str(), nullptr, 10) : 1) + uint64_t(c.roll) * 7919u;
+    cg::GenOptions go = gGen;
+    cg::Genome g;
+    if (tok.rfind("study:", 0) == 0) {
+        g = cg::studyGenome(tok.substr(6), seed, &go).value_or(cg::randomGenome(seed));
+    } else {
+        cg::GenomeOptions o;
+        o.species = cg::speciesFromString(tok);
+        if (const std::string* v = get("sex"); v && *v != "any") o.sex = (*v)[0] == 'f' ? cg::Sex::Female : cg::Sex::Male;
+        if (const std::string* v = get("age")) o.age = cg::ageFromString(*v);
+        if (const std::string* v = get("persona")) o.persona = cg::personaFromString(*v);
+        if (const std::string* v = get("archetype")) o.archetype = cg::archetypeFromString(*v);
+        if (const std::string* v = get("arms")) o.armPairs = std::atoi(v->c_str()) >= 4 ? 2 : 1;
+        g = cg::randomGenome(seed, o);
+    }
+    auto num = [&](const char* k, int& dst) { if (const std::string* v = get(k)) dst = std::atoi(v->c_str()); };
+    num("wings", g.body.wings);
+    num("lower", g.body.lowerBody);
+    num("hands", g.body.hands);
+    num("feet", g.body.feet);
+    num("beak", g.face.beak);
+    num("crest", g.body.crest);
+    num("skin", g.body.skinKind);
+    num("tentacles", g.body.backTentacles);
+    num("art", g.body.bodyArt);
+    num("furmarks", g.body.furMarks);
+    num("tattoo", g.face.tattoo);
+    num("horns", g.body.horns);
+    if (const std::string* v = get("tail")) {
+        g.body.tail = std::atoi(v->c_str()) >= 0;
+        if (g.body.tail) g.body.tailType = std::atoi(v->c_str()), g.body.tailLength = std::max(g.body.tailLength, 0.8f);
+    }
+    if (const std::string* v = get("muscle")) g.body.muscle = float(std::atof(v->c_str()));
+    if (get("fold")) g.body.wingsFolded = true;
+    if (const std::string* v = get("hair"))
+        for (int i = 0; i < int(cg::HairStyle::Count); ++i)
+            if (cg::toString(cg::HairStyle(i)) == *v) g.hair = cg::HairStyle(i);
+    a.ch = cg::generateCharacter(g, go);
+    a.clips = cg::makeAuthoredClips(a.ch);
+    a.anim = new cg::Animator(a.ch);
+    const std::string* base = get("base");
+    a.anim->setBase(a.clips[size_t(clipIndex(a, base ? *base : "idle"))]);
+    if (const std::string* v = get("headat"))  // lift or sink so the head sits at this height (portrait rows)
+        c.y = float(std::atof(v->c_str())) - a.ch.skeleton.bones[size_t(a.ch.rig.head)].restWorld.y;
+    a.worldPos = {c.x, c.y, c.z};
+    a.yaw = c.yaw;
+    buildMeshes(a, s.body, s.decal);
+    a.anim->reset(a.worldPos, yawQuat(a.yaw));
+    uploadPose(a, a.anim->pose());
+}
+
+void cue(Scene& s, Actor& a, Cast& c, const Cue& q) {
+    if (q.act == "hit") a.anim->hit(blowDir(a.yaw, q.arg.empty() ? "front" : q.arg), q.k);
+    else if (q.act == "die") a.anim->die(blowDir(a.yaw, q.arg.empty() ? "front" : q.arg), q.k);
+    else if (q.act == "emo") {
+        a.faceOverride = q.arg != "off";
+        for (int e = 0; e < int(cg::Emotion::Count); ++e) {
+            static const char* names[] = {"Calm", "Joy", "Rage", "Sorrow", "Shock", "Pain", "Confident", "Talk"};
+            if (q.arg == names[e]) a.face = cg::emotionFace(cg::Emotion(e));
+        }
+    } else if (q.act == "revive") {
+        const bool fo = a.faceOverride;
+        const cg::FaceState f = a.face;
+        delete a.anim;
+        a.anim = new cg::Animator(a.ch);
+        auto it = c.kv.find("base");
+        a.anim->setBase(a.clips[size_t(clipIndex(a, it == c.kv.end() ? "idle" : it->second))]);
+        a.anim->reset(a.worldPos, yawQuat(a.yaw));
+        a.faceOverride = fo, a.face = f;
+    } else if (q.act == "base") {
+        a.anim->setBase(a.clips[size_t(clipIndex(a, q.arg))]);
+        a.anim->play(a.clips[size_t(clipIndex(a, q.arg))], 0.3f);
+    } else a.anim->play(a.clips[size_t(clipIndex(a, q.act))], 0.15f);
+    (void)s;
+}
+
+int runScene(Scene& s, const std::string& path) {
+    std::ifstream in(path);
+    if (!in) return std::fprintf(stderr, "cena nao encontrada: %s\n", path.c_str()), 1;
+    std::string dir = path.substr(0, path.find_last_of('/') + 1);
+    int W = 960, H = 540, scale = 2;
+    float camT[3] = {0, 1, 0}, camYaw = 0, camPitch = 0.1f, camDist = 8, camFov = 30, orbit = 0, warmup = 1.0f;
+    float framesSecs = 0, framesStart = 0, fps = 30;
+    std::string framesDir;
+    std::vector<std::pair<float, std::string>> shots;
+    std::vector<Cast> casts;
+    s.hasBackdrop = false;
+    bool labels = false;
+    Color labelCol{70, 60, 50, 255};
+    for (std::string line; std::getline(in, line);) {
+        if (auto h = line.find('#'); h != std::string::npos) line = line.substr(0, h);
+        std::istringstream ls(line);
+        std::string k;
+        if (!(ls >> k)) continue;
+        if (k == "res") ls >> W >> H;
+        else if (k == "scale") ls >> scale;
+        else if (k == "backdrop") {
+            std::string f;
+            ls >> f;
+            if (f[0] != '/') f = dir + f;
+            s.backdrop = LoadTexture(f.c_str());
+            SetTextureFilter(s.backdrop, TEXTURE_FILTER_BILINEAR);
+            s.hasBackdrop = s.backdrop.id != 0;
+        } else if (k == "sky") {
+            int c[6];
+            for (int& v : c) ls >> v;
+            s.skyTop = Color{(unsigned char)c[0], (unsigned char)c[1], (unsigned char)c[2], 255};
+            s.skyBottom = Color{(unsigned char)c[3], (unsigned char)c[4], (unsigned char)c[5], 255};
+        } else if (k == "fill") ls >> s.skyFill[0] >> s.skyFill[1] >> s.skyFill[2] >> s.groundFill[0] >> s.groundFill[1] >> s.groundFill[2];
+        else if (k == "light") {
+            cg::Vec3 l;
+            ls >> l.x >> l.y >> l.z;
+            s.light = cg::normalize(l);
+        } else if (k == "shadow") {
+            int c[4];
+            for (int& v : c) ls >> v;
+            s.shadow = Color{(unsigned char)c[0], (unsigned char)c[1], (unsigned char)c[2], (unsigned char)c[3]};
+        } else if (k == "camera") ls >> camT[0] >> camT[1] >> camT[2] >> camYaw >> camPitch >> camDist >> camFov;
+        else if (k == "orbit") ls >> orbit;
+        else if (k == "labels") {
+            int c[3];
+            for (int& v : c) ls >> v;
+            labels = true;
+            labelCol = Color{(unsigned char)c[0], (unsigned char)c[1], (unsigned char)c[2], 255};
+        }
+        else if (k == "warmup") ls >> warmup;
+        else if (k == "shot") {
+            float t;
+            std::string f;
+            ls >> t >> f;
+            shots.push_back({t, f[0] == '/' ? f : dir + f});
+        } else if (k == "frames") {
+            ls >> framesSecs >> fps >> framesDir;
+            if (!(ls >> framesStart)) framesStart = 0;
+            if (framesDir[0] != '/') framesDir = dir + framesDir;
+        } else if (k == "actor") {
+            Cast c;
+            std::string who;
+            ls >> who >> c.x >> c.z >> c.yaw;
+            c.pool = splitOn(who, '|');
+            // key=value, values may be quoted ("...") to hold spaces (the cue list).
+            std::string rest;
+            std::getline(ls, rest);
+            size_t i = 0;
+            while (i < rest.size()) {
+                while (i < rest.size() && rest[i] == ' ') ++i;
+                size_t eq = rest.find('=', i);
+                if (eq == std::string::npos) break;
+                std::string key = rest.substr(i, eq - i), val;
+                i = eq + 1;
+                if (i < rest.size() && rest[i] == '"') {
+                    size_t e = rest.find('"', i + 1);
+                    val = rest.substr(i + 1, e - i - 1);
+                    i = e == std::string::npos ? rest.size() : e + 1;
+                } else {
+                    size_t e = rest.find(' ', i);
+                    if (e == std::string::npos) e = rest.size();
+                    val = rest.substr(i, e - i);
+                    i = e;
+                }
+                c.kv[key] = val;
+            }
+            if (c.kv.count("y")) c.y = float(std::atof(c.kv["y"].c_str()));
+            if (c.kv.count("repeat")) c.repeat = float(std::atof(c.kv["repeat"].c_str()));
+            if (c.kv.count("reroll")) c.reroll = float(std::atof(c.kv["reroll"].c_str()));
+            if (c.kv.count("phase")) c.phase = float(std::atof(c.kv["phase"].c_str()));
+            if (c.kv.count("cues"))
+                for (const std::string& q : splitOn(c.kv["cues"], ' ')) {
+                    auto p = splitOn(q, ':');
+                    if (p.size() < 2) continue;
+                    c.cues.push_back({float(std::atof(p[0].c_str())), p[1], p.size() > 2 ? p[2] : "",
+                                      p.size() > 3 ? float(std::atof(p[3].c_str())) : 1.0f});
+                }
+            casts.push_back(std::move(c));
+        }
+    }
+    for (auto& a : s.actors) unload(a);
+    s.actors.clear();
+    s.actors.resize(casts.size());
+    for (size_t i = 0; i < casts.size(); ++i) castActor(s, s.actors[i], casts[i]);
+
+    const float dt = 1.0f / fps;
+    float end = framesStart + framesSecs;
+    for (auto& sh : shots) end = std::max(end, sh.first);
+    RenderTexture2D rt = LoadRenderTexture(W, H);
+    size_t shot = 0;
+    int frame = 0;
+    std::sort(shots.begin(), shots.end());
+    // Simulation runs in fixed steps from -warmup; cues fire on the scene clock (t >= 0).
+    for (float t = -warmup; t <= end + 1e-4f; t += dt) {
+        for (size_t i = 0; i < casts.size(); ++i) {
+            Cast& c = casts[i];
+            Actor& a = s.actors[i];
+            if (t >= 0 && c.reroll > 0 && int((t + c.phase) / c.reroll) != c.roll) {
+                c.roll = int((t + c.phase) / c.reroll);
+                castActor(s, a, c);
+                for (int k = 0; k < 20; ++k) a.anim->update(1.0f / 60.0f, a.worldPos, yawQuat(a.yaw));  // hair settles
+                c.last = -1e9f;
+            }
+            if (t >= 0) {
+                const float lt = c.repeat > 0 ? std::fmod(t + c.phase, c.repeat) : t;
+                const bool wrapped = lt < c.last;
+                for (const Cue& q : c.cues)
+                    if ((q.t > c.last && q.t <= lt) || (wrapped && q.t <= lt) || (c.last < -1e8f && q.t <= lt)) cue(s, a, c, q);
+                c.last = lt;
+            }
+            a.anim->update(dt, a.worldPos, yawQuat(a.yaw));
+            if (!a.faceOverride) a.face = a.anim->face();
+            uploadPose(a, a.anim->pose());
+        }
+        if (t < -1e-4f) continue;
+        const float cy = camYaw + orbit * t;
+        Camera3D cam = makeCam({camT[0], camT[1], camT[2]}, cy, camPitch, camDist, camFov);
+        const bool wantShot = shot < shots.size() && t + 0.5f * dt >= shots[shot].first;
+        const bool wantFrame = !framesDir.empty() && t > framesStart - 0.5f * dt && t < framesStart + framesSecs - 0.5f * dt;
+        if (!wantShot && !wantFrame) continue;
+        BeginTextureMode(rt);
+        ClearBackground(BLACK);
+        drawScene(s, cam, W, H);
+        if (labels)  // the people's name under each one (pixel font, like a game nameplate)
+            for (size_t i = 0; i < casts.size(); ++i) {
+                const Actor& a = s.actors[i];
+                const std::string tok = casts[i].pool[size_t(casts[i].roll) % casts[i].pool.size()];
+                std::string name = tok.rfind("study:", 0) == 0 ? tok.substr(6) : std::string(cg::toString(a.ch.genome.species));
+                const Vector2 p = GetWorldToScreenEx({a.worldPos.x, a.worldPos.y, a.worldPos.z + 0.35f}, cam, W, H);
+                const int fs = 10, tw = MeasureText(name.c_str(), fs);
+                DrawText(name.c_str(), int(p.x) - tw / 2, int(p.y) + 6, fs, labelCol);
+            }
+        EndTextureMode();
+        Image img = grab(rt, scale);
+        // Blended shadows leave alpha < 1 in the target; the picture itself is opaque.
+        for (int k = 0, n = img.width * img.height; k < n; ++k) ((unsigned char*)img.data)[k * 4 + 3] = 255;
+        while (shot < shots.size() && t + 0.5f * dt >= shots[shot].first) {
+            ExportImage(img, shots[shot].second.c_str());
+            std::printf("%s\n", shots[shot].second.c_str());
+            ++shot;
+        }
+        if (wantFrame) {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "/%04d.png", frame++);
+            ExportImage(img, (framesDir + buf).c_str());
+        }
+        UnloadImage(img);
+    }
+    if (frame) std::printf("%s (%d quadros)\n", framesDir.c_str(), frame);
+    UnloadRenderTexture(rt);
+    if (s.hasBackdrop) UnloadTexture(s.backdrop), s.hasBackdrop = false;
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    std::string shots, studio, population, heads, faces, cuts, races, decayOut, anatomy, studiesOut;
+    std::string shots, studio, population, heads, skulls, faces, cuts, races, peoples, traits, decayOut, anatomy, studiesOut;
+    std::vector<std::string> scenes;
     bool faceted = false;
     uint64_t seed = 1;
     int count = 6, res = 480;
@@ -1214,12 +1793,16 @@ int main(int argc, char** argv) {
         else if (a == "--studio" && i + 1 < argc) studio = argv[++i];
         else if (a == "--population" && i + 1 < argc) population = argv[++i];
         else if (a == "--heads" && i + 1 < argc) heads = argv[++i];
+        else if (a == "--skulls" && i + 1 < argc) skulls = argv[++i];
         else if (a == "--cuts" && i + 1 < argc) cuts = argv[++i];
         else if (a == "--races" && i + 1 < argc) races = argv[++i];
+        else if (a == "--peoples" && i + 1 < argc) peoples = argv[++i];
+        else if (a == "--traits" && i + 1 < argc) traits = argv[++i];
         else if (a == "--decay" && i + 1 < argc) decayOut = argv[++i];
         else if (a == "--anatomy" && i + 1 < argc) anatomy = argv[++i];
         else if (a == "--studies" && i + 1 < argc) studiesOut = argv[++i];
         else if (a == "--faces" && i + 1 < argc) faces = argv[++i];
+        else if (a == "--scene" && i + 1 < argc) scenes.push_back(argv[++i]);
         else if (a == "--faceted") faceted = true;
         else if (a == "--smooth") gGen.faceted = false, gGen.creaseAngle = 180.0f;
         else if (a == "--crease") gGen.faceted = false;
@@ -1254,6 +1837,13 @@ int main(int argc, char** argv) {
     }
 
     s.faceted = faceted;
+    if (!scenes.empty()) {
+        int rc = 0;
+        for (const std::string& sc : scenes) rc |= runScene(s, sc);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
     if (!faces.empty()) {
         int rc = runFaces(s, faces, seed);
         for (auto& a : s.actors) unload(a);
@@ -1284,8 +1874,31 @@ int main(int argc, char** argv) {
         CloseWindow();
         return rc;
     }
+    if (!traits.empty()) {
+        int rc = runTraits(s, traits, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!peoples.empty()) {
+        const char* from = std::getenv("CHARGEN_FROM");  // first people by name (e.g. cyclops): only the newer ones
+        int first = int(cg::kFirstTraitSpecies);
+        if (from)
+            for (int k = 0; k < int(cg::Species::Count); ++k)
+                if (cg::toString(cg::Species(k)) == from) first = k;
+        int rc = runRaces(s, peoples, seed, first, int(cg::Species::Count));
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
     if (!cuts.empty()) {
         int rc = runCuts(s, cuts, seed);
+        for (auto& a : s.actors) unload(a);
+        CloseWindow();
+        return rc;
+    }
+    if (!skulls.empty()) {
+        int rc = runSkulls(s, skulls, seed);
         for (auto& a : s.actors) unload(a);
         CloseWindow();
         return rc;
@@ -1328,7 +1941,7 @@ int main(int argc, char** argv) {
     while (!WindowShouldClose()) {
         float dt = paused ? 0.0f : GetFrameTime();
         if (IsKeyPressed(KEY_N)) spawn(s, seed += uint64_t(count), count, opt, 1.1f);
-        for (int k = 0; k < 5; ++k)
+        for (int k = 0; k < 9; ++k)
             if (IsKeyPressed(KEY_ONE + k))
                 for (Actor& a : s.actors) a.clip = std::min(k, int(a.clips.size()) - 1), a.time = 0;
         if (IsKeyPressed(KEY_R))

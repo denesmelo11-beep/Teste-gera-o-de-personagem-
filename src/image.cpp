@@ -1,6 +1,8 @@
 #include "chargen/image.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -234,6 +236,186 @@ bool writePng(const std::string& path, const Image& img) {
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return false;
     bool ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
+    std::fclose(f);
+    return ok;
+}
+
+}  // namespace cg
+
+// ---------------------------------------------------------------- GIF
+
+namespace cg {
+
+namespace {
+
+struct ColorBox {
+    std::vector<std::pair<uint16_t, uint32_t>> cols;  // 15-bit colour, count
+};
+
+inline int c5(uint16_t c, int ch) { return (c >> (10 - 5 * ch)) & 31; }
+
+}  // namespace
+
+std::vector<uint8_t> encodeGif(const std::vector<Image>& frames, int delay) {
+    std::vector<uint8_t> out;
+    if (frames.empty()) return out;
+    const int W = frames[0].width, H = frames[0].height;
+    // Palette: median cut over a 15-bit histogram of every frame.
+    std::vector<uint32_t> hist(32768, 0);
+    auto key = [](const uint8_t* p) { return uint16_t(((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3)); };
+    for (const Image& f : frames)
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) ++hist[key(f.at(x, y))];
+    std::vector<ColorBox> boxes(1);
+    for (uint32_t c = 0; c < 32768; ++c)
+        if (hist[c]) boxes[0].cols.push_back({uint16_t(c), hist[c]});
+    while (boxes.size() < 255) {
+        int bi = -1, axis = 0;
+        double bestScore = 0;
+        for (size_t b = 0; b < boxes.size(); ++b) {
+            if (boxes[b].cols.size() < 2) continue;
+            int lo[3] = {31, 31, 31}, hi[3] = {0, 0, 0};
+            uint64_t n = 0;
+            for (auto& e : boxes[b].cols) {
+                for (int ch = 0; ch < 3; ++ch) lo[ch] = std::min(lo[ch], c5(e.first, ch)), hi[ch] = std::max(hi[ch], c5(e.first, ch));
+                n += e.second;
+            }
+            for (int ch = 0; ch < 3; ++ch) {
+                const double score = double(hi[ch] - lo[ch]) * std::sqrt(double(n));
+                if (score > bestScore) bestScore = score, bi = int(b), axis = ch;
+            }
+        }
+        if (bi < 0) break;
+        auto& cols = boxes[size_t(bi)].cols;
+        std::sort(cols.begin(), cols.end(), [axis](auto& a, auto& b) { return c5(a.first, axis) < c5(b.first, axis); });
+        uint64_t total = 0, acc = 0;
+        for (auto& e : cols) total += e.second;
+        size_t cut = 1;
+        for (; cut < cols.size(); ++cut) {
+            acc += cols[cut - 1].second;
+            if (acc * 2 >= total) break;
+        }
+        cut = std::clamp<size_t>(cut, 1, cols.size() - 1);
+        ColorBox nb;
+        nb.cols.assign(cols.begin() + long(cut), cols.end());
+        cols.resize(cut);
+        boxes.push_back(std::move(nb));
+    }
+    std::vector<std::array<uint8_t, 3>> pal(256, {0, 0, 0});
+    for (size_t b = 0; b < boxes.size(); ++b) {
+        double s[3] = {0, 0, 0}, n = 0;
+        for (auto& e : boxes[b].cols) {
+            for (int ch = 0; ch < 3; ++ch) s[ch] += (c5(e.first, ch) * 8 + 4) * double(e.second);
+            n += e.second;
+        }
+        for (int ch = 0; ch < 3; ++ch) pal[b][size_t(ch)] = uint8_t(std::clamp(s[ch] / std::max(1.0, n), 0.0, 255.0));
+    }
+    const int ncol = int(boxes.size());
+    std::vector<uint8_t> lut(32768, 0);
+    for (uint32_t c = 0; c < 32768; ++c) {
+        if (!hist[c]) continue;
+        int best = 0, bd = 1 << 30;
+        const int r = c5(uint16_t(c), 0) * 8 + 4, g = c5(uint16_t(c), 1) * 8 + 4, b = c5(uint16_t(c), 2) * 8 + 4;
+        for (int i = 0; i < ncol; ++i) {
+            const int dr = r - pal[size_t(i)][0], dg = g - pal[size_t(i)][1], db = b - pal[size_t(i)][2];
+            const int d = 2 * dr * dr + 4 * dg * dg + db * db;
+            if (d < bd) bd = d, best = i;
+        }
+        lut[c] = uint8_t(best);
+    }
+    auto u16 = [&](int v) {
+        out.push_back(uint8_t(v & 255));
+        out.push_back(uint8_t(v >> 8));
+    };
+    const char* sig = "GIF89a";
+    out.insert(out.end(), sig, sig + 6);
+    u16(W);
+    u16(H);
+    out.push_back(0xF7);
+    out.push_back(0);
+    out.push_back(0);
+    for (auto& c : pal) out.insert(out.end(), c.begin(), c.end());
+    const uint8_t loop[] = {0x21, 0xFF, 0x0B, 'N', 'E', 'T', 'S', 'C', 'A', 'P', 'E', '2', '.', '0', 0x03, 0x01, 0x00, 0x00, 0x00};
+    out.insert(out.end(), loop, loop + sizeof(loop));
+    const uint8_t kTransparent = 255;
+    std::vector<uint8_t> prev, idx(size_t(W) * H);
+    std::vector<std::array<uint16_t, 256>> tree(4096);
+    for (size_t fi = 0; fi < frames.size(); ++fi) {
+        const Image& f = frames[fi];
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) idx[size_t(y) * W + x] = lut[key(f.at(x, y))];
+        std::vector<uint8_t> px = idx;
+        if (!prev.empty())
+            for (size_t i = 0; i < px.size(); ++i)
+                if (idx[i] == prev[i]) px[i] = kTransparent;
+        prev = idx;
+        const uint8_t gce[] = {0x21, 0xF9, 0x04, 0x05, uint8_t(delay & 255), uint8_t(delay >> 8), kTransparent, 0x00};
+        out.insert(out.end(), gce, gce + sizeof(gce));
+        out.push_back(0x2C);
+        u16(0);
+        u16(0);
+        u16(W);
+        u16(H);
+        out.push_back(0);
+        const int minCode = 8, clearCode = 256;
+        out.push_back(uint8_t(minCode));
+        // LZW, LSB-first bits packed into 255-byte sub-blocks.
+        std::vector<uint8_t> block;
+        uint32_t bits = 0;
+        int nbits = 0;
+        auto flushBlock = [&]() {
+            if (block.empty()) return;
+            out.push_back(uint8_t(block.size()));
+            out.insert(out.end(), block.begin(), block.end());
+            block.clear();
+        };
+        auto put = [&](int code, int size) {
+            bits |= uint32_t(code) << nbits;
+            nbits += size;
+            while (nbits >= 8) {
+                block.push_back(uint8_t(bits & 255));
+                bits >>= 8;
+                nbits -= 8;
+                if (block.size() == 255) flushBlock();
+            }
+        };
+        for (auto& t : tree) t.fill(0);
+        int codeSize = minCode + 1, maxCode = clearCode + 1, cur = -1;
+        put(clearCode, codeSize);
+        for (uint8_t v : px) {
+            if (cur < 0) {
+                cur = v;
+            } else if (tree[size_t(cur)][v]) {
+                cur = tree[size_t(cur)][v];
+            } else {
+                put(cur, codeSize);
+                tree[size_t(cur)][v] = uint16_t(++maxCode);
+                if (maxCode >= (1 << codeSize)) ++codeSize;
+                if (maxCode == 4095) {
+                    put(clearCode, codeSize);
+                    for (auto& t : tree) t.fill(0);
+                    codeSize = minCode + 1;
+                    maxCode = clearCode + 1;
+                }
+                cur = v;
+            }
+        }
+        put(cur, codeSize);
+        put(clearCode, codeSize);
+        put(clearCode + 1, minCode + 1);
+        if (nbits > 0) block.push_back(uint8_t(bits & 255));
+        flushBlock();
+        out.push_back(0);
+    }
+    out.push_back(0x3B);
+    return out;
+}
+
+bool writeGif(const std::string& path, const std::vector<Image>& frames, int delay) {
+    const std::vector<uint8_t> data = encodeGif(frames, delay);
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
     std::fclose(f);
     return ok;
 }

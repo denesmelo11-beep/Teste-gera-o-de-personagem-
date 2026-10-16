@@ -26,6 +26,7 @@ struct LockSpec {
     bool braid = false;
     bool faceFront = false;  // flat side faces forward (face-framing locks)
     bool skin = false;       // flesh, not hair (draenei tendrils): skin colour, no tie
+    bool beads = false;      // metal beads threaded near the end (beaded braids)
     int bones = 3;
     // Runtime physics.
     float pStiff = 1.0f, pDrag = 0.4f, pGrav = 0.05f;
@@ -140,6 +141,19 @@ void Builder::buildHair() {
         float front, temple, side, back, nape;  // hairline height per direction
         float thick, top;                       // thickness, highest covered s (1 = crown)
         float tips = 1.0f;                      // lock tips along the rim (0 = clean edge)
+        float pomp = 0.0f;                      // pompadour quiff raised over the forehead
+        float crest = 0.0f;                     // mohawk crest raised along the midline
+    };
+    // The quiff: hair swept up off the forehead, highest at the front of the top.
+    auto pompLift = [&](float th, float s) {
+        return 0.22f * h * vol * std::pow(std::max(0.0f, std::sin(th)), 1.1f) * smoothstep(0.79f, 0.86f, s) * smoothstep(1.02f, 0.86f, s);
+    };
+    // The crest: a ridge combed back along the midline, tallest over the brow, low at the nape.
+    auto crestLift = [&](float th, float s) {
+        const Vec3 q = headSurface(th, std::min(s, 0.985f), 0.0f) - m.headOrigin;
+        const float x = std::fabs(q.x) / h, front = q.z / h - hZc_(s);
+        const float rise = front > 0 ? smoothstep(0.82f, 0.90f, s) : smoothstep(0.60f, 0.72f, s);
+        return 0.15f * h * vol * smoothstep(0.17f, 0.02f, x) * rise * lerp(0.55f, 1.0f, smoothstep(-0.35f, 0.25f, front));
     };
     auto cap = [&](CapSpec cs, float crownVolume, Mat capMat) {
         Curve line{{0.0f, cs.front}, {0.8f, cs.temple}, {1.57f, cs.side}, {2.3f, cs.back}, {kPi, cs.nape}};
@@ -157,7 +171,7 @@ void Builder::buildHair() {
                 if (i == 0 && cs.thick > 0.03f * h && j % 2 == 0)
                     s -= lerp(0.06f, 0.035f, bump((phi - 1.57f) / 0.7f)) * (cs.top >= 0.999f ? 1.0f : 0.0f) * cs.tips;
                 float off = cs.thick * ((cs.thick < 0.02f * h ? 0.75f : 0.20f) + (cs.thick < 0.02f * h ? 0.25f : 0.80f) * smoothstep(0.0f, 0.3f, f)) + crownVolume * h * bump((s - 0.86f) / 0.22f) +
-                            0.0f;
+                            cs.pomp * pompLift(th, s) + (cs.crest > 0 ? cs.crest * crestLift(th, s) : 0.0f);
                 // Combed strands: alternate columns sit lower, so the cap reads as locks
                 // radiating from the crown (fades out near the crown and on buzz cuts).
                 if (cs.thick > 0.03f * h && j % 2 == 1) off -= 0.30f * cs.thick * smoothstep(0.98f, 0.70f, s) * smoothstep(0.0f, 0.15f, f);
@@ -218,6 +232,38 @@ void Builder::buildHair() {
             cap(c, 0.0f, hairMat);
             break;
         }
+        case HairStyle::Mohawk:
+        case HairStyle::BraidedCrest:
+        case HairStyle::WarriorTail:
+        case HairStyle::Pompadour: {  // shaved (or faded) sides under a crest, a top or a quiff
+            cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.013f * h, 1.0f, 0.0f}, 0, style == HairStyle::Pompadour ? faded : shaved);
+            if (style == HairStyle::Pompadour) {
+                CapSpec t{0.80f, 0.74f, 0.74f, 0.70f, 0.66f, capT, 1.0f};
+                t.pomp = 1.0f;
+                cap(t, 0.0f, hairMat);
+            } else if (style == HairStyle::WarriorTail) {
+                cap({0.80f, 0.78f, 0.80f, 0.74f, 0.68f, 0.03f * h, 1.0f, 0.0f}, 0.0f, hairMat);
+            } else {
+                CapSpec c{0.82f, 0.92f, 0.94f, 0.88f, 0.60f, 0.022f * h, 1.0f, 0.0f};  // the crest strip
+                c.crest = style == HairStyle::Mohawk ? 1.0f : 0.0f;
+                cap(c, 0.0f, hairMat);
+            }
+            break;
+        }
+        case HairStyle::Cornrows: {  // scalp shows between the rows
+            CapSpec c = shortCap;
+            c.thick = 0.014f * h;
+            c.tips = 0.0f;
+            cap(c, 0.0f, faded);
+            break;
+        }
+        case HairStyle::SideShave: {  // one side shaved, the rest swept over to the other
+            cap({0.80f, 0.66f, 0.47f, 0.36f, 0.28f, 0.013f * h, 1.0f, 0.0f}, 0, shaved);
+            CapSpec c = longCap;
+            c.thick = 0.020f * h;
+            cap(c, 0.0f, hairMat);
+            break;
+        }
         case HairStyle::Afro: {  // a big rounded volume of tight curls
             CapSpec c{0.80f, 0.66f, 0.47f, 0.36f, 0.30f, 0.26f * h * vol, 1.0f, 0.0f};
             cap(c, 0.08f * vol, hairMat);
@@ -252,6 +298,9 @@ void Builder::buildHair() {
                 }
                 break;
             case HairStyle::TwinBraids: ties = {headSurface(190 * deg, 0.45f, 0.0f), headSurface(350 * deg, 0.45f, 0.0f)}; break;
+            case HairStyle::Pigtails: ties = {headSurface(200 * deg, 0.72f, 0.0f), headSurface(340 * deg, 0.72f, 0.0f)}; break;
+            case HairStyle::SpaceBuns: ties = {headSurface(205 * deg, 0.90f, 0.0f), headSurface(335 * deg, 0.90f, 0.0f)}; break;
+            case HairStyle::WarriorTail: ties = {headSurface(270 * deg, 0.84f, 0.0f)}; break;
             case HairStyle::SideBraid: ties = {headSurface(g.partSide > 0 ? 200 * deg : 340 * deg, 0.45f, 0.0f)}; break;
             default: ties = {headSurface(270 * deg, 0.52f, 0.0f)}; break;
         }
@@ -267,6 +316,7 @@ void Builder::buildHair() {
         float L = 0.30f, W = 0.20f, Tk = 0.045f, lift = 0.0f, sTop = 0.97f, jit = 0.07f;
         Curve hairline{{0.0f, 0.80f}, {0.8f, 0.68f}, {1.57f, 0.49f}, {2.3f, 0.38f}, {kPi, 0.30f}};
         bool use = true;
+        std::function<bool(float, float)> skip;  // optional: no locks there (shaved patches)
         switch (style) {
             case HairStyle::ShortCrop:
                 flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.5f, 0}; };
@@ -332,6 +382,37 @@ void Builder::buildHair() {
                 };
                 L = 0.36f; W = 0.21f; Tk = 0.05f; lift = 0.02f; jit = 0.30f;
                 break;
+            case HairStyle::BraidedCrest:
+            case HairStyle::Cornrows:
+                use = false;  // the braids and the rows are built below
+                break;
+            case HairStyle::Mohawk:  // locks combed straight back along the raised crest
+                flow = [&](Vec3 q) { return Vec3{0, -0.1f, -1.0f} + away(q) * 0.1f; };
+                L = 0.42f; W = 0.17f; Tk = 0.045f; lift = 0.012f; jit = 0.05f;
+                hairline = Curve{{0.0f, 0.82f}, {0.8f, 0.92f}, {1.57f, 0.94f}, {2.3f, 0.88f}, {kPi, 0.60f}};
+                skip = [&](float th, float sr) { return std::fabs(headSurface(th, std::min(sr, 0.985f), 0.0f).x - m.headOrigin.x) > 0.15f * h; };
+                break;
+            case HairStyle::Spiky:  // soft pointed tufts brushed up and back, tips lifting off the head
+                flow = [&](Vec3 q) { return Vec3{0, 0.25f, -1.0f} + away(q) * 0.45f; };
+                L = 0.30f; W = 0.21f; Tk = 0.05f; lift = 0.045f; jit = 0.16f;
+                break;
+            case HairStyle::Pompadour:  // swept up off the forehead and back over the quiff
+                flow = [&](Vec3 q) { return Vec3{0, -0.2f, -1.0f} + away(q) * 0.25f; };
+                L = 0.44f; W = 0.22f; Tk = 0.042f; jit = 0.04f;
+                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.76f}, {1.57f, 0.76f}, {2.3f, 0.72f}, {kPi, 0.68f}};
+                break;
+            case HairStyle::SideShave:
+                flow = [&, part](Vec3 q) { return Vec3{part * 0.9f, -0.45f, -0.25f} + away(q) * 0.3f; };
+                L = 0.42f; W = 0.23f; Tk = 0.036f; jit = 0.05f;
+                hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.72f}, {1.57f, 0.72f}, {2.3f, 0.86f}, {kPi, 0.88f}};
+                skip = [part](float th, float sr) { return std::cos(th) * part < -0.25f && sr < 0.78f; };
+                break;
+            case HairStyle::WildMane:  // tousled, lifted, everywhere
+                flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.3f, -0.45f}; };
+                L = 0.38f; W = 0.24f; Tk = 0.05f; lift = 0.02f; jit = 0.25f;
+                hairline = Curve{{0.0f, 0.84f}, {0.8f, 0.72f}, {1.57f, 0.70f}, {2.3f, 0.84f}, {kPi, 0.86f}};
+                break;
+            case HairStyle::BeadedBraids:
             case HairStyle::Locs:  // roots combed down; the locs themselves hang below
                 flow = [&](Vec3 q) { return away(q) + Vec3{0, -0.6f, 0}; };
                 L = 0.30f; W = 0.20f; Tk = 0.035f; jit = 0.06f;
@@ -344,6 +425,8 @@ void Builder::buildHair() {
                 if (tied) {
                     flow = [&](Vec3 q) { return normalize(nearestTie(q) - q) + Vec3{0, -0.1f, 0}; };
                     L = 0.40f; W = 0.24f; Tk = 0.026f; jit = 0.03f;
+                    if (style == HairStyle::WarriorTail)  // the shaved sides stay bare
+                        hairline = Curve{{0.0f, 0.80f}, {0.8f, 0.80f}, {1.57f, 0.82f}, {2.3f, 0.76f}, {kPi, 0.70f}};
                 } else {  // long cuts: the top is combed away from the part, the mass takes over below
                     flow = [&, px](Vec3 q) {
                         float sideSign = (q.x - px) >= 0 ? 1.0f : -1.0f;
@@ -367,10 +450,13 @@ void Builder::buildHair() {
                     float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
                     if (sr < hairline(phi) + 0.02f) continue;
                     if (style == HairStyle::Tonsure && sr > 0.83f) continue;
+                    if (skip && skip(th, sr)) continue;
                     Vec3 col = c0 * r.range(0.90f, 1.08f);
                     Vec3 jdir{r.range(-jit, jit), r.range(-0.3f * jit, 0.3f * jit), r.range(-jit, jit)};
                     auto fl = [&, jdir](Vec3 q) { return normalize(flow(q), Vec3{0, -1, 0}) + jdir; };
-                    const float off = style == HairStyle::Afro ? (0.06f + 0.17f * smoothstep(0.36f, 0.56f, sr)) * h * vol : 0.012f * h + Tk * 0.5f;
+                    float off = style == HairStyle::Afro ? (0.06f + 0.17f * smoothstep(0.36f, 0.56f, sr)) * h * vol : 0.012f * h + Tk * 0.5f;
+                    if (style == HairStyle::Pompadour) off += 0.6f * capT + pompLift(th, sr);
+                    if (style == HairStyle::Mohawk) off += crestLift(th, sr);
                     emitClump(cp, th, sr, off, L * r.range(0.85f, 1.12f), W * r.range(0.9f, 1.1f), Tk, lift, fl, col, head);
                 }
             }
@@ -427,40 +513,82 @@ void Builder::buildHair() {
         emitEllipsoid(bp, e, [=](float, float, Vec3) { return one(head); }, [=](float, float) { return hairMat; });
     };
 
-    // A braid wound round the head (crown braid): a twisted, beaded tube on the scalp.
-    auto braidLoop = [&](float s0, float sAmp, float radius) {
+    // A braid lying on the scalp along a path: a twisted, beaded tube. Closed paths
+    // wind round the head (crown braid); open ones are capped at both ends.
+    auto braidPath = [&](const std::vector<Vec3>& path, float R, bool closed) {
+        const int K = int(path.size()), S = 6;
+        if (K < 2) return;
         Part& bp = newPart();
-        const int K = lod.sparseRings ? 20 : 32, S = 6;
+        const SkinW w = one(head);
+        auto tangent = [&](int k) {
+            const int a = closed ? (k + K - 1) % K : std::max(k - 1, 0), b = closed ? (k + 1) % K : std::min(k + 1, K - 1);
+            return normalize(path[size_t(b)] - path[size_t(a)], Vec3{0, 0, -1});
+        };
+        for (int k = 0; k < K; ++k) {
+            const Vec3 c = path[size_t(k)], T = tangent(k);
+            const Vec3 N0 = headNormalDir(c), N = normalize(N0 - T * dot(N0, T), N0), B = cross(T, N);
+            const float bead = 0.80f + 0.30f * std::fabs(std::sin(kPi * float(k) / 2.0f + 0.5f));  // a plait every two steps
+            const float end = closed ? 1.0f : 0.55f + 0.45f * std::min(smoothstep(0.0f, 2.0f, float(k)), smoothstep(float(K - 1), float(K - 3), float(k)));
+            for (int j = 0; j < S; ++j) {
+                const float a = kTau * float(j) / float(S) + 0.9f * float(k);  // twist
+                bp.pos.push_back(c + (N * std::cos(a) * 0.75f + B * std::sin(a)) * (R * bead * end));
+                bp.w.push_back(w);
+                bp.uv.push_back({});
+            }
+        }
+        const int segs = closed ? K : K - 1;
+        for (int k = 0; k < segs; ++k)
+            for (int j = 0; j < S; ++j) {
+                const int k1 = (k + 1) % K;
+                const uint32_t a = uint32_t(k * S + j), b = uint32_t(k * S + (j + 1) % S), c = uint32_t(k1 * S + (j + 1) % S),
+                               d = uint32_t(k1 * S + j);
+                const Mat mt{c0 * (k % 2 ? 0.92f : 1.04f), MaterialClass::Hair};
+                const Vec3 ctr = (bp.pos[a] + bp.pos[c]) * 0.5f, axis = (path[size_t(k)] + path[size_t(k1)]) * 0.5f;
+                const bool flip = dot(cross(bp.pos[b] - bp.pos[a], bp.pos[c] - bp.pos[a]), ctr - axis) < 0;
+                bp.tris.push_back(flip ? Part::Tri{a, c, b, mt} : Part::Tri{a, b, c, mt});
+                bp.tris.push_back(flip ? Part::Tri{a, d, c, mt} : Part::Tri{a, c, d, mt});
+            }
+        if (!closed)
+            for (int e = 0; e < 2; ++e) {  // end caps
+                const int k = e ? K - 1 : 0;
+                const Vec3 out = tangent(k) * (e ? 1.0f : -1.0f);
+                const uint32_t pole = uint32_t(bp.pos.size());
+                bp.pos.push_back(path[size_t(k)] + out * (0.5f * R));
+                bp.w.push_back(w);
+                bp.uv.push_back({});
+                const Mat mt{c0 * 0.95f, MaterialClass::Hair};
+                for (int j = 0; j < S; ++j) {
+                    uint32_t a = uint32_t(k * S + j), b = uint32_t(k * S + (j + 1) % S);
+                    const bool flip = dot(cross(bp.pos[b] - bp.pos[a], bp.pos[pole] - bp.pos[a]), out) < 0;
+                    bp.tris.push_back(flip ? Part::Tri{a, pole, b, mt} : Part::Tri{a, b, pole, mt});
+                }
+            }
+    };
+    auto braidLoop = [&](float s0, float sAmp, float radius) {
+        const int K = lod.sparseRings ? 20 : 32;
         const float R = radius * h;
         std::vector<Vec3> path;
         for (int k = 0; k < K; ++k) {
             const float th = kTau * float(k) / float(K);
             path.push_back(headSurface(th, s0 + sAmp * std::sin(th), 0.55f * R + 0.012f * h));
         }
-        const SkinW w = one(head);
-        for (int k = 0; k < K; ++k) {
-            const Vec3 c = path[size_t(k)], T = normalize(path[size_t((k + 1) % K)] - path[size_t((k + K - 1) % K)]);
-            const Vec3 N0 = headNormalDir(c), N = normalize(N0 - T * dot(N0, T)), B = cross(T, N);
-            const float bead = 0.80f + 0.30f * std::fabs(std::sin(kPi * float(k) / 2.0f + 0.5f));  // a plait every two steps
-            for (int j = 0; j < S; ++j) {
-                const float a = kTau * float(j) / float(S) + 0.9f * float(k);  // twist
-                bp.pos.push_back(c + (N * std::cos(a) * 0.75f + B * std::sin(a)) * (R * bead));
-                bp.w.push_back(w);
-                bp.uv.push_back({});
-            }
-        }
-        for (int k = 0; k < K; ++k)
-            for (int j = 0; j < S; ++j) {
-                const uint32_t a = uint32_t(k * S + j), b = uint32_t(k * S + (j + 1) % S), c = uint32_t(((k + 1) % K) * S + (j + 1) % S),
-                               d = uint32_t(((k + 1) % K) * S + j);
-                const Mat mt{c0 * (k % 2 ? 0.92f : 1.04f), MaterialClass::Hair};
-                const Vec3 ctr = (bp.pos[a] + bp.pos[c]) * 0.5f, axis = (path[size_t(k)] + path[size_t((k + 1) % K)]) * 0.5f;
-                const bool flip = dot(cross(bp.pos[b] - bp.pos[a], bp.pos[c] - bp.pos[a]), ctr - axis) < 0;
-                bp.tris.push_back(flip ? Part::Tri{a, c, b, mt} : Part::Tri{a, b, c, mt});
-                bp.tris.push_back(flip ? Part::Tri{a, d, c, mt} : Part::Tri{a, c, d, mt});
-            }
+        braidPath(path, R, true);
     };
-
+    // A point on the scalp (offset `off`) in the direction `dir` from the head centre;
+    // returns its scalp coordinates too.
+    auto onScalp = [&](Vec3 dir, float off, float* thOut = nullptr, float* sOut = nullptr) {
+        dir = normalize(dir, Vec3{0, 1, 0});
+        Vec3 q = hc + dir * h;
+        float th = 0, s = 0;
+        for (int it = 0; it < 3; ++it) {
+            s = clamp((q.y - m.headOrigin.y) / h, 0.0f, 0.985f);
+            th = std::atan2(q.z - m.headOrigin.z - hZc_(s) * h, q.x - m.headOrigin.x);
+            q = hc + dir * length(headSurface(th, s, off) - hc);
+        }
+        if (thOut) *thOut = th;
+        if (sOut) *sOut = s;
+        return q;
+    };
     // Hair mass for longer cuts: one thick, continuous sheet around the back and
     // sides (volume and a clean silhouette instead of loose strips). Locks are
     // sculpted into it as grooves and soft pointed tips along the hem; a row of
@@ -880,6 +1008,110 @@ void Builder::buildHair() {
             fringe(1.0f);
             break;
         }
+        case HairStyle::Mohawk:  // the crest ends in a short tail at the nape
+            if (len > 0.95f) tail(270 * deg, 0.60f, normalize(down + back * 0.5f), 0.75f * len, 0.075f, false);
+            break;
+        case HairStyle::Cornrows: {  // tight rows braided flat to the scalp, front to nape
+            const int nRows = lod.sparseRings ? 5 : 6, K = lod.sparseRings ? 14 : 20;
+            const float R = 0.038f * h * vol;
+            const Curve line{{0.0f, 0.80f}, {0.8f, 0.68f}, {1.57f, 0.50f}, {2.3f, 0.40f}, {kPi, 0.32f}};
+            const bool tails = g.hairLength > 1.0f || g.femininity > 0.5f;
+            for (int i = 0; i < nRows; ++i) {
+                const float lat = lerp(-0.80f, 0.80f, (float(i) + 0.5f) / float(nRows)) * 0.95f;
+                std::vector<Vec3> path;
+                float thE = 0, sE = 0;
+                for (int k = 0; k < K; ++k) {
+                    const float a = lerp(0.35f, kPi + 0.85f, float(k) / float(K - 1));
+                    float th, sq;
+                    const Vec3 q = onScalp(Vec3{lat, std::sin(a), std::cos(a)}, 0.55f * R + 0.012f * h, &th, &sq);
+                    const float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
+                    if (sq < line(phi) + 0.02f) {
+                        if (!path.empty()) break;  // past the nape
+                        continue;                  // still on the brow
+                    }
+                    path.push_back(q);
+                    thE = th, sE = sq;
+                }
+                braidPath(path, R, false);
+                if (tails && path.size() > 2 && (i % 2 == 0 || !lod.sparseRings))
+                    tail(thE, sE, normalize(down + back * 0.3f), 0.65f * len, 0.036f, true);
+            }
+            break;
+        }
+        case HairStyle::BraidedCrest: {  // northern crest: one thick braid along the crown, hanging down the back
+            const int K = lod.sparseRings ? 14 : 20;
+            const float R = 0.072f * h * vol;
+            std::vector<Vec3> path;
+            float thE = 0, sE = 0;
+            for (int k = 0; k < K; ++k) {
+                const float a = lerp(0.55f, kPi + 0.55f, float(k) / float(K - 1));
+                path.push_back(onScalp(Vec3{0, std::sin(a), std::cos(a)}, 0.55f * R + 0.012f * h, &thE, &sE));
+            }
+            braidPath(path, R, false);
+            tail(thE, sE, normalize(down + back * 0.35f), 1.3f * len, 0.068f, true);
+            break;
+        }
+        case HairStyle::WarriorTail:  // shaved sides, the top gathered into a high tail
+            tail(270 * deg, 0.84f, normalize(back + Vec3{0, 0.35f, 0}), 1.8f * len, 0.13f, false);
+            break;
+        case HairStyle::SideShave: {
+            const float sd = part;  // the long side (+x or -x)
+            SheetSpec m2{sd > 0 ? 250 * deg : 126 * deg, sd > 0 ? 414 * deg : 290 * deg, 1.7f * len, 0.07f * h * vol, 0.72f, 0.90f, 0.85f,
+                         0.04f, 0.18f, 7, 1.0f, 0.4f, 0.05f};
+            m2.fwdBias = -0.10f;
+            m2.sweepOf = [sd](float) { return 0.12f * sd; };
+            sheet(m2);
+            SheetSpec front{sd > 0 ? 360 * deg : 126 * deg, sd > 0 ? 414 * deg : 180 * deg, 1.4f * len, 0.062f * h * vol, 0.70f, 0.70f, 1.0f,
+                            0.02f, 0.06f, 2, 1.2f, 0.45f, 0.05f};
+            front.fwdBias = 0.16f;
+            front.cols = 4;
+            front.tipLen = 0.07f;
+            sheet(front);
+            break;
+        }
+        case HairStyle::Pigtails:  // two tails high behind the ears
+            for (float th : {200 * deg, 340 * deg})
+                tail(th, 0.72f, normalize(down * 0.6f + thetaDir(th) * 0.8f + back * 0.1f), 1.3f * len, 0.14f, false);
+            fringe(0.9f);
+            break;
+        case HairStyle::SpaceBuns:  // two knots on top
+            bunAt(195 * deg, 0.92f, 0.16f * vol);
+            bunAt(345 * deg, 0.92f, 0.16f * vol);
+            fringe(0.9f);
+            break;
+        case HairStyle::WildMane: {  // a great tousled mane standing off the head and shoulders
+            SheetSpec mane{140 * deg, 400 * deg, 1.5f * len, 0.10f * h * vol, 0.70f, 0.86f, 0.70f, 0.02f, 0.40f, 10, 1.1f, 0.45f, 0.05f};
+            mane.tipLen = 0.20f;
+            mane.curly = 0.35f;
+            mane.cols = lod.sparseRings ? 11 : 15;
+            sheet(mane);
+            break;
+        }
+        case HairStyle::SweptLong: {  // shoulder length with a long bang swept over one eye
+            SheetSpec m2{122 * deg, 418 * deg, 1.45f * len, 0.064f * h * vol, 0.72f, 0.92f, 0.72f, 0.10f, 0.10f, 9, 1.4f, 0.45f, 0.05f};
+            sheet(m2);
+            const float sd = part;
+            SheetSpec bang{56 * deg, 124 * deg, 0.80f, 0.046f * h * vol, 0.90f, 0.90f, 1.0f, 0.45f, 0.10f, 4, 2.0f, 0.5f, 0.04f};
+            bang.fwdBias = 0.45f;
+            bang.cols = 7;
+            bang.lenOf = [sd](float x) { const float k = sd > 0 ? 1.0f - x : x; return 0.30f + 1.10f * k * k; };
+            bang.sweepOf = [sd](float) { return -0.50f * sd; };
+            bang.tipLen = 0.06f;
+            sheet(bang);
+            break;
+        }
+        case HairStyle::BeadedBraids: {  // many thin braids all round, each ending in metal beads
+            const int n = lod.sparseRings ? 8 : 12;
+            for (int i = 0; i < n; ++i) {
+                const float th = (150.0f + 240.0f * (float(i) + 0.5f) / float(n)) * deg;
+                const float phi = std::fabs(std::remainder(th - kPi / 2, kTau));
+                const float sRoot = lerp(0.62f, 0.80f, smoothstep(1.0f, kPi, phi)) + r.range(-0.03f, 0.03f);
+                const Vec3 dir = normalize(down + thetaDir(th) * 0.25f + (phi < 1.4f ? fwd * 0.1f : back * 0.2f));
+                tail(th, sRoot, dir, (1.2f + 0.4f * r.uniform()) * len, 0.042f, true);
+                locks.back().beads = true;
+            }
+            break;
+        }
         default: break;
     }
 
@@ -984,7 +1216,8 @@ void Builder::buildHair() {
         lf.poleEnd = true;
         lf.endPole = pts.back() + normalize(pts.back() - pts[size_t(n - 2)]) * (L.width * 0.22f * L.tipWidth);
         lf.tEnd = 1.02f;
-        const bool tube = L.tube && !L.skin, fleshy = L.skin;
+        const bool tube = L.tube && !L.skin, fleshy = L.skin, beads = L.beads;
+        const Vec3 beadCol = (g.seed % 3 == 0) ? Vec3{0.62f, 0.62f, 0.66f} : Vec3{0.72f, 0.55f, 0.25f};  // silver or bronze
         const Vec3 skinC = g.palette.skin;
         const float tieT = 1.0f / (n - 1);
         const Vec3 tieCol = lerp(c0 * 0.3f, Vec3{0.12f, 0.08f, 0.07f}, 0.5f);
@@ -998,6 +1231,7 @@ void Builder::buildHair() {
         }, [=](float t, float) {
             if (fleshy) return Mat{skinC * (1.0f - 0.18f * t), MaterialClass::Skin};
             if (tube && t > 0.0f && t < tieT * 1.5f) return Mat{tieCol, MaterialClass::Leather};
+            if (beads && t > 0.72f && t < 0.90f && int(t * 22.0f) % 2 == 0) return Mat{beadCol, MaterialClass::Metal};
             return Mat{lerp(c0, c1, smoothstep(0.4f, 1.0f, t)), MaterialClass::Hair};
         });
     }
@@ -1175,44 +1409,200 @@ void Builder::buildFacialHair() {
     }
 }
 
+// Horns grow out of a raised socket of skin (the base sinks into the skull and the skin
+// rises around it), then follow one of ten centre lines:
+//   0 swept back   1 ram curl     2 upright      3 bovine (out, then up)   4 corkscrew
+//   5 forward hook 6 antlers      7 crown of spikes  8 single brow horn  9 laid along the skull
+// Each character varies the curl, length, girth, oval section and ridging, and an old
+// fighter may carry a broken one.
 void Builder::buildHorns() {
     if (g.body.horns == 0) return;
-    const float h = m.h, size = g.body.hornSize;
+    const float h = m.h;
     const int head = ch.rig.head;
     Rng r = Rng(g.seed).fork(57);
-    const int rk = r.rangeInt(0, 2);
-    const int kind = g.body.hornKind >= 0 ? g.body.hornKind : rk;  // 0 swept back, 1 curled ram, 2 straight up, 3 bovine
-    for (float sd : {1.0f, -1.0f}) {
-        const bool bov = kind == 3;
-        float th = bov ? (sd > 0 ? 28 * kPi / 180 : 152 * kPi / 180) : sd > 0 ? 62 * kPi / 180 : 118 * kPi / 180;
-        Vec3 p = headSurface(th, bov ? 0.80f : 0.86f, -0.01f * h);
-        Vec3 dir = bov ? normalize(Vec3{sd * 1.0f, 0.10f, 0.15f}) : kind == 2 ? normalize(Vec3{sd * 0.3f, 1, 0.1f}) : normalize(Vec3{sd * 0.5f, 0.7f, -0.3f});
-        const int n = 6;
-        float seg = 0.55f * h * size / n;
-        std::vector<Vec3> pts{p};
-        for (int k = 0; k < n; ++k) {
-            Quat bend = bov ? Quat::axisAngle({0, 0, 1}, sd * 0.30f) * Quat::axisAngle({1, 0, 0}, -0.05f)
-                      : kind == 1 ? Quat::axisAngle({sd, 0, 0}, -0.55f) : Quat::axisAngle({1, 0, 0}, kind == 0 ? -0.18f : 0.05f);
-            dir = normalize(rotate(bend, dir));
-            p = p + dir * seg;
-            pts.push_back(p);
-        }
+    const int rk = r.rangeInt(0, 9);
+    const int kind = g.body.hornKind >= 0 ? std::min(g.body.hornKind, 9) : rk;
+    const float curl = r.range(0.75f, 1.3f), lenK = r.range(0.85f, 1.2f), thick = r.range(0.8f, 1.25f);
+    const float flat = kind == 1 || kind == 4 ? r.range(1.25f, 1.6f) : r.range(1.0f, 1.25f);
+    const float ridge = kind == 1 || kind == 4 || kind == 8 ? r.range(0.07f, 0.14f) : r.chance(0.4f) ? r.range(0.03f, 0.08f) : 0.0f;
+    const float broken = r.chance(0.08f) ? (r.chance(0.5f) ? 1.0f : -1.0f) : 0.0f;
+    const float brokenAt = r.range(0.4f, 0.7f);
+    const float size = g.body.hornSize * lenK;
+    const Vec3 col = g.palette.horn;
+    const Mat skinM = bonesOnly_ ? Mat{col * 0.9f, MaterialClass::Horn} : skin();
+    auto paint = [=](float t, float) { return t < 0.0f ? skinM : Mat{col * (1.0f - 0.3f * saturate(t)), MaterialClass::Horn}; };
+    auto weight = [=](float, float, Vec3) { return one(head); };
+    // Outward normal of the head surface at (theta, s).
+    auto normalAt = [&](float th, float s) {
+        const Vec3 a = headPoint(th + 0.02f, s) - headPoint(th - 0.02f, s), b = headPoint(th, s + 0.01f) - headPoint(th, s - 0.01f);
+        Vec3 n = normalize(cross(a, b), {0, 1, 0});
+        if (dot(n, headPoint(th, s) - headCenter()) < 0) n = -n;
+        return n;
+    };
+    // One horn: socket rings around `p` along the normal, then the centre line `pts`
+    // (starting just above the skin). `cut` < 1 snaps it off.
+    auto horn = [&](Vec3 p, Vec3 N, const std::vector<Vec3>& pts, float r0, float taper, float cut) {
+        const size_t n = pts.size();
+        const size_t last = cut < 1.0f ? std::max<size_t>(3, size_t(cut * float(n - 1))) : n - 1;
         Loft L;
-        float r0 = 0.09f * h * std::sqrt(size);
-        for (int k = 0; k < n; ++k) {
-            float t = float(k) / n;
-            Vec3 d = normalize(pts[size_t(k + 1)] - pts[size_t(k)]);
-            Vec3 v = normalize(cross(d, {1, 0, 0}) * sd, {0, 0, 1});
-            Vec3 u = cross(d, v);
-            float rr = r0 * (1 - 0.85f * t);
-            L.rings.push_back(makeRing(pts[size_t(k)], u, v, SuperRing{rr, 0, rr, rr}, 8));
+        Vec3 T = N, v = normalize(Vec3{0, 0, 1} - N * N.z, {1, 0, 0});
+        auto ring = [&](Vec3 c, Vec3 tan, SuperRing sr, float t) {
+            const Quat q = fromTo(T, tan);
+            v = normalize(rotate(q, v));
+            T = tan;
+            v = normalize(v - T * dot(v, T), orthoFront(T));
+            L.rings.push_back(makeRing(c, cross(T, v), v, sr, 8));
             L.t.push_back(t);
+        };
+        ring(p - N * (0.6f * r0), N, SuperRing{0.9f * r0, 0, 0.9f * r0, 0.9f * r0}, -0.12f);
+        ring(p + N * (0.02f * r0), N, SuperRing{1.55f * r0, 0, 1.45f * r0, 1.45f * r0}, -0.06f);  // the skin rises around it
+        for (size_t k = 0; k <= last; ++k) {
+            const float t = float(k) / float(n - 1);
+            const Vec3 tan = normalize(pts[std::min(k + 1, n - 1)] - pts[k > 0 ? k - 1 : 0], N);
+            float rr = r0 * (1.08f - (1.0f - taper) * std::pow(t, 0.85f));
+            if (k > 0 && k % 2 == 1 && t < 0.85f) rr *= 1.0f - ridge;
+            const float wq = std::sqrt(flat);
+            ring(pts[k], tan, SuperRing{rr * wq, 0, rr / wq, rr / wq, kind == 1 ? 1.6f : 2.0f, 2.0f}, t);
         }
         L.poleEnd = true;
-        L.endPole = pts.back();
-        Vec3 col = g.palette.horn;
-        emitLoft(newPart(), L, [=](float, float, Vec3) { return one(head); },
-                 [=](float t, float) { return Mat{col * (1.0f - 0.25f * t), MaterialClass::Horn}; });
+        if (last == n - 1) {
+            L.endPole = pts.back() + T * (0.45f * length(pts.back() - pts[n - 2]));
+            L.tEnd = 1;
+            emitLoft(newPart(), L, weight, paint);
+        } else {  // snapped off: a rough, paler stump
+            L.endPole = pts[last] + T * (0.15f * r0);
+            L.tEnd = 1.5f;
+            emitLoft(newPart(), L, weight, [=](float t, float a) { return t > 1.2f ? Mat{lerp(col, Vec3{0.85f, 0.8f, 0.7f}, 0.5f), MaterialClass::Horn} : paint(t, a); });
+        }
+    };
+    // Centre line from a start point and direction, bending by `bend` each step, kept out of the head.
+    auto grow = [&](Vec3 q, Vec3 dir, float len, int n, Quat bend, Vec3 drift, float r0, float taper) {
+        std::vector<Vec3> pts{q};
+        const float seg = len / float(n);
+        for (int k = 0; k < n; ++k) {
+            dir = normalize(rotate(bend, dir));
+            q = q + dir * seg + drift * seg;
+            const float t = float(k + 1) / float(n);
+            q = collide(q, r0 * (1.0f - (1.0f - taper) * t) * 1.1f);
+            pts.push_back(q);
+        }
+        return pts;
+    };
+    const float r0 = 0.085f * h * std::sqrt(g.body.hornSize) * thick;
+    for (float sd : {1.0f, -1.0f}) {
+        const float cut = broken == sd ? brokenAt : 1.0f;
+        auto sideTh = [&](float deg) { return sd > 0 ? deg * kPi / 180 : kPi - deg * kPi / 180; };
+        auto base = [&](float deg, float s, Vec3& p, Vec3& N) {
+            p = headPoint(sideTh(deg), s);
+            N = normalAt(sideTh(deg), s);
+        };
+        Vec3 p, N;
+        switch (kind) {
+            case 0: default: {  // swept back
+                base(62, 0.86f, p, N);
+                const Vec3 q = p + N * (0.3f * r0);
+                horn(p, N, grow(q, normalize(Vec3{sd * 0.5f, 0.7f, -0.3f}), 0.6f * h * size, 12, Quat::axisAngle({1, 0, 0}, -0.095f * curl), {}, r0, 0.12f), r0, 0.12f, cut);
+                break;
+            }
+            case 1: {  // ram: back, down past the ear and forward, spiralling outwards
+                base(32, 0.82f, p, N);
+                const float R = 0.2f * h * size * (0.85f + 0.3f * (curl - 0.75f)), rr = 1.2f * r0;
+                const float turns = std::min(kTau * 0.95f, 1.6f * kPi * curl);
+                std::vector<Vec3> pts;
+                const int n = 16;
+                const Vec3 q0 = p + N * (0.3f * rr);
+                for (int k = 0; k <= n; ++k) {
+                    const float a = turns * float(k) / float(n), Rr = R * (1.0f - 0.45f * a / kTau);
+                    Vec3 q{q0.x + sd * R * 1.5f * std::min(1.0f, a / 1.4f), q0.y - R + Rr * std::cos(a), q0.z - 0.05f * h - Rr * std::sin(a) + 0.05f * h * std::cos(std::min(a, kPi))};
+                    if (k == 0) q = q0;
+                    pts.push_back(k > 0 ? collide(q, rr * (1.0f - 0.8f * float(k) / float(n)) * 1.1f) : q);
+                }
+                horn(p, N, pts, rr, 0.22f, cut);
+                break;
+            }
+            case 2: {  // upright, tips leaning in
+                base(65, 0.88f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.3f, 1, 0.1f}), 0.55f * h * size, 10,
+                                Quat::axisAngle({1, 0, 0}, 0.02f * curl) * Quat::axisAngle({0, 0, 1}, sd * 0.03f * curl), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+            case 3: {  // bovine
+                base(28, 0.80f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd, 0.1f, 0.15f}), 0.6f * h * size, 12,
+                                Quat::axisAngle({0, 0, 1}, sd * 0.15f * curl) * Quat::axisAngle({1, 0, 0}, -0.025f), {}, r0, 0.12f),
+                     r0, 0.12f, cut);
+                break;
+            }
+            case 4: {  // corkscrew (markhor, kudu)
+                base(55, 0.86f, p, N);
+                const Vec3 A = normalize(Vec3{sd * 0.35f, 0.85f, -0.4f});
+                const Vec3 e1 = normalize(cross(A, Vec3{0, 0, 1}), {1, 0, 0}), e2 = cross(A, e1);
+                const float len = 0.75f * h * size, turns = 2.2f * curl;
+                std::vector<Vec3> pts;
+                const int n = 18;
+                const Vec3 q0 = p + N * (0.3f * r0);
+                for (int k = 0; k <= n; ++k) {
+                    const float t = float(k) / float(n), ph = sd * turns * kTau * t, rho = 0.12f * len * (1.0f - 0.6f * t);
+                    const Vec3 q = q0 + A * (len * t) + (e1 * std::cos(ph) + e2 * std::sin(ph) - e1) * rho;
+                    pts.push_back(k > 0 ? collide(q, r0 * (1.0f - 0.85f * t) * 1.1f) : q);
+                }
+                horn(p, N, pts, r0, 0.12f, cut);
+                break;
+            }
+            case 5: {  // forward hook (bull, fiend)
+                base(35, 0.82f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.85f, 0.45f, -0.1f}), 0.62f * h * size, 12,
+                                Quat::axisAngle({0, 0, 1}, sd * 0.10f * curl) * Quat::axisAngle({0, 1, 0}, -sd * 0.11f * curl), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+            case 6: {  // antlers: a beam rising back and out, tines towards the front
+                base(60, 0.88f, p, N);
+                const float rb = 0.6f * r0;
+                const auto pts = grow(p + N * (0.3f * rb), normalize(Vec3{sd * 0.45f, 0.85f, -0.25f}), 0.85f * h * size, 12,
+                                      Quat::axisAngle({1, 0, 0}, 0.045f * curl) * Quat::axisAngle({0, 0, 1}, -sd * 0.03f), {}, rb, 0.35f);
+                horn(p, N, pts, rb, 0.35f, cut);
+                const Mat tineM{col * 0.85f, MaterialClass::Horn};
+                const int tines = 2 + int(curl > 1.0f);
+                for (int k = 0; k <= tines; ++k) {
+                    const size_t at = size_t(k == 0 ? 2 : 4 + (k - 1) * 3);
+                    if (at >= pts.size() - 1 || float(at) / float(pts.size() - 1) > cut) continue;
+                    const Vec3 d = normalize(k == 0 ? Vec3{sd * 0.25f, 0.25f, 1.0f} : Vec3{sd * 0.25f, 0.75f, 0.65f});
+                    const float lt = 0.32f * h * size * (k == 0 ? 0.8f : 1.0f - 0.15f * float(k));
+                    emitSpike(newPart(), pts[at], d, {0, 1, 0}, lt, rb * 0.75f * (1.0f - 0.08f * float(at)), 0, one(head), tineM);
+                }
+                break;
+            }
+            case 7: {  // a crown of short spikes from the brow back over the crown
+                const float spots[3][2] = {{72, 0.78f}, {52, 0.88f}, {32, 0.93f}};
+                for (int k = 0; k < 3; ++k) {
+                    base(spots[k][0], spots[k][1], p, N);
+                    const float rs = r0 * (0.75f - 0.1f * float(k));
+                    const Vec3 d = normalize(N + Vec3{0, 0.5f, -0.35f});
+                    horn(p, N, grow(p + N * (0.3f * rs), d, (0.24f + 0.06f * float(k)) * h * size, 6, Quat::axisAngle({1, 0, 0}, -0.08f * curl), {}, rs, 0.05f),
+                         rs, 0.05f, k == 1 ? cut : 1.0f);
+                }
+                break;
+            }
+            case 8: {  // one horn from the middle of the brow
+                if (sd < 0) break;
+                const float th = 0.5f * kPi, s = 0.76f;
+                p = headPoint(th, s);
+                N = normalAt(th, s);
+                const float ru = 0.85f * r0;
+                horn(p, N, grow(p + N * (0.3f * ru), normalize(Vec3{0, 0.55f, 0.85f}), 0.7f * h * size, 12, Quat::axisAngle({1, 0, 0}, -0.035f * curl), {}, ru, 0.06f),
+                     ru, 0.06f, broken != 0 ? brokenAt : 1.0f);
+                break;
+            }
+            case 9: {  // laid back along the skull, the tips lifting
+                base(30, 0.74f, p, N);
+                horn(p, N, grow(p + N * (0.3f * r0), normalize(Vec3{sd * 0.3f, 0.12f, -1.0f}), 0.75f * h * size, 12,
+                                Quat::axisAngle({1, 0, 0}, 0.035f * curl) * Quat::axisAngle({0, 1, 0}, sd * 0.015f), {}, r0, 0.1f),
+                     r0, 0.1f, cut);
+                break;
+            }
+        }
     }
 }
 
@@ -1221,6 +1611,35 @@ void Builder::buildEars() {
     const int head = ch.rig.head;
     const EarShape& E = g.body.ear;
     const float es = g.face.earSize;
+    if (g.body.ears == EarStyle::None) return;
+    if (g.body.ears == EarStyle::Fin) {  // a ribbed fan swept back from the side of the head
+        for (float sd : {1.0f, -1.0f}) {
+            const float th = sd > 0 ? 0.08f : kPi - 0.08f;
+            const Vec3 base = headSurface(th, 0.45f, -0.02f * h) + Vec3{0, 0, -0.06f * h};
+            Part& p = newPart(true);
+            p.id = headPartId_;
+            const int rays = 5;
+            const float len = 0.55f * h * es;
+            std::vector<uint32_t> tips;
+            const uint32_t c = uint32_t(p.pos.size());
+            p.pos.push_back(base), p.w.push_back(one(head)), p.uv.push_back({});
+            for (int k = 0; k < 2 * rays - 1; ++k) {
+                const float a = lerp(-0.75f, 0.85f, float(k) / float(2 * rays - 2));
+                const float r = len * (k % 2 ? 0.72f : 1.0f) * (1.0f - 0.25f * std::fabs(a));
+                const Vec3 d = normalize(Vec3{sd * 0.55f, std::sin(a), -std::cos(a)});
+                p.pos.push_back(base + d * r), p.w.push_back(one(head)), p.uv.push_back({});
+                tips.push_back(uint32_t(p.pos.size() - 1));
+            }
+            const Vec3 fin = g.palette.wing;
+            for (size_t k = 0; k + 1 < tips.size(); ++k) {
+                const Mat mm{fin * (k % 2 ? 1.0f : 0.75f), MaterialClass::Skin};
+                // Both faces (the fan is a thin membrane).
+                if (sd > 0) p.tris.push_back({c, tips[k + 1], tips[k], mm}), p.tris.push_back({c, tips[k], tips[k + 1], Mat{mm.color * 0.85f, mm.cls}});
+                else p.tris.push_back({c, tips[k], tips[k + 1], mm}), p.tris.push_back({c, tips[k + 1], tips[k], Mat{mm.color * 0.85f, mm.cls}});
+            }
+        }
+        return;
+    }
     // An ear is a flattened blade (a leaf in section) swept out from the side of the
     // head: short and round for humans, long blades for elves and trolls, broad fans
     // for goblins, drooping leaves for the bovine peoples.

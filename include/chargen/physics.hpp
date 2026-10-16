@@ -26,6 +26,8 @@ public:
     void step(Pose& pose, Vec3 worldPos, Quat worldRot, float dt);
     float gravityScale = 1.0f;
     float windStrength = 0.0f;
+    float stiffnessScale = 1.0f;  // pull towards the animated shape (the ragdoll lowers it so hair and tails drape)
+    float floorY = -1e30f;        // world ground height the chains rest on
     float carry = 0.85f;  // share of the body's translation the hair follows rigidly (rest acts as air drag)
     Vec3 windDir{1, 0, 0};
 

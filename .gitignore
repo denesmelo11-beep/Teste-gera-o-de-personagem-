@@ -1,3 +1,5 @@
 build/
 *.glb
 test_export.glb
+buildv/
+buildc/

@@ -75,7 +75,7 @@ BodyMetrics measure(const Character& c);
 
 // ---------------------------------------------------------------- hit volumes
 
-enum class HitZone : uint8_t { Head, Neck, Chest, Abdomen, Pelvis, UpperArm, Forearm, Hand, Thigh, Shin, Foot, Tail, Count };
+enum class HitZone : uint8_t { Head, Neck, Chest, Abdomen, Pelvis, UpperArm, Forearm, Hand, Thigh, Shin, Foot, Tail, Wing, Tentacle, Count };
 std::string_view toString(HitZone z);
 
 struct HitVolume {
@@ -106,6 +106,20 @@ std::vector<int> overlapSphere(const std::vector<HitVolume>& vols, const std::ve
 enum class Socket : uint8_t { HandR, HandL, Back, Hip, Head, Count };
 // World (character space) matrix of an attachment point in the current pose.
 Mat4 socketMatrix(const Character& c, const std::vector<Mat4>& global, Socket s);
+
+// ---------------------------------------------------------------- head silhouettes
+
+// Flat shadow of the head (skull, ears, horns, beak, snout, and any hair or beard: build
+// bald, beardless genomes to judge skulls) seen from the front and from the side, in head
+// units around the head, so peoples of any size compare. At game distance this shadow is
+// most of what tells two peoples apart.
+struct HeadSilhouette {
+    int res = 32;
+    std::vector<uint8_t> front, side;  // res x res masks, row 0 at the top
+};
+HeadSilhouette headSilhouette(const Character& c, int res = 32);
+// Intersection over union of the two masks, averaged over both views: 1 identical shadows.
+float silhouetteSimilarity(const HeadSilhouette& a, const HeadSilhouette& b);
 
 // ---------------------------------------------------------------- packed mesh
 

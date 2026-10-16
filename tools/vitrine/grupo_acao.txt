@@ -1,0 +1,19 @@
+# O mesmo grupo em movimento: cada um repete a sua acao num ciclo de 4 s.
+res 960 540
+scale 1
+backdrop papel.png
+fill 0.62 0.60 0.58  0.50 0.44 0.36
+light -0.5 0.75 0.45
+shadow 90 70 50 60
+camera 0 1.4 0  0.0 0.03 12.0 28
+warmup 4.0
+frames 4.0 25 saida/grupo_acao_quadros 4.0
+actor saurian    -4.0  0.4  1.1  sex=m seed=7 age=adult repeat=4 cues="0.2:attack 1.6:dodge 3.0:attack"
+actor gloomhound -2.9 -0.1  0.6  seed=4 repeat=4 cues="0.4:roar 2.6:swipe"
+actor orc        -1.75 0.1  0.35 sex=m seed=2 age=adult repeat=4 cues="0.9:roar"
+actor avian      -0.7 -0.7  0.1  sex=m seed=6 age=adult repeat=4 cues="0.1:roar 2.3:cast"
+actor dragonborn  0.35  0.2 -0.5 sex=m seed=6 age=adult wings=1 repeat=4 cues="0.6:attack 1.5:attack 2.4:roar"
+actor tauren      1.5 -0.7 -0.15 sex=m seed=8 age=adult repeat=4 cues="1.8:roar"
+actor nightelf    2.55 0.1 -1.1 sex=f seed=8 age=adult repeat=4 cues="0.3:cast 2.4:dodge"
+actor dwarf       3.45 0.5 -0.4  sex=m seed=7 age=adult repeat=4 cues="1.2:attack 2.0:attack 3.0:roar"
+actor goblin      4.25 0.8 -0.9  sex=m seed=5 age=adult repeat=4 cues="0.5:dodge 1.5:attack 2.7:dodge"
